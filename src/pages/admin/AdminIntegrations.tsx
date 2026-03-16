@@ -1069,7 +1069,7 @@ export default function AdminIntegrations() {
                             variant="secondary" 
                             size="icon"
                             onClick={() => {
-                              navigator.clipboard.writeText(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/instagram-webhook`);
+                              navigator.clipboard.writeText(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ig-test`);
                               toast.success('URL copiada!');
                             }}
                           >
