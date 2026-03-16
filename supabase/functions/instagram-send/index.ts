@@ -64,15 +64,17 @@ Deno.serve(async (req) => {
 
     console.log('[Instagram Send] Enviando mensagem:', { page_id, recipient_id, type });
 
-    const accessToken = await getAccessToken(page_id);
+    const rawAccessToken = await getAccessToken(page_id);
 
-    if (!accessToken) {
+    if (!rawAccessToken) {
       console.error('[Instagram Send] Access token não encontrado');
       return new Response(
         JSON.stringify({ success: false, error: 'Access token não configurado' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    const accessToken = rawAccessToken.trim();
 
     // Build message payload
     let messagePayload: any;
@@ -97,10 +99,11 @@ Deno.serve(async (req) => {
     }
 
     // Generate appsecret_proof
-    const appSecret = Deno.env.get('META_WHATSAPP_APP_SECRET');
+    const appSecret = (Deno.env.get('META_WHATSAPP_APP_SECRET') || '').trim();
     let url = `https://graph.facebook.com/v25.0/${page_id}/messages`;
     if (appSecret) {
       const proof = await generateAppSecretProof(accessToken, appSecret);
+      console.log('[Instagram Send] appsecret_proof gerado, tamanho:', proof.length, 'token prefix:', accessToken.substring(0, 10), 'secret prefix:', appSecret.substring(0, 4));
       url += `?appsecret_proof=${proof}`;
     }
 
