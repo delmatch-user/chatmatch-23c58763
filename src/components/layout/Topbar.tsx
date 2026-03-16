@@ -184,9 +184,6 @@ export function Topbar({ title = 'Match Conversa', onOpenSidebar }: TopbarProps)
 
       if (error) throw error;
       
-      // Signal manual override to work schedule monitor
-      window.dispatchEvent(new Event('work_schedule_manual_override'));
-      
       setUser(prev => prev ? { ...prev, status: newStatus as any } : null);
       
       const statusLabels: Record<string, string> = {
