@@ -1,53 +1,45 @@
 
 
-## Problemas Identificados
+## Melhorias no Instagram Webhook: Nome do usuário, mídias e emojis
 
-### 1. Auto-online fica brigando com status manual
-Quando o atendente está **dentro do horário** e muda manualmente para offline (ex: foi ao banheiro), o monitor detecta `status === 'offline'` e reseta `autoOnlineDoneRef` (linha 115-117), forçando-o de volta para online no próximo tick. Isso cria um loop conflitante.
+### Problemas atuais
 
-### 2. Guard de auto-online está quebrado
-O `autoOnlineDoneRef` é resetado quando `profile?.status !== 'offline'` (linha 115), ou seja: online → manual offline → auto-online novamente. O guard não protege nada.
+1. **Nome do contato**: Quando um novo contato envia mensagem pelo Instagram, o sistema salva como `Instagram XXXXXX` (últimos 6 dígitos do ID). A API do Instagram Graph permite buscar o nome real via `GET /{user_id}?fields=name,profile_pic`.
 
-### 3. Escala cross-midnight não busca dia anterior
-Se a escala é Sábado 22:00-02:00, no Domingo às 01:00 o código busca `day_of_week = 0` (Domingo). Mas a escala está em `day_of_week = 6` (Sábado). O atendente fica "sem escala" e é posto offline.
+2. **Fotos/Vídeos**: O webhook recebe attachments com URLs temporárias da Meta, mas o código atual apenas salva a URL raw como `content`. Essas URLs expiram. Precisa fazer download e upload para o Storage (`chat-uploads`), igual ao WhatsApp webhook.
 
-### 4. Auto-offline dispara mesmo com extensão ativa
-Quando `remaining <= 0` e o atendente estendeu o turno, o cálculo pode oscilar dependendo de como `extensionMinutes` é somado no `endMinutes`, causando disparo prematuro.
+3. **Emojis**: Emojis em texto já funcionam (são UTF-8 puro). O que falta é tratar **reações** (emoji reactions) que vêm como um evento separado no payload do Instagram.
 
----
+### Correções no `ig-test/index.ts`
 
-## Solução
+**1. Buscar nome real do Instagram via Graph API**
+- Após receber `senderId`, chamar `GET https://graph.facebook.com/v18.0/{senderId}?fields=name,profile_pic&access_token={token}`
+- Usar o nome retornado ao criar o contato (em vez de `Instagram XXXXXX`)
+- Atualizar o nome do contato existente se ainda tiver o nome genérico e `name_edited` for `false`
+- Salvar `profile_pic` como `avatar_url` no contato
 
-### Arquivo: `src/hooks/useWorkScheduleMonitor.tsx`
+**2. Download e persistência de mídias**
+- Quando `message.attachments` estiver presente, fazer download da URL da mídia
+- Upload para o bucket `chat-uploads` no Storage
+- Salvar como JSON array no `content` (mesmo formato do WhatsApp): `[{"name":"...", "url":"public_url", "type":"image/jpeg", "size":...}]`
+- Mapear `att.type` corretamente: `image` → `image`, `video` → `video`, `audio` → `audio`, `share`/`story_mention` → `file`
 
-**A. Corrigir fetch para incluir dia anterior (cross-midnight)**
-- Buscar escala do dia atual E do dia anterior
-- Se a escala do dia anterior tem `end_time < start_time` (cross-midnight), verificar se ainda estamos dentro dela
+**3. Preview de mídia na lista de conversas**
+- Atualizar `last_message_preview` com labels amigáveis: `📷 Imagem`, `🎬 Vídeo`, `🎤 Áudio` (mesmo padrão do WhatsApp)
 
-**B. Auto-online apenas no início do turno (janela de 2 min)**
-- Só disparar auto-online se estamos nos primeiros 2 minutos do turno
-- Usar `autoOnlineDoneRef` sem reset por mudança de status — só resetar quando muda de dia/escala
-- Remover o reset em linha 115-117 que causa o conflito
+### Detalhes técnicos
 
-**C. Auto-offline robusto**
-- Quando `remaining <= 0`, verificar se realmente saiu do horário (double-check `isWithinSchedule` ficou false)
-- Usar `autoOfflineDoneRef` corretamente sem resetar dentro do horário
+```text
+Fluxo de mídia:
+  Webhook recebe attachment
+    → Download da URL da Meta (com access_token)
+    → Upload para chat-uploads bucket
+    → Gerar publicUrl
+    → Salvar content como JSON [{name, url, type, size}]
+    → message_type = tipo da mídia
+```
 
-**D. Não interferir com mudanças manuais durante o turno**
-- Adicionar flag `manualOverrideRef` que é setada quando o atendente muda status manualmente via Topbar
-- O monitor respeita essa flag e não força auto-online durante o turno ativo
+Nenhuma alteração de banco de dados é necessária — os campos `avatar_url`, `name`, `name_edited` já existem na tabela `contacts`.
 
-### Arquivo: `src/components/layout/Topbar.tsx`
-
-**E. Sinalizar mudança manual**
-- Quando `handleStatusChange` é chamado pelo usuário, emitir um evento ou setar uma flag no localStorage para que o monitor saiba que foi manual e não force auto-online
-
----
-
-## Resumo das mudanças
-
-| Arquivo | Mudança |
-|---|---|
-| `useWorkScheduleMonitor.tsx` | Fetch dia anterior para cross-midnight; auto-online só nos primeiros 2min; remover reset de ref que causa loop; respeitar override manual |
-| `Topbar.tsx` | Marcar mudanças manuais de status para evitar conflito com auto-online |
+**Arquivo alterado:** `supabase/functions/ig-test/index.ts`
 
