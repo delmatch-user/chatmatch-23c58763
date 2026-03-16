@@ -842,10 +842,10 @@ serve(async (req) => {
                       }
                     }
                     
-                    if (jidMatchesLid || phoneMatchesIncoming) {
+                    if (jidMatchesLid || phoneMatchesIncoming || orphanPhoneMatchesViaLidMap) {
                       contactId = orphanContact.id;
                       existingContact = orphanContact;
-                      console.log(`[WhatsApp] ✅ CONVERSA ÓRFÃ: Contato ${contactId} (${orphanContact.name}, phone: ${orphanContact.phone}, jid: ${jidInNotes}) vinculado ao LID ${sender} [prova: ${jidMatchesLid ? 'JID' : 'PHONE'}]`);
+                      console.log(`[WhatsApp] ✅ CONVERSA ÓRFÃ: Contato ${contactId} (${orphanContact.name}, phone: ${orphanContact.phone}, jid: ${jidInNotes}) vinculado ao LID ${sender} [prova: ${jidMatchesLid ? 'JID' : phoneMatchesIncoming ? 'PHONE' : 'LID_MAP'}]`);
                       
                       // Atualizar JID e nome do contato
                       const orphanUpdates: Record<string, string> = {};
