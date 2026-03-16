@@ -778,16 +778,19 @@ serve(async (req) => {
       );
     }
 
-    // ====== PÓS-ENVIO: Persistir resolução LID se o servidor retornou usedJid diferente ======
+    // ====== PÓS-ENVIO: Persistir resolução LID ↔ Phone quando o servidor retornou usedJid diferente ======
     if (action === 'send' && data?.success && data?.usedJid && data?.originalTo) {
       const originalTo = data.originalTo;
       const usedJid = data.usedJid;
       
-      // Se o original era LID (explícito ou pseudo-phone) e o usado é telefone real válido, persistir no mapa
       const originalDigits = originalTo.split('@')[0]?.replace(/\D/g, '') || '';
+      const usedDigits = usedJid.split('@')[0]?.replace(/\D/g, '') || '';
       const originalLooksLikeLid = originalTo.endsWith('@lid') || (originalTo.endsWith('@s.whatsapp.net') && originalDigits.length > 13);
+      const usedLooksLikeLid = usedJid.endsWith('@lid');
+      
+      // CASO 1: Original era LID, usado é telefone real → persistir LID → phone
       if (originalLooksLikeLid && usedJid.endsWith('@s.whatsapp.net')) {
-        const resolvedPhone = usedJid.split('@')[0]?.replace(/\D/g, '');
+        const resolvedPhone = usedDigits;
         const isValidResolvedPhone = resolvedPhone && resolvedPhone.length >= 10 && resolvedPhone.length <= 13;
 
         if (isValidResolvedPhone) {
@@ -820,8 +823,50 @@ serve(async (req) => {
           } catch (persistErr) {
             console.error('Baileys Proxy - Erro ao persistir resolução pós-envio:', persistErr);
           }
-        } else {
-          console.warn(`Baileys Proxy - Pós-envio ignorado: usedJid inválido para mapeamento (${usedJid})`);
+        }
+      }
+      
+      // CASO 2: Original era telefone real, usado é LID → persistir LID → phone (REVERSO)
+      // Isso acontece quando o atendente busca um número e envia, mas o Baileys resolve para LID internamente
+      if (!originalLooksLikeLid && originalTo.endsWith('@s.whatsapp.net') && usedLooksLikeLid) {
+        const phoneDigits = originalDigits;
+        const isValidPhone = phoneDigits && phoneDigits.length >= 10 && phoneDigits.length <= 13;
+
+        if (isValidPhone) {
+          try {
+            const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+            const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+
+            // Salvar mapeamento LID → phone
+            await supabaseAdmin.from('whatsapp_lid_map').upsert({
+              lid_jid: usedJid,
+              phone_digits: phoneDigits,
+              instance_id: instanceId || 'default',
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'lid_jid,instance_id' });
+            console.log(`Baileys Proxy - 💾 Pós-envio REVERSO: persistido LID ${usedJid} → ${phoneDigits}`);
+
+            // Atualizar notes do contato para incluir o LID (para busca futura)
+            const { data: contactByPhone } = await supabaseAdmin
+              .from('contacts')
+              .select('id, notes')
+              .ilike('notes', `%jid:${originalTo}%`)
+              .limit(1);
+
+            if (contactByPhone && contactByPhone.length > 0) {
+              const existingNotes = contactByPhone[0].notes || '';
+              if (!existingNotes.includes(usedJid)) {
+                const updatedNotes = existingNotes + `|lid:${usedJid}`;
+                await supabaseAdmin
+                  .from('contacts')
+                  .update({ notes: updatedNotes })
+                  .eq('id', contactByPhone[0].id);
+                console.log(`Baileys Proxy - 💾 Pós-envio REVERSO: LID ${usedJid} vinculado ao contato ${contactByPhone[0].id}`);
+              }
+            }
+          } catch (persistErr) {
+            console.error('Baileys Proxy - Erro ao persistir resolução reversa pós-envio:', persistErr);
+          }
         }
       }
     }
