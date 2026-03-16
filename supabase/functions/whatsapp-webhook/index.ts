@@ -1042,14 +1042,19 @@ serve(async (req) => {
         }
 
         // ====== BUSCAR/CRIAR CONVERSA ======
-        const { data: existingConv } = await supabase
+        const { data: activeConversations } = await supabase
           .from('conversations')
-          .select('id, assigned_to_robot, assigned_to, status, department_id, sdr_deal_id, robot_transferred')
+          .select('id, assigned_to_robot, assigned_to, status, department_id, sdr_deal_id, robot_transferred, whatsapp_instance_id')
           .eq('contact_id', contactId)
+          .eq('channel', 'whatsapp')
           .in('status', ['em_fila', 'em_atendimento', 'pendente', 'transferida'])
-          .order('created_at', { ascending: true })
-          .limit(1)
-          .maybeSingle();
+          .order('updated_at', { ascending: false })
+          .limit(20);
+
+        let existingConv =
+          (activeConversations || []).find((conv: any) => conv.whatsapp_instance_id === effectiveInstanceId) ||
+          (activeConversations || [])[0] ||
+          null;
 
         // Aguardar upload de mídia se estiver em andamento
         if (mediaUploadPromise) {
