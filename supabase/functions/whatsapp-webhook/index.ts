@@ -812,6 +812,36 @@ serve(async (req) => {
                       }
                     }
                     
+                    // Prova 3: Para LIDs sem resolvedPhone, verificar se o contato órfão
+                    // tem phone E a conversa é a ÚNICA órfã na instância (evita ambiguidade)
+                    // Isso resolve o caso: atendente buscou o número, enviou, e a resposta veio de LID
+                    let orphanPhoneMatchesViaLidMap = false;
+                    if (!jidMatchesLid && !phoneMatchesIncoming && isLid && senderJid?.endsWith('@lid') && orphanContact.phone) {
+                      const orphanDigits = orphanContact.phone.replace(/\D/g, '');
+                      if (orphanDigits.length >= 10 && orphanDigits.length <= 13) {
+                        // Verificar no lid_map se o LID do sender está mapeado para o phone do contato órfão
+                        const { data: lidMapCheck } = await supabase
+                          .from('whatsapp_lid_map')
+                          .select('phone_digits')
+                          .eq('lid_jid', senderJid)
+                          .eq('instance_id', effectiveInstanceId)
+                          .maybeSingle();
+                        
+                        if (lidMapCheck) {
+                          const normalize = (d: string) => {
+                            let n = d;
+                            if (n.startsWith('55') && n.length >= 12) n = n.slice(2);
+                            if (n.length === 11 && n[2] === '9') n = n.slice(0, 2) + n.slice(3);
+                            return n;
+                          };
+                          orphanPhoneMatchesViaLidMap = normalize(orphanDigits) === normalize(lidMapCheck.phone_digits);
+                          if (orphanPhoneMatchesViaLidMap) {
+                            console.log(`[WhatsApp] ✅ Prova 3: LID ${senderJid} mapeado para ${lidMapCheck.phone_digits} que corresponde ao órfão ${orphanContact.phone}`);
+                          }
+                        }
+                      }
+                    }
+                    
                     if (jidMatchesLid || phoneMatchesIncoming) {
                       contactId = orphanContact.id;
                       existingContact = orphanContact;
