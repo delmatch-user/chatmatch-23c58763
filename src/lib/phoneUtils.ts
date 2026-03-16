@@ -23,6 +23,11 @@ export function extractJid(notes?: string): string | null {
  * @returns O número de telefone real ou o phone original se não encontrar alternativa
  */
 export function extractRealPhone(phone?: string, notes?: string): string | undefined {
+  // Instagram: phone é "ig:SENDER_ID" — retornar como está (sendViaInstagram trata)
+  if (phone && phone.startsWith('ig:')) {
+    return phone;
+  }
+
   // REGRA: Phone real do contato tem prioridade absoluta sobre JID
   if (phone) {
     const cleanedPhone = phone.replace(/\D/g, '');
