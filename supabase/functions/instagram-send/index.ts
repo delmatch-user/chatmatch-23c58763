@@ -145,14 +145,16 @@ Deno.serve(async (req) => {
       lastStatus = response.status;
       lastError = result.error?.message || 'Erro ao enviar mensagem';
       const isProofError = String(lastError).includes('appsecret_proof');
+      const isExpiredToken = String(lastError).includes('Session has expired') || result?.error?.code === 190;
       console.warn('[Instagram Send] Tentativa falhou:', {
         status: response.status,
         isProofError,
+        isExpiredToken,
         tokenPrefix: attempt.token.substring(0, 10),
         secretPrefix: attempt.secret ? attempt.secret.substring(0, 4) : 'none'
       });
 
-      if (!isProofError) {
+      if (!isProofError && !isExpiredToken) {
         break;
       }
     }

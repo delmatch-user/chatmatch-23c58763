@@ -387,35 +387,49 @@ Deno.serve(async (req) => {
                     // Generate appsecret_proof for robot reply
                     const appSecrets = getInstagramAppSecrets();
                     const sendAttempts = appSecrets.length > 0 ? appSecrets : [''];
+                    const sendTokens = accessTokens.length > 0 ? accessTokens : [accessToken];
                     let result: any = null;
+                    let sent = false;
 
-                    for (const appSecret of sendAttempts) {
-                      let sendUrl = `https://graph.facebook.com/v25.0/${connection.waba_id}/messages`;
-                      if (appSecret) {
-                        const proof = await generateAppSecretProof(accessToken.trim(), appSecret);
-                        sendUrl += `?appsecret_proof=${proof}`;
+                    for (const token of sendTokens) {
+                      for (const appSecret of sendAttempts) {
+                        let sendUrl = `https://graph.facebook.com/v25.0/${connection.waba_id}/messages`;
+                        if (appSecret) {
+                          const proof = await generateAppSecretProof(token.trim(), appSecret);
+                          sendUrl += `?appsecret_proof=${proof}`;
+                        }
+
+                        const sr = await fetch(sendUrl, {
+                          method: 'POST',
+                          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ recipient: { id: senderId }, message: { text: rd.response }, messaging_type: 'RESPONSE' })
+                        });
+
+                        result = await sr.json();
+                        if (sr.ok) {
+                          sent = true;
+                          break;
+                        }
+
+                        const errMsg = result?.error?.message || '';
+                        const isProofError = String(errMsg).includes('appsecret_proof');
+                        const isExpiredToken = String(errMsg).includes('Session has expired') || result?.error?.code === 190;
+                        if (!isProofError && !isExpiredToken) {
+                          break;
+                        }
                       }
 
-                      const sr = await fetch(sendUrl, {
-                        method: 'POST',
-                        headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ recipient: { id: senderId }, message: { text: rd.response }, messaging_type: 'RESPONSE' })
-                      });
-
-                      result = await sr.json();
-                      if (sr.ok) {
-                        break;
-                      }
-
-                      const errMsg = result?.error?.message || '';
-                      if (!String(errMsg).includes('appsecret_proof')) {
+                      if (sent) {
                         break;
                       }
                     }
-                    await supabase.from('messages').insert({
-                      conversation_id: conv.id, sender_name: robot.name, content: rd.response,
-                      message_type: 'text', external_id: result.message_id, status: 'sent'
-                    });
+
+                    if (sent && result?.message_id) {
+                      await supabase.from('messages').insert({
+                        conversation_id: conv.id, sender_name: robot.name, content: rd.response,
+                        message_type: 'text', external_id: result.message_id, status: 'sent'
+                      });
+                    }
                   }
                 }
               } catch (e) { console.error('[IG] Erro robô:', e); }
