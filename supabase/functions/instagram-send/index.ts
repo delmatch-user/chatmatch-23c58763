@@ -117,6 +117,7 @@ Deno.serve(async (req) => {
     let successResult: any = null;
     let lastStatus = 400;
     let lastError = 'Erro ao enviar mensagem';
+    let expiredTokenError = '';
 
     for (const attempt of attempts) {
       let url = `https://graph.facebook.com/v25.0/${page_id}/messages`;
