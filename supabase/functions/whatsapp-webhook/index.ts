@@ -1156,8 +1156,9 @@ serve(async (req) => {
               .from('conversations')
               .select('id, assigned_to_robot')
               .eq('contact_id', contactId)
+              .eq('channel', 'whatsapp')
               .in('status', ['em_fila', 'em_atendimento', 'pendente', 'transferida'])
-              .order('created_at', { ascending: true })
+              .order('updated_at', { ascending: false })
               .limit(1)
               .maybeSingle();
             
