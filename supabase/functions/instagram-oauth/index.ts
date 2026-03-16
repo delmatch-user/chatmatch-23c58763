@@ -7,7 +7,7 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const GRAPH_API_VERSION = 'v18.0';
+const GRAPH_API_VERSION = 'v25.0';
 
 interface OAuthRequest {
   userAccessToken: string;

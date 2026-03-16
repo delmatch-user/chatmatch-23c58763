@@ -11,7 +11,7 @@ const corsHeaders = {
 async function fetchIGProfile(senderId: string, accessToken: string): Promise<{ name?: string; profilePic?: string }> {
   try {
     const res = await fetch(
-      `https://graph.facebook.com/v18.0/${senderId}?fields=name,profile_pic&access_token=${accessToken}`
+      `https://graph.facebook.com/v25.0/${senderId}?fields=name,profile_pic&access_token=${accessToken}`
     );
     if (!res.ok) {
       console.warn('[IG] Erro ao buscar perfil:', await res.text());
