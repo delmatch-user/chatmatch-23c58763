@@ -1204,6 +1204,31 @@ export default function AdminIntegrations() {
                         </div>
                       )}
 
+                      {/* Access Token */}
+                      <div className="space-y-2">
+                        <Label htmlFor="igAccessToken">Access Token (Page Token)</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            id="igAccessToken"
+                            type={showIgToken ? 'text' : 'password'}
+                            placeholder="Cole o Page Access Token aqui para atualizar"
+                            value={instagramCredentials.accessToken}
+                            onChange={(e) => setInstagramCredentials(prev => ({ ...prev, accessToken: e.target.value }))}
+                          />
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            type="button"
+                            onClick={() => setShowIgToken(!showIgToken)}
+                          >
+                            {showIgToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </Button>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Deixe em branco para manter o token atual. Preencha apenas para atualizar.
+                        </p>
+                      </div>
+
                       {/* Manual config */}
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
