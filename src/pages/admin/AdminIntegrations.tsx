@@ -1018,6 +1018,32 @@ export default function AdminIntegrations() {
                           <p className="text-xs text-muted-foreground">{instagramCredentials.name || 'Instagram Direct'}</p>
                         </div>
                       </div>
+
+                      {/* Webhook URL - always visible when connected */}
+                      <div className="space-y-2 p-3 rounded-lg bg-muted/50 border border-border">
+                        <Label className="text-xs font-semibold">⚠️ Webhook URL (configure no Meta for Developers)</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            readOnly
+                            value={`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ig-test`}
+                            className="font-mono text-xs"
+                          />
+                          <Button 
+                            variant="secondary" 
+                            size="icon"
+                            onClick={() => {
+                              navigator.clipboard.writeText(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ig-test`);
+                              toast.success('URL copiada!');
+                            }}
+                          >
+                            <Copy className="w-4 h-4" />
+                          </Button>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Cole no Meta for Developers → Instagram → Webhooks → Campo <strong>messages</strong>. Verify Token: <code className="bg-muted px-1 rounded">{instagramCredentials.verifyToken || 'não definido'}</code>
+                        </p>
+                      </div>
+
                       <div className="flex gap-2">
                         <Button variant="secondary" size="sm" onClick={() => setStatus(prev => ({ ...prev, instagram: 'disconnected' }))}>
                           <Settings className="w-4 h-4 mr-2" />
@@ -1036,14 +1062,14 @@ export default function AdminIntegrations() {
                         <div className="flex gap-2">
                           <Input
                             readOnly
-                            value={`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/instagram-webhook`}
+                            value={`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ig-test`}
                             className="font-mono text-sm"
                           />
                           <Button 
                             variant="secondary" 
                             size="icon"
                             onClick={() => {
-                              navigator.clipboard.writeText(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/instagram-webhook`);
+                              navigator.clipboard.writeText(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ig-test`);
                               toast.success('URL copiada!');
                             }}
                           >
