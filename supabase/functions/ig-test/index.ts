@@ -7,19 +7,15 @@ const corsHeaders = {
 
 // ===== Shared helpers =====
 
-/** Returns true if value looks like a Meta access token (not an app secret) */
 function looksLikeAccessToken(value: string): boolean {
   return value.startsWith('EAA') || value.length > 80;
 }
 
-/** Get the single valid App Secret, ignoring values that look like tokens */
 function getAppSecret(): string | null {
   const igSecret = (Deno.env.get('META_INSTAGRAM_APP_SECRET') || '').trim();
   if (igSecret && !looksLikeAccessToken(igSecret)) return igSecret;
-
   const waSecret = (Deno.env.get('META_WHATSAPP_APP_SECRET') || '').trim();
   if (waSecret && !looksLikeAccessToken(waSecret)) return waSecret;
-
   return null;
 }
 
@@ -34,11 +30,52 @@ function getAccessTokens(connectionAccessToken?: string): { token: string; sourc
   const candidates: { token: string; source: string }[] = [];
   const dbToken = (connectionAccessToken || '').trim();
   if (dbToken) candidates.push({ token: dbToken, source: 'db' });
-
   const envToken = (Deno.env.get('META_INSTAGRAM_ACCESS_TOKEN') || '').trim();
   if (envToken && envToken !== dbToken) candidates.push({ token: envToken, source: 'env' });
-
   return candidates;
+}
+
+/** Generic fetch with appsecret_proof fallback on code 100 */
+async function fetchWithProofFallback(
+  baseUrl: string,
+  token: string,
+  appSecret: string | null,
+  method: string,
+  body?: string
+): Promise<Response> {
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  };
+  const fetchOpts: RequestInit = { method, headers, ...(body ? { body } : {}) };
+
+  if (appSecret) {
+    const proof = await generateAppSecretProof(token, appSecret);
+    const separator = baseUrl.includes('?') ? '&' : '?';
+    const urlWithProof = `${baseUrl}${separator}appsecret_proof=${proof}`;
+    const res = await fetch(urlWithProof, fetchOpts);
+
+    if (res.ok) return res;
+
+    const cloned = res.clone();
+    const result = await cloned.json().catch(() => ({}));
+    const errMsg = result?.error?.message || '';
+    const errCode = result?.error?.code;
+    const isProofError = String(errMsg).includes('appsecret_proof') || errCode === 100;
+
+    if (isProofError) {
+      console.warn('[IG] appsecret_proof inválido. Retentando SEM proof...');
+      const retryRes = await fetch(baseUrl, fetchOpts);
+      if (retryRes.ok) {
+        console.warn('[IG] ⚠️ Funcionou SEM proof — App Secret incorreto. Corrija META_INSTAGRAM_APP_SECRET.');
+      }
+      return retryRes;
+    }
+
+    return res;
+  }
+
+  return await fetch(baseUrl, fetchOpts);
 }
 
 // ===== Fetch IG profile =====
@@ -48,13 +85,9 @@ async function fetchIGProfile(senderId: string, tokenCandidates: { token: string
 
   for (const { token, source } of tokenCandidates) {
     try {
-      let url = `https://graph.facebook.com/v25.0/${senderId}?fields=name,profile_pic&access_token=${token}`;
-      if (appSecret) {
-        const proof = await generateAppSecretProof(token, appSecret);
-        url += `&appsecret_proof=${proof}`;
-      }
+      const baseUrl = `https://graph.facebook.com/v25.0/${senderId}?fields=name,profile_pic&access_token=${token}`;
+      const res = await fetchWithProofFallback(baseUrl, token, appSecret, 'GET');
 
-      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         console.log(`[IG] Perfil obtido via ${source}:`, data.name);
@@ -64,8 +97,7 @@ async function fetchIGProfile(senderId: string, tokenCandidates: { token: string
       const errText = await res.text();
       const isExpired = errText.includes('Session has expired') || errText.includes('"code":190');
       console.warn(`[IG] Perfil falhou (${source}): ${res.status}, expired=${isExpired}`);
-
-      if (!isExpired) break; // non-token error, stop
+      if (!isExpired) break;
     } catch (e) {
       console.warn(`[IG] Erro fetch perfil (${source}):`, e);
     }
@@ -86,32 +118,21 @@ async function sendInstagramMessage(
   const payload = { recipient: { id: recipientId }, message: { text }, messaging_type: 'RESPONSE' };
 
   for (const { token, source } of tokenCandidates) {
-    let url = `https://graph.facebook.com/v25.0/${pageId}/messages`;
-    if (appSecret) {
-      const proof = await generateAppSecretProof(token, appSecret);
-      url += `?appsecret_proof=${proof}`;
-    }
+    const url = `https://graph.facebook.com/v25.0/${pageId}/messages`;
+    const res = await fetchWithProofFallback(url, token, appSecret, 'POST', JSON.stringify(payload));
+    const result = await res.json();
 
-    const sr = await fetch(url, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    const result = await sr.json();
-    if (sr.ok) {
+    if (res.ok) {
       console.log(`[IG] Robot reply sent via ${source}`);
       return { sent: true, messageId: result.message_id };
     }
 
     const errMsg = result?.error?.message || '';
-    const isProof = String(errMsg).includes('appsecret_proof');
     const isExpired = String(errMsg).includes('Session has expired') || result?.error?.code === 190;
-    console.warn(`[IG] Send falhou (${source}): ${sr.status}, proof=${isProof}, expired=${isExpired}`);
+    console.warn(`[IG] Send falhou (${source}): ${res.status}, expired=${isExpired}`);
 
-    if (isProof) break; // secret mismatch, stop
-    if (isExpired) continue; // try next token
-    break; // other error
+    if (isExpired) continue;
+    break;
   }
 
   return { sent: false };
@@ -120,32 +141,25 @@ async function sendInstagramMessage(
 // ===== Media persistence =====
 
 async function persistMedia(
-  mediaUrl: string,
-  mimeType: string,
-  accessToken: string,
-  supabase: any
+  mediaUrl: string, mimeType: string, accessToken: string, supabase: any
 ): Promise<{ publicUrl: string; size: number } | null> {
   try {
     let res = await fetch(mediaUrl, { headers: { 'Authorization': `Bearer ${accessToken}` } });
     if (!res.ok) {
       res = await fetch(mediaUrl);
-      if (!res.ok) { console.error('[IG Media] Download falhou:', res.status); return null; }
+      if (!res.ok) return null;
     }
     const bytes = new Uint8Array(await res.arrayBuffer());
-    return await uploadToStorage(bytes, mimeType, supabase);
+    const ext = mimeType.split('/')[1]?.split(';')[0] || 'bin';
+    const fileName = `${Date.now()}_ig_${Math.random().toString(36).substring(7)}.${ext}`;
+    const { error } = await supabase.storage.from('chat-uploads').upload(fileName, bytes, { contentType: mimeType, upsert: false });
+    if (error) return null;
+    const { data: { publicUrl } } = supabase.storage.from('chat-uploads').getPublicUrl(fileName);
+    return { publicUrl, size: bytes.length };
   } catch (e) {
-    console.error('[IG Media] Erro download:', e);
+    console.error('[IG Media] Erro:', e);
     return null;
   }
-}
-
-async function uploadToStorage(bytes: Uint8Array, mimeType: string, supabase: any): Promise<{ publicUrl: string; size: number } | null> {
-  const ext = mimeType.split('/')[1]?.split(';')[0] || 'bin';
-  const fileName = `${Date.now()}_ig_${Math.random().toString(36).substring(7)}.${ext}`;
-  const { error } = await supabase.storage.from('chat-uploads').upload(fileName, bytes, { contentType: mimeType, upsert: false });
-  if (error) { console.error('[IG Media] Upload erro:', error); return null; }
-  const { data: { publicUrl } } = supabase.storage.from('chat-uploads').getPublicUrl(fileName);
-  return { publicUrl, size: bytes.length };
 }
 
 function mapAttachmentType(attType: string): { mimePrefix: string; messageType: string; label: string } {
@@ -171,7 +185,6 @@ Deno.serve(async (req) => {
     const mode = url.searchParams.get('hub.mode');
     const token = url.searchParams.get('hub.verify_token');
     const challenge = url.searchParams.get('hub.challenge');
-    console.log('[IG Webhook] Verificação:', { mode, token, challenge });
 
     if (mode === 'subscribe') {
       const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
@@ -193,7 +206,6 @@ Deno.serve(async (req) => {
     try {
       const bodyText = await req.text();
       const payload = JSON.parse(bodyText);
-      console.log('[IG Webhook] Payload:', JSON.stringify(payload));
 
       if (payload.object !== 'instagram') {
         return new Response('OK', { status: 200, headers: corsHeaders });
@@ -222,19 +234,16 @@ Deno.serve(async (req) => {
           const senderId = messaging.sender?.id;
           const message = messaging.message;
 
-          // ===== Handle reactions =====
+          // Handle reactions
           if (messaging.reaction && senderId) {
             const reaction = messaging.reaction;
-            console.log('[IG Webhook] Reação:', reaction);
             if (reaction.mid && reaction.action !== 'unreact') {
-              const { data: msg } = await supabase
-                .from('messages').select('id').eq('external_id', reaction.mid).maybeSingle();
+              const { data: msg } = await supabase.from('messages').select('id').eq('external_id', reaction.mid).maybeSingle();
               if (msg) {
                 await supabase.from('message_reactions').insert({
                   message_id: msg.id, external_message_id: reaction.mid,
                   emoji: reaction.emoji || '❤️', sender_phone: `ig:${senderId}`
                 });
-                console.log('[IG Webhook] Reação salva');
               }
             }
             continue;
@@ -242,12 +251,10 @@ Deno.serve(async (req) => {
 
           if (!message || !senderId || message.is_echo) continue;
 
-          console.log('[IG Webhook] Mensagem de:', senderId);
-
-          // ===== Fetch IG profile =====
+          // Fetch IG profile
           const profile = await fetchIGProfile(senderId, tokenCandidates);
 
-          // ===== Process message content =====
+          // Process message content
           let messageType = 'text';
           let content = '';
           let previewLabel = '';
@@ -280,7 +287,7 @@ Deno.serve(async (req) => {
             previewLabel = '📎 Mídia';
           }
 
-          // ===== Contact handling =====
+          // Contact handling
           const contactPhone = `ig:${senderId}`;
           let { data: contact } = await supabase.from('contacts').select('*').eq('phone', contactPhone).maybeSingle();
           const displayName = profile.name || `Instagram ${senderId.slice(-6)}`;
@@ -300,7 +307,7 @@ Deno.serve(async (req) => {
             }
           }
 
-          // ===== Conversation handling =====
+          // Conversation handling
           let { data: conv } = await supabase.from('conversations').select('*')
             .eq('contact_id', contact.id).in('status', ['em_fila', 'em_atendimento', 'pendente']).maybeSingle();
 
@@ -314,7 +321,7 @@ Deno.serve(async (req) => {
             conv = nc;
           }
 
-          // ===== Save message =====
+          // Save message
           await supabase.from('messages').insert({
             conversation_id: conv.id,
             sender_name: contact.name_edited ? contact.name : (profile.name || contact.name),
@@ -325,9 +332,7 @@ Deno.serve(async (req) => {
             last_message_preview: finalPreview, updated_at: new Date().toISOString()
           }).eq('id', conv.id);
 
-          console.log('[IG Webhook] Mensagem salva, tipo:', messageType);
-
-          // ===== Robot handling =====
+          // Robot handling
           if (conv.status === 'em_fila' && !conv.assigned_to && connection.department_id) {
             const { data: robots } = await supabase.from('robots').select('*')
               .eq('status', 'active').contains('departments', [connection.department_id]);
