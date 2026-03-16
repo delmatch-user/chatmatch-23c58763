@@ -164,6 +164,10 @@ Deno.serve(async (req) => {
     }
 
     if (!successResult) {
+      if (expiredTokenError) {
+        lastStatus = 401;
+        lastError = expiredTokenError;
+      }
       console.error('[Instagram Send] Erro da API Meta:', lastError);
       return new Response(
         JSON.stringify({ success: false, error: lastError }),
