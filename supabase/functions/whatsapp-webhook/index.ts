@@ -216,6 +216,28 @@ serve(async (req) => {
                 }
                 await supabase.from('contacts').update(updates).eq('id', lc.id);
                 console.log(`[WhatsApp] contacts.sync: Contato ${lc.id} atualizado com phone=${c.phone}`);
+                
+                // ====== AUTO-MERGE: Verificar se já existe outro contato com esse phone ======
+                const phoneToCheck = formattedPhone || c.phone;
+                const phoneDigitsToCheck = phoneToCheck.replace(/\D/g, '');
+                if (phoneDigitsToCheck.length >= 10 && phoneDigitsToCheck.length <= 13) {
+                  const { data: existingByPhone } = await supabase
+                    .rpc('find_contact_by_phone', { phone_input: phoneDigitsToCheck });
+                  
+                  if (existingByPhone && existingByPhone.length > 0 && existingByPhone[0].id !== lc.id) {
+                    const primaryId = existingByPhone[0].id;
+                    console.log(`[WhatsApp] contacts.sync: 🔄 MERGE: ${lc.id} duplica ${primaryId} (${existingByPhone[0].name}) — merging`);
+                    const { data: mergeResult } = await supabase.rpc('merge_duplicate_contacts', {
+                      primary_id: primaryId,
+                      duplicate_id: lc.id
+                    });
+                    if (mergeResult?.success) {
+                      console.log(`[WhatsApp] contacts.sync: ✅ MERGE via RPC: ${JSON.stringify(mergeResult)}`);
+                    } else {
+                      console.warn(`[WhatsApp] contacts.sync: ⚠️ MERGE falhou: ${JSON.stringify(mergeResult)}`);
+                    }
+                  }
+                }
               }
             }
           }
