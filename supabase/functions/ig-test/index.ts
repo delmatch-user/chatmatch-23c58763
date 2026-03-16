@@ -15,26 +15,50 @@ async function generateAppSecretProof(token: string, secret: string): Promise<st
   return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-function getInstagramAppSecret(): string {
-  return (Deno.env.get('META_INSTAGRAM_APP_SECRET') || Deno.env.get('META_WHATSAPP_APP_SECRET') || '').trim();
+function getInstagramAppSecrets(): string[] {
+  const instagramSecret = (Deno.env.get('META_INSTAGRAM_APP_SECRET') || '').trim();
+  const whatsappSecret = (Deno.env.get('META_WHATSAPP_APP_SECRET') || '').trim();
+  return Array.from(new Set([instagramSecret, whatsappSecret].filter(Boolean)));
 }
 
-async function fetchIGProfile(senderId: string, accessToken: string): Promise<{ name?: string; profilePic?: string }> {
+function getInstagramAccessTokens(connectionAccessToken?: string): string[] {
+  const envToken = (Deno.env.get('META_INSTAGRAM_ACCESS_TOKEN') || '').trim();
+  const dbToken = (connectionAccessToken || '').trim();
+  return Array.from(new Set([envToken, dbToken].filter(Boolean)));
+}
+
+async function fetchIGProfile(senderId: string, accessTokens: string[]): Promise<{ name?: string; profilePic?: string }> {
   try {
-    const token = accessToken.trim();
-    let url = `https://graph.facebook.com/v25.0/${senderId}?fields=name,profile_pic&access_token=${token}`;
-    const appSecret = getInstagramAppSecret();
-    if (appSecret) {
-      const proof = await generateAppSecretProof(token, appSecret);
-      url += `&appsecret_proof=${proof}`;
+    const secrets = getInstagramAppSecrets();
+    const secretAttempts = secrets.length > 0 ? secrets : [''];
+
+    for (const accessToken of accessTokens) {
+      const token = accessToken.trim();
+      for (const secret of secretAttempts) {
+        let url = `https://graph.facebook.com/v25.0/${senderId}?fields=name,profile_pic&access_token=${token}`;
+        if (secret) {
+          const proof = await generateAppSecretProof(token, secret);
+          url += `&appsecret_proof=${proof}`;
+        }
+
+        const res = await fetch(url);
+        if (res.ok) {
+          const data = await res.json();
+          return { name: data.name || undefined, profilePic: data.profile_pic || undefined };
+        }
+
+        const errorText = await res.text();
+        const isProofError = errorText.includes('appsecret_proof');
+        const isExpiredToken = errorText.includes('Session has expired');
+        console.warn('[IG] Erro ao buscar perfil:', errorText);
+
+        if (!isProofError && !isExpiredToken) {
+          break;
+        }
+      }
     }
-    const res = await fetch(url);
-    if (!res.ok) {
-      console.warn('[IG] Erro ao buscar perfil:', await res.text());
-      return {};
-    }
-    const data = await res.json();
-    return { name: data.name || undefined, profilePic: data.profile_pic || undefined };
+
+    return {};
   } catch (e) {
     console.warn('[IG] Erro fetch perfil:', e);
     return {};
@@ -161,7 +185,8 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        const accessToken = connection.access_token || Deno.env.get('META_INSTAGRAM_ACCESS_TOKEN') || '';
+        const accessTokens = getInstagramAccessTokens(connection.access_token);
+        const accessToken = accessTokens[0] || '';
 
         for (const messaging of entry.messaging || []) {
           const senderId = messaging.sender?.id;
@@ -198,7 +223,7 @@ Deno.serve(async (req) => {
           console.log('[IG Webhook] Mensagem de:', senderId);
 
           // ===== Fetch IG profile for name + avatar =====
-          const profile = await fetchIGProfile(senderId, accessToken);
+          const profile = await fetchIGProfile(senderId, accessTokens);
 
           // ===== Process message content =====
           let messageType = 'text';
@@ -360,22 +385,51 @@ Deno.serve(async (req) => {
                 if (rd.response) {
                   if (accessToken) {
                     // Generate appsecret_proof for robot reply
-                    const appSecret = getInstagramAppSecret();
-                    let sendUrl = `https://graph.facebook.com/v25.0/${connection.waba_id}/messages`;
-                    if (appSecret) {
-                      const proof = await generateAppSecretProof(accessToken.trim(), appSecret);
-                      sendUrl += `?appsecret_proof=${proof}`;
+                    const appSecrets = getInstagramAppSecrets();
+                    const sendAttempts = appSecrets.length > 0 ? appSecrets : [''];
+                    const sendTokens = accessTokens.length > 0 ? accessTokens : [accessToken];
+                    let result: any = null;
+                    let sent = false;
+
+                    for (const token of sendTokens) {
+                      for (const appSecret of sendAttempts) {
+                        let sendUrl = `https://graph.facebook.com/v25.0/${connection.waba_id}/messages`;
+                        if (appSecret) {
+                          const proof = await generateAppSecretProof(token.trim(), appSecret);
+                          sendUrl += `?appsecret_proof=${proof}`;
+                        }
+
+                        const sr = await fetch(sendUrl, {
+                          method: 'POST',
+                          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ recipient: { id: senderId }, message: { text: rd.response }, messaging_type: 'RESPONSE' })
+                        });
+
+                        result = await sr.json();
+                        if (sr.ok) {
+                          sent = true;
+                          break;
+                        }
+
+                        const errMsg = result?.error?.message || '';
+                        const isProofError = String(errMsg).includes('appsecret_proof');
+                        const isExpiredToken = String(errMsg).includes('Session has expired') || result?.error?.code === 190;
+                        if (!isProofError && !isExpiredToken) {
+                          break;
+                        }
+                      }
+
+                      if (sent) {
+                        break;
+                      }
                     }
-                    const sr = await fetch(sendUrl, {
-                      method: 'POST',
-                      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ recipient: { id: senderId }, message: { text: rd.response }, messaging_type: 'RESPONSE' })
-                    });
-                    const result = await sr.json();
-                    await supabase.from('messages').insert({
-                      conversation_id: conv.id, sender_name: robot.name, content: rd.response,
-                      message_type: 'text', external_id: result.message_id, status: 'sent'
-                    });
+
+                    if (sent && result?.message_id) {
+                      await supabase.from('messages').insert({
+                        conversation_id: conv.id, sender_name: robot.name, content: rd.response,
+                        message_type: 'text', external_id: result.message_id, status: 'sent'
+                      });
+                    }
                   }
                 }
               } catch (e) { console.error('[IG] Erro robô:', e); }

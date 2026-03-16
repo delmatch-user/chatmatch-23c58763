@@ -16,8 +16,14 @@ interface SendRequest {
   media_url?: string;
 }
 
-async function getAccessToken(pageId: string): Promise<string | null> {
-  // 1. Try from DB (OAuth flow)
+async function getAccessTokenCandidates(pageId: string): Promise<string[]> {
+  const tokens: string[] = [];
+
+  const envToken = (Deno.env.get('META_INSTAGRAM_ACCESS_TOKEN') || '').trim();
+  if (envToken) {
+    tokens.push(envToken);
+  }
+
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
   const { data: connection } = await supabase
     .from('whatsapp_connections')
@@ -26,12 +32,12 @@ async function getAccessToken(pageId: string): Promise<string | null> {
     .eq('waba_id', pageId)
     .maybeSingle();
 
-  if (connection?.access_token) {
-    return connection.access_token;
+  const dbToken = (connection?.access_token || '').trim();
+  if (dbToken && !tokens.includes(dbToken)) {
+    tokens.push(dbToken);
   }
 
-  // 2. Fallback to env secret
-  return Deno.env.get('META_INSTAGRAM_ACCESS_TOKEN') || null;
+  return tokens;
 }
 
 async function generateAppSecretProof(accessToken: string, appSecret: string): Promise<string> {
@@ -49,6 +55,13 @@ async function generateAppSecretProof(accessToken: string, appSecret: string): P
     .join('');
 }
 
+function getInstagramAppSecretCandidates(): string[] {
+  const instagramSecret = (Deno.env.get('META_INSTAGRAM_APP_SECRET') || '').trim();
+  const whatsappSecret = (Deno.env.get('META_WHATSAPP_APP_SECRET') || '').trim();
+
+  return Array.from(new Set([instagramSecret, whatsappSecret].filter(Boolean)));
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -64,9 +77,9 @@ Deno.serve(async (req) => {
 
     console.log('[Instagram Send] Enviando mensagem:', { page_id, recipient_id, type });
 
-    const rawAccessToken = await getAccessToken(page_id);
+    const tokenCandidates = await getAccessTokenCandidates(page_id);
 
-    if (!rawAccessToken) {
+    if (tokenCandidates.length === 0) {
       console.error('[Instagram Send] Access token não encontrado');
       return new Response(
         JSON.stringify({ success: false, error: 'Access token não configurado' }),
@@ -74,7 +87,10 @@ Deno.serve(async (req) => {
       );
     }
 
-    const accessToken = rawAccessToken.trim();
+    const appSecrets = getInstagramAppSecretCandidates();
+    const attempts = appSecrets.length > 0
+      ? tokenCandidates.flatMap((token) => appSecrets.map((secret) => ({ token, secret })))
+      : tokenCandidates.map((token) => ({ token, secret: '' }));
 
     // Build message payload
     let messagePayload: any;
@@ -98,43 +114,72 @@ Deno.serve(async (req) => {
       };
     }
 
-    // Generate appsecret_proof
-    const appSecret = (Deno.env.get('META_INSTAGRAM_APP_SECRET') || Deno.env.get('META_WHATSAPP_APP_SECRET') || '').trim();
-    let url = `https://graph.facebook.com/v25.0/${page_id}/messages`;
-    if (appSecret) {
-      const proof = await generateAppSecretProof(accessToken, appSecret);
-      console.log('[Instagram Send] appsecret_proof gerado, tamanho:', proof.length, 'token prefix:', accessToken.substring(0, 10), 'secret prefix:', appSecret.substring(0, 4));
-      url += `?appsecret_proof=${proof}`;
+    let successResult: any = null;
+    let lastStatus = 400;
+    let lastError = 'Erro ao enviar mensagem';
+    let expiredTokenError = '';
+
+    for (const attempt of attempts) {
+      let url = `https://graph.facebook.com/v25.0/${page_id}/messages`;
+      if (attempt.secret) {
+        const proof = await generateAppSecretProof(attempt.token, attempt.secret);
+        url += `?appsecret_proof=${proof}`;
+      }
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${attempt.token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(messagePayload)
+      });
+
+      const result = await response.json();
+      console.log('[Instagram Send] Resposta da API:', result);
+
+      if (response.ok) {
+        successResult = result;
+        break;
+      }
+
+      lastStatus = response.status;
+      lastError = result.error?.message || 'Erro ao enviar mensagem';
+      const isProofError = String(lastError).includes('appsecret_proof');
+      const isExpiredToken = String(lastError).includes('Session has expired') || result?.error?.code === 190;
+      if (isExpiredToken && !expiredTokenError) {
+        expiredTokenError = String(lastError);
+      }
+      console.warn('[Instagram Send] Tentativa falhou:', {
+        status: response.status,
+        isProofError,
+        isExpiredToken,
+        tokenPrefix: attempt.token.substring(0, 10),
+        secretPrefix: attempt.secret ? attempt.secret.substring(0, 4) : 'none'
+      });
+
+      if (!isProofError && !isExpiredToken) {
+        break;
+      }
     }
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(messagePayload)
-    });
-
-    const result = await response.json();
-    console.log('[Instagram Send] Resposta da API:', result);
-
-    if (!response.ok) {
-      console.error('[Instagram Send] Erro da API Meta:', result);
+    if (!successResult) {
+      if (expiredTokenError) {
+        lastStatus = 401;
+        lastError = expiredTokenError;
+      }
+      console.error('[Instagram Send] Erro da API Meta:', lastError);
       return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: result.error?.message || 'Erro ao enviar mensagem'
-        }),
-        { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: false, error: lastError }),
+        { status: lastStatus, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     return new Response(
       JSON.stringify({ 
         success: true, 
-        messageId: result.message_id,
-        recipientId: result.recipient_id
+        messageId: successResult.message_id,
+        recipientId: successResult.recipient_id
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
