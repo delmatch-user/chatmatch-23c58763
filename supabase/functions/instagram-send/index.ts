@@ -16,10 +16,12 @@ interface SendRequest {
   media_url?: string;
 }
 
-async function getAccessToken(pageId: string): Promise<string | null> {
+async function getAccessTokenCandidates(pageId: string): Promise<string[]> {
+  const tokens: string[] = [];
+
   const envToken = (Deno.env.get('META_INSTAGRAM_ACCESS_TOKEN') || '').trim();
   if (envToken) {
-    return envToken;
+    tokens.push(envToken);
   }
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
@@ -30,7 +32,12 @@ async function getAccessToken(pageId: string): Promise<string | null> {
     .eq('waba_id', pageId)
     .maybeSingle();
 
-  return (connection?.access_token || '').trim() || null;
+  const dbToken = (connection?.access_token || '').trim();
+  if (dbToken && !tokens.includes(dbToken)) {
+    tokens.push(dbToken);
+  }
+
+  return tokens;
 }
 
 async function generateAppSecretProof(accessToken: string, appSecret: string): Promise<string> {

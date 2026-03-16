@@ -15,36 +15,40 @@ async function generateAppSecretProof(token: string, secret: string): Promise<st
   return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-function getInstagramAppSecret(): string {
+function getInstagramAppSecrets(): string[] {
   const instagramSecret = (Deno.env.get('META_INSTAGRAM_APP_SECRET') || '').trim();
-  if (/^[a-fA-F0-9]{32}$/.test(instagramSecret)) {
-    return instagramSecret;
-  }
-
   const whatsappSecret = (Deno.env.get('META_WHATSAPP_APP_SECRET') || '').trim();
-  if (/^[a-fA-F0-9]{32}$/.test(whatsappSecret)) {
-    return whatsappSecret;
-  }
-
-  return '';
+  return Array.from(new Set([instagramSecret, whatsappSecret].filter(Boolean)));
 }
 
 async function fetchIGProfile(senderId: string, accessToken: string): Promise<{ name?: string; profilePic?: string }> {
   try {
     const token = accessToken.trim();
-    let url = `https://graph.facebook.com/v25.0/${senderId}?fields=name,profile_pic&access_token=${token}`;
-    const appSecret = getInstagramAppSecret();
-    if (appSecret) {
-      const proof = await generateAppSecretProof(token, appSecret);
-      url += `&appsecret_proof=${proof}`;
+    const secrets = getInstagramAppSecrets();
+    const attempts = secrets.length > 0 ? secrets : [''];
+
+    for (const secret of attempts) {
+      let url = `https://graph.facebook.com/v25.0/${senderId}?fields=name,profile_pic&access_token=${token}`;
+      if (secret) {
+        const proof = await generateAppSecretProof(token, secret);
+        url += `&appsecret_proof=${proof}`;
+      }
+
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        return { name: data.name || undefined, profilePic: data.profile_pic || undefined };
+      }
+
+      const errorText = await res.text();
+      const isProofError = errorText.includes('appsecret_proof');
+      console.warn('[IG] Erro ao buscar perfil:', errorText);
+      if (!isProofError) {
+        break;
+      }
     }
-    const res = await fetch(url);
-    if (!res.ok) {
-      console.warn('[IG] Erro ao buscar perfil:', await res.text());
-      return {};
-    }
-    const data = await res.json();
-    return { name: data.name || undefined, profilePic: data.profile_pic || undefined };
+
+    return {};
   } catch (e) {
     console.warn('[IG] Erro fetch perfil:', e);
     return {};
