@@ -69,11 +69,13 @@ export default function AdminIntegrations() {
   const [instagramCredentials, setInstagramCredentials] = useState({
     pageId: '',
     instagramAccountId: '',
+    accessToken: '',
     verifyToken: '',
     departmentId: '',
     name: '',
     pageName: ''
   });
+  const [showIgToken, setShowIgToken] = useState(false);
   const [instagramConnectionId, setInstagramConnectionId] = useState<string | null>(null);
   const [facebookAppId, setFacebookAppId] = useState('');
   const [fbSdkLoaded, setFbSdkLoaded] = useState(false);
@@ -123,14 +125,17 @@ export default function AdminIntegrations() {
         const igConn = connections.find(c => c.connection_type === 'instagram');
         if (igConn) {
           setInstagramConnectionId(igConn.id);
-          setInstagramCredentials({
+          setInstagramCredentials(prev => ({
+            ...prev,
             pageId: igConn.waba_id,
             instagramAccountId: igConn.phone_number_id,
             verifyToken: igConn.verify_token || '',
             departmentId: igConn.department_id || '',
             name: igConn.name || '',
-            pageName: ''
-          });
+            pageName: '',
+            // Não sobrescrever accessToken digitado manualmente
+            ...(prev.accessToken ? {} : { accessToken: '' })
+          }));
           if (igConn.status === 'active' || igConn.status === 'connected') {
             setStatus(prev => ({ ...prev, instagram: 'connected' }));
           }
@@ -439,7 +444,7 @@ export default function AdminIntegrations() {
     setIsSavingInstagram(true);
     
     try {
-      const connectionData = {
+      const connectionData: Record<string, any> = {
         connection_type: 'instagram',
         phone_number_id: instagramCredentials.instagramAccountId,
         waba_id: instagramCredentials.pageId,
@@ -448,6 +453,11 @@ export default function AdminIntegrations() {
         name: instagramCredentials.name || 'Instagram Direct',
         status: 'active'
       };
+      
+      // Só incluir access_token se preenchido, para não sobrescrever o existente
+      if (instagramCredentials.accessToken.trim()) {
+        connectionData.access_token = instagramCredentials.accessToken.trim();
+      }
       
       if (instagramConnectionId) {
         const { error } = await supabase
@@ -458,7 +468,7 @@ export default function AdminIntegrations() {
       } else {
         const { data, error } = await supabase
           .from('whatsapp_connections')
-          .insert(connectionData)
+          .insert(connectionData as any)
           .select()
           .single();
         if (error) throw error;
@@ -1193,6 +1203,31 @@ export default function AdminIntegrations() {
                           ))}
                         </div>
                       )}
+
+                      {/* Access Token */}
+                      <div className="space-y-2">
+                        <Label htmlFor="igAccessToken">Access Token (Page Token)</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            id="igAccessToken"
+                            type={showIgToken ? 'text' : 'password'}
+                            placeholder="Cole o Page Access Token aqui para atualizar"
+                            value={instagramCredentials.accessToken}
+                            onChange={(e) => setInstagramCredentials(prev => ({ ...prev, accessToken: e.target.value }))}
+                          />
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            type="button"
+                            onClick={() => setShowIgToken(!showIgToken)}
+                          >
+                            {showIgToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </Button>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Deixe em branco para manter o token atual. Preencha apenas para atualizar.
+                        </p>
+                      </div>
 
                       {/* Manual config */}
                       <div className="grid grid-cols-2 gap-4">
