@@ -223,7 +223,7 @@ Deno.serve(async (req) => {
           console.log('[IG Webhook] Mensagem de:', senderId);
 
           // ===== Fetch IG profile for name + avatar =====
-          const profile = await fetchIGProfile(senderId, accessToken);
+          const profile = await fetchIGProfile(senderId, accessTokens);
 
           // ===== Process message content =====
           let messageType = 'text';
