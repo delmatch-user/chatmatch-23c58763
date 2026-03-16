@@ -125,14 +125,17 @@ export default function AdminIntegrations() {
         const igConn = connections.find(c => c.connection_type === 'instagram');
         if (igConn) {
           setInstagramConnectionId(igConn.id);
-          setInstagramCredentials({
+          setInstagramCredentials(prev => ({
+            ...prev,
             pageId: igConn.waba_id,
             instagramAccountId: igConn.phone_number_id,
             verifyToken: igConn.verify_token || '',
             departmentId: igConn.department_id || '',
             name: igConn.name || '',
-            pageName: ''
-          });
+            pageName: '',
+            // Não sobrescrever accessToken digitado manualmente
+            ...(prev.accessToken ? {} : { accessToken: '' })
+          }));
           if (igConn.status === 'active' || igConn.status === 'connected') {
             setStatus(prev => ({ ...prev, instagram: 'connected' }));
           }
