@@ -64,15 +64,17 @@ Deno.serve(async (req) => {
 
     console.log('[Instagram Send] Enviando mensagem:', { page_id, recipient_id, type });
 
-    const accessToken = await getAccessToken(page_id);
+    const rawAccessToken = await getAccessToken(page_id);
 
-    if (!accessToken) {
+    if (!rawAccessToken) {
       console.error('[Instagram Send] Access token não encontrado');
       return new Response(
         JSON.stringify({ success: false, error: 'Access token não configurado' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    const accessToken = rawAccessToken.trim();
 
     // Build message payload
     let messagePayload: any;
