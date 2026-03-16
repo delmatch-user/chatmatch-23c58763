@@ -1,1 +1,67 @@
 project_id = "jfbixwfioehqkussmhov"
+
+[functions.whatsapp-webhook]
+verify_jwt = false
+
+[functions.baileys-proxy]
+verify_jwt = false
+
+[functions.robot-chat]
+verify_jwt = false
+
+[functions.conversation-summary]
+verify_jwt = false
+
+[functions.meta-whatsapp-webhook]
+verify_jwt = false
+
+[functions.meta-whatsapp-send]
+verify_jwt = false
+
+[functions.transcribe-audio]
+verify_jwt = false
+
+[functions.instagram-webhook]
+verify_jwt = false
+
+[functions.instagram-send]
+verify_jwt = false
+
+[functions.instagram-oauth]
+verify_jwt = false
+
+[functions.webhook-machine]
+verify_jwt = false
+
+[functions.machine-send]
+verify_jwt = false
+
+[functions.sync-robot-schedules]
+verify_jwt = false
+
+[functions.sdr-robot-chat]
+verify_jwt = false
+
+[functions.sdr-google-calendar-oauth]
+verify_jwt = false
+
+[functions.sdr-meeting-create-with-meet]
+verify_jwt = false
+
+[functions.sdr-meeting-end]
+verify_jwt = false
+
+[functions.sdr-meeting-import-transcript]
+verify_jwt = false
+
+[functions.sdr-meeting-process-report]
+verify_jwt = false
+
+[functions.sdr-meeting-check-transcripts]
+verify_jwt = false
+
+[functions.sdr-remarketing]
+verify_jwt = false
+
+[functions.ai-report-analysis]
+verify_jwt = false

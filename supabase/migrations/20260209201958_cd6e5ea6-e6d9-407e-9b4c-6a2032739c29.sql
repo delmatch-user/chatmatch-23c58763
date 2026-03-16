@@ -1,0 +1,1 @@
+ALTER TABLE webhook_config ADD COLUMN department_id uuid REFERENCES departments(id) ON DELETE SET NULL;

@@ -1,0 +1,1356 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+interface RobotConfig {
+  name: string;
+  intelligence: string;
+  tone: string;
+  maxTokens: number;
+  instructions: string;
+  qaPairs: { question: string; answer: string }[];
+  finalizationMessage: string;
+  tools: {
+    transferToAgents: boolean;
+    transferToAgentsMode: string;
+    transferToDepartments: boolean;
+    transferToDepartmentsMode: string;
+    askHumanAgents: boolean;
+    followUp: boolean;
+    groupMessages: boolean;
+    groupMessagesTime: number;
+    webSearch: boolean;
+    closeConversations: boolean;
+    scheduleMessages: boolean;
+    readImages: boolean;
+    sendAgentName: boolean;
+    manageLabels: boolean;
+    editContact: boolean;
+    typingIndicator: boolean;
+    splitByLineBreak: boolean;
+  };
+}
+
+function getModelFromIntelligence(intelligence: string): string {
+  switch (intelligence) {
+    case 'novato':
+      return 'gemini-2.5-flash-lite';
+    case 'flash':
+      return 'gemini-2.5-flash';
+    case 'pro':
+      return 'gemini-2.5-pro';
+    case 'maestro':
+      return 'gpt-4o';
+    default:
+      return 'gemini-2.5-flash-lite';
+  }
+}
+
+function isGeminiModel(intelligence: string): boolean {
+  return ['novato', 'flash', 'pro'].includes(intelligence);
+}
+
+function getApiConfig(intelligence: string): { apiUrl: string; apiKey: string; providerName: string } {
+  if (isGeminiModel(intelligence)) {
+    const apiKey = Deno.env.get("GOOGLE_GEMINI_API_KEY") || '';
+    return {
+      apiUrl: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+      apiKey,
+      providerName: 'Google Gemini'
+    };
+  } else {
+    const apiKey = Deno.env.get("OPENAI_API_KEY") || '';
+    return {
+      apiUrl: "https://api.openai.com/v1/chat/completions",
+      apiKey,
+      providerName: 'OpenAI'
+    };
+  }
+}
+
+function getTemperatureFromTone(tone: string): number {
+  switch (tone) {
+    case 'muito_criativo':
+      return 1.0;
+    case 'criativo':
+      return 0.8;
+    case 'equilibrado':
+      return 0.5;
+    case 'preciso':
+      return 0.3;
+    case 'muito_preciso':
+      return 0.1;
+    default:
+      return 0.5;
+  }
+}
+
+function buildSystemPrompt(config: RobotConfig, availableDepartments?: { id: string; name: string }[], referenceLinks?: { title: string; url: string; content?: string }[]): string {
+  let prompt = `Você é ${config.name}, um assistente virtual inteligente.\n\n`;
+  
+  if (config.instructions) {
+    prompt += `## Instruções do Agente\n${config.instructions}\n\n`;
+  }
+  
+  if (config.qaPairs && config.qaPairs.length > 0) {
+    prompt += `## Base de Conhecimento - Perguntas e Respostas\nUse estas informações para responder perguntas relacionadas:\n\n`;
+    config.qaPairs.forEach((qa, index) => {
+      if (qa.question && qa.answer) {
+        prompt += `**Pergunta ${index + 1}:** ${qa.question}\n**Resposta:** ${qa.answer}\n\n`;
+      }
+    });
+  }
+
+  // Reference Links - Base de conhecimento adicional
+  if (referenceLinks && referenceLinks.length > 0) {
+    prompt += `## Links de Referência\nUse estes links como fonte adicional de informação ao responder perguntas:\n\n`;
+    referenceLinks.forEach((link, index) => {
+      if (link.title && link.url) {
+        prompt += `- **${link.title}**: ${link.url}\n`;
+        if (link.content) {
+          prompt += `  Conteúdo: ${link.content}\n`;
+        }
+      }
+    });
+    prompt += `\n`;
+  }
+  
+  prompt += `## Ferramentas Disponíveis\n`;
+  prompt += `Você tem acesso a ferramentas (function calling) para executar ações:\n`;
+  
+  if (config.tools.transferToAgents) {
+    prompt += `- **transfer_to_human**: Use quando o cliente pedir para falar com um atendente humano ou quando não conseguir resolver a solicitação.\n`;
+  }
+  if (config.tools.transferToDepartments) {
+    prompt += `- **transfer_to_department**: Use quando o assunto for de outro departamento ou quando o cliente solicitar.\n`;
+    if (availableDepartments && availableDepartments.length > 0) {
+      prompt += `  Departamentos disponíveis: ${availableDepartments.map(d => d.name).join(', ')}\n`;
+    }
+  }
+  if (config.tools.manageLabels) {
+    prompt += `- **manage_labels**: Use para adicionar ou remover etiquetas/tags na conversa quando apropriado.\n`;
+  }
+  if (config.tools.editContact) {
+    prompt += `- **edit_contact**: Use para atualizar informações do contato (nome, email, notas) quando o cliente fornecer esses dados.\n`;
+  }
+  
+  prompt += `\n## Diretrizes de Comportamento\n`;
+  prompt += `- Seja cordial e profissional em todas as interações.\n`;
+  prompt += `- Responda de forma clara e objetiva.\n`;
+  prompt += `- Mantenha respostas concisas e diretas.\n`;
+  prompt += `- Use as ferramentas disponíveis para executar ações quando necessário - não apenas sugira, execute!\n`;
+  
+  if (config.tools.sendAgentName) {
+    prompt += `- Sempre inicie suas mensagens identificando-se como ${config.name}. Nunca mencione que você é uma IA, assistente virtual ou robô.\n`;
+  }
+
+  if (config.tools.readImages) {
+    prompt += `- Quando receber uma imagem, analise-a e responda com base no conteúdo visual.\n`;
+  }
+  
+  if (config.finalizationMessage) {
+    prompt += `\n## Mensagem de Finalização\nQuando encerrar uma conversa, use esta mensagem: "${config.finalizationMessage}"\n`;
+  }
+  
+  return prompt;
+}
+
+// Definir ferramentas para OpenAI Function Calling
+function buildOpenAITools(config: RobotConfig, availableDepartments?: { id: string; name: string }[]): any[] {
+  const tools: any[] = [];
+  
+  if (config.tools.transferToDepartments && availableDepartments && availableDepartments.length > 0) {
+    tools.push({
+      type: "function",
+      function: {
+        name: "transfer_to_department",
+        description: "Transferir a conversa para outro departamento quando o assunto não for da sua área ou quando o cliente solicitar",
+        parameters: {
+          type: "object",
+          properties: {
+            department_name: {
+              type: "string",
+              description: `Nome do departamento de destino. Opções: ${availableDepartments.map(d => d.name).join(', ')}`,
+              enum: availableDepartments.map(d => d.name)
+            },
+            reason: {
+              type: "string",
+              description: "Motivo da transferência"
+            },
+            message_to_client: {
+              type: "string",
+              description: "Mensagem para informar o cliente sobre a transferência"
+            }
+          },
+          required: ["department_name", "reason", "message_to_client"]
+        }
+      }
+    });
+  }
+  
+  if (config.tools.transferToAgents) {
+    tools.push({
+      type: "function",
+      function: {
+        name: "transfer_to_human",
+        description: "Transferir para um atendente humano quando o cliente solicitar ou quando a questão for muito complexa para resolver",
+        parameters: {
+          type: "object",
+          properties: {
+            reason: {
+              type: "string",
+              description: "Motivo da transferência para atendente humano"
+            },
+            message_to_client: {
+              type: "string",
+              description: "Mensagem para informar o cliente que será transferido"
+            }
+          },
+          required: ["reason", "message_to_client"]
+        }
+      }
+    });
+  }
+
+  if (config.tools.manageLabels) {
+    tools.push({
+      type: "function",
+      function: {
+        name: "manage_labels",
+        description: "Adicionar ou remover etiquetas/tags na conversa atual para categorização",
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              description: "Ação a realizar: 'add' para adicionar ou 'remove' para remover",
+              enum: ["add", "remove"]
+            },
+            label: {
+              type: "string",
+              description: "Nome da etiqueta/tag"
+            }
+          },
+          required: ["action", "label"]
+        }
+      }
+    });
+  }
+
+  if (config.tools.editContact) {
+    tools.push({
+      type: "function",
+      function: {
+        name: "edit_contact",
+        description: "Atualizar informações do contato quando o cliente fornecer dados como nome, email ou observações",
+        parameters: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              description: "Novo nome do contato (opcional)"
+            },
+            email: {
+              type: "string",
+              description: "Email do contato (opcional)"
+            },
+            notes: {
+              type: "string",
+              description: "Observações adicionais sobre o contato (opcional)"
+            }
+          }
+        }
+      }
+    });
+  }
+
+  return tools;
+}
+
+// Enviar mensagem via Machine
+async function sendViaMachine(
+  conversationId: string,
+  message: string,
+  senderName: string
+): Promise<boolean> {
+  try {
+    console.log('[Robot-Chat] Enviando via Machine para conversa:', conversationId);
+    
+    const response = await fetch(`${supabaseUrl}/functions/v1/machine-send`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseServiceKey}`
+      },
+      body: JSON.stringify({
+        conversationId,
+        message,
+        senderName
+      })
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[Robot-Chat] Erro Machine send:', errorText);
+      return false;
+    }
+    
+    console.log('[Robot-Chat] Mensagem enviada via Machine');
+    return true;
+  } catch (error) {
+    console.error('[Robot-Chat] Erro ao enviar via Machine:', error);
+    return false;
+  }
+}
+
+// Enviar mensagem via Meta API
+async function sendViaMetaApi(
+  phoneNumberId: string,
+  toPhone: string,
+  message: string
+): Promise<boolean> {
+  try {
+    console.log('[Robot-Chat] Enviando via Meta API para:', toPhone);
+    
+    const response = await fetch(`${supabaseUrl}/functions/v1/meta-whatsapp-send`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseServiceKey}`
+      },
+      body: JSON.stringify({
+        phone_number_id: phoneNumberId,
+        to: toPhone,
+        message: message,
+        type: 'text'
+      })
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[Robot-Chat] Erro Meta API:', errorText);
+      return false;
+    }
+    
+    console.log('[Robot-Chat] Mensagem enviada via Meta API');
+    return true;
+  } catch (error) {
+    console.error('[Robot-Chat] Erro ao enviar via Meta API:', error);
+    return false;
+  }
+}
+
+// Enviar mensagem via Baileys
+async function sendViaBaileys(
+  contactPhone: string,
+  contactJid: string | undefined,
+  message: string,
+  instanceId?: string
+): Promise<boolean> {
+  try {
+    // Priorizar contactJid como destino quando é LID, pois o servidor Baileys
+    // só lê o campo 'to' e o buildJidCandidates resolve melhor LIDs com @lid
+    const destination = (contactJid && contactJid.includes('@lid')) ? contactJid : contactPhone;
+    console.log('[Robot-Chat] Enviando via Baileys para:', destination, '(phone:', contactPhone, 'jid:', contactJid, ') instanceId:', instanceId || 'default');
+    
+    const response = await fetch(`${supabaseUrl}/functions/v1/baileys-proxy`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseServiceKey}`
+      },
+      body: JSON.stringify({
+        action: 'send',
+        to: destination,
+        jid: contactJid,
+        message: message,
+        type: 'text',
+        instanceId: instanceId
+      })
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[Robot-Chat] Erro Baileys:', errorText);
+      return false;
+    }
+    
+    console.log('[Robot-Chat] Mensagem enviada via Baileys');
+    return true;
+  } catch (error) {
+    console.error('[Robot-Chat] Erro ao enviar via Baileys:', error);
+    return false;
+  }
+}
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const body = await req.json();
+    
+    // Modo automático: chamado pelo webhook com robotId e conversationId
+    if (body.robotId && body.conversationId) {
+      return await handleAutomaticMode(body);
+    }
+    
+    // Modo streaming: chamado pelo frontend para teste
+    return await handleStreamingMode(body, req);
+  } catch (error) {
+    console.error("robot-chat error:", error);
+    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});
+
+// Modo automático - processamento de mensagens do webhook
+async function handleAutomaticMode(body: {
+  robotId: string;
+  conversationId: string;
+  message: string;
+  contactPhone?: string;
+  contactJid?: string;
+  connectionType?: 'baileys' | 'meta_api';
+  phoneNumberId?: string;
+  isTransfer?: boolean;
+}) {
+  const { robotId, conversationId, message, isTransfer } = body;
+  let { contactPhone, contactJid, connectionType, phoneNumberId } = body;
+  
+  console.log(`[Robot-Chat Auto] Robot: ${robotId}, Conversation: ${conversationId}, ContactPhone: ${contactPhone || 'N/A'}, ContactJid: ${contactJid || 'N/A'}, ConnectionType: ${connectionType || 'auto-detect'}`);
+  
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  
+  // Buscar configuração do robô
+  const { data: robot, error: robotError } = await supabase
+    .from('robots')
+    .select('*')
+    .eq('id', robotId)
+    .single();
+  
+  if (robotError || !robot) {
+    console.error('[Robot-Chat Auto] Robô não encontrado:', robotError);
+    return new Response(JSON.stringify({ error: 'Robô não encontrado' }), {
+      status: 404,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  // Verificar se o robô está dentro do horário configurado (pular se ativado manualmente ou transferência manual)
+  const isManuallyActivated = robot.manually_activated === true;
+  if (!isManuallyActivated && !isTransfer) {
+    const { data: withinSchedule } = await supabase.rpc('is_robot_within_schedule', { robot_uuid: robotId });
+    if (withinSchedule === false) {
+      console.log(`[Robot-Chat Auto] Robô ${robot.name} fora do horário. Removendo atribuição.`);
+      // Remover robô da conversa e colocar na fila
+      await supabase.from('conversations').update({
+        assigned_to_robot: null,
+        status: 'em_fila'
+      }).eq('id', conversationId);
+      return new Response(JSON.stringify({ skipped: true, reason: 'robot_outside_schedule' }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+  } else {
+    console.log(`[Robot-Chat Auto] Robô ${robot.name} ${isTransfer ? 'transferência manual' : 'ativado manualmente'} — ignorando verificação de horário.`);
+  }
+  
+  // Buscar conversa para detectar canal, departamento e lock
+  const { data: convData } = await supabase
+    .from('conversations')
+    .select('department_id, channel, robot_lock_until, sdr_deal_id, assigned_to, robot_transferred')
+    .eq('id', conversationId)
+    .single();
+
+  // === ROBOT_TRANSFERRED GUARD: Não processar se já foi transferido por robô (pular se transferência manual) ===
+  if (convData?.robot_transferred === true && !isTransfer) {
+    console.log(`[Robot-Chat Auto] Conversa ${conversationId} já foi transferida por robô. Ignorando.`);
+    return new Response(JSON.stringify({ skipped: true, reason: 'robot_already_transferred' }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  // === HUMAN AGENT GUARD: Não responder se já tem atendente humano ===
+  if (convData?.assigned_to) {
+    console.log(`[Robot-Chat Auto] Conversa ${conversationId} já tem atendente humano (${convData.assigned_to}). Ignorando.`);
+    return new Response(JSON.stringify({ skipped: true, reason: 'human_agent_assigned' }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  // === SDR GUARD: Conversas SDR são tratadas exclusivamente pelo sdr-robot-chat ===
+  if (convData?.sdr_deal_id) {
+    console.log(`[Robot-Chat] Conversa ${conversationId} é SDR (deal: ${convData.sdr_deal_id}). Ignorando — sdr-robot-chat é responsável.`);
+    return new Response(JSON.stringify({ skipped: true, reason: 'sdr_deal_conversation' }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  // === CONCURRENCY LOCK: Evitar respostas duplicadas ===
+  if (convData?.robot_lock_until && new Date(convData.robot_lock_until) > new Date()) {
+    console.log(`[Robot-Chat Auto] Lock ativo até ${convData.robot_lock_until}. Ignorando mensagem duplicada.`);
+    return new Response(JSON.stringify({ skipped: true, reason: 'already_processing' }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  // === LOCK IMEDIATO: Setar lock de 3s para evitar race condition ===
+  const immediateLockUntil = new Date(Date.now() + 120000).toISOString();
+  await supabase.from('conversations').update({ robot_lock_until: immediateLockUntil }).eq('id', conversationId);
+  console.log(`[Robot-Chat Auto] Lock imediato de 120s setado para evitar duplicação.`);
+  
+  // Delay de 3s para garantir que chamadas concorrentes vejam o lock
+  await new Promise(resolve => setTimeout(resolve, 3000));
+  
+  // Re-verificar se a conversa ainda está atribuída a este robô após o delay
+  const { data: convRecheck } = await supabase
+    .from('conversations')
+    .select('assigned_to_robot, assigned_to, status')
+    .eq('id', conversationId)
+    .single();
+  
+  if (!convRecheck || convRecheck.assigned_to_robot !== robotId || convRecheck.status === 'finalizada' || convRecheck.assigned_to) {
+    console.log(`[Robot-Chat Auto] Conversa mudou durante delay inicial. Abortando.`);
+    await supabase.from('conversations').update({ robot_lock_until: null }).eq('id', conversationId);
+    return new Response(JSON.stringify({ skipped: true, reason: 'conversation_changed_during_delay' }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  
+  // Detecção robusta do canal: verificar contact.notes como fallback
+  // Também resolver contactPhone se estiver vazio
+  let conversationChannel = convData?.channel || 'whatsapp';
+  {
+    // Buscar contato completo para fallback de canal e resolução de phone
+    const { data: convForContact } = await supabase.from('conversations').select('contact_id').eq('id', conversationId).single();
+    const contactIdForResolve = convForContact?.contact_id;
+    
+    if (contactIdForResolve) {
+      const { data: contactData } = await supabase
+        .from('contacts')
+        .select('channel, notes, phone')
+        .eq('id', contactIdForResolve)
+        .maybeSingle();
+      
+      if (contactData?.channel === 'machine' || contactData?.notes?.startsWith('machine:')) {
+        conversationChannel = 'machine';
+        console.log('[Robot-Chat Auto] Canal corrigido para machine via fallback do contato');
+      }
+      
+      // ====== RESOLVER contactPhone/contactJid QUANDO AUSENTES ======
+      if (!contactPhone && conversationChannel !== 'machine') {
+        // 1. Usar phone do contato
+        if (contactData?.phone) {
+          const phoneDigits = contactData.phone.replace(/\D/g, '');
+          if (phoneDigits.length >= 10 && phoneDigits.length <= 13) {
+            contactPhone = phoneDigits;
+            console.log(`[Robot-Chat Auto] contactPhone resolvido via contact.phone: ${contactPhone}`);
+          }
+        }
+        
+        // 2. Extrair do JID nas notes
+        if (!contactPhone && contactData?.notes) {
+          const jidMatch = contactData.notes.match(/jid:(\d+)@s\.whatsapp\.net/);
+          if (jidMatch) {
+            contactPhone = jidMatch[1];
+            console.log(`[Robot-Chat Auto] contactPhone resolvido via JID notes: ${contactPhone}`);
+          }
+        }
+        
+        // 3. Se é LID, tentar resolver via whatsapp_lid_map
+        if (!contactPhone && contactData?.notes) {
+          const lidMatch = contactData.notes.match(/jid:([^@\s]+@lid)/);
+          if (lidMatch) {
+            const lidJid = lidMatch[1];
+            if (!contactJid) contactJid = lidJid;
+            
+            const { data: lidMap } = await supabase
+              .from('whatsapp_lid_map')
+              .select('phone_digits')
+              .eq('lid_jid', lidJid)
+              .maybeSingle();
+            
+            if (lidMap) {
+              contactPhone = lidMap.phone_digits;
+              console.log(`[Robot-Chat Auto] contactPhone resolvido via LID map: ${lidJid} → ${contactPhone}`);
+            } else {
+              // Busca canônica
+              const lidBase = lidJid.split(':')[0];
+              const { data: lidMapBase } = await supabase
+                .from('whatsapp_lid_map')
+                .select('phone_digits')
+                .like('lid_jid', `${lidBase}:%`)
+                .limit(1);
+              
+              if (lidMapBase && lidMapBase.length > 0) {
+                contactPhone = lidMapBase[0].phone_digits;
+                console.log(`[Robot-Chat Auto] contactPhone resolvido via LID map canônico: ${lidBase} → ${contactPhone}`);
+              }
+            }
+          }
+        }
+        
+        // 4. Último fallback: usar o JID completo como destino direto (Baileys pode resolver LIDs)
+        if (!contactPhone && contactJid) {
+          // Manter o JID completo (com @lid ou @s.whatsapp.net) para que o Baileys interprete corretamente
+          contactPhone = contactJid;
+          console.log(`[Robot-Chat Auto] contactPhone fallback para JID completo: ${contactPhone}`);
+        }
+      }
+      
+      // Resolver contactJid se ausente
+      if (!contactJid && contactData?.notes) {
+        const jidMatch = contactData.notes.match(/jid:([^@\s]+@(?:s\.whatsapp\.net|lid))/);
+        if (jidMatch) {
+          contactJid = jidMatch[1];
+          console.log(`[Robot-Chat Auto] contactJid resolvido via notes: ${contactJid}`);
+        }
+      }
+    }
+  }
+  
+  // Se connectionType não foi fornecido e canal é whatsapp, detectar automaticamente
+  if (!connectionType && conversationChannel !== 'machine') {
+    console.log('[Robot-Chat Auto] Detectando tipo de conexão automaticamente...');
+    
+    if (convData?.department_id) {
+      // Primeiro tentar Meta API
+      const { data: metaConn } = await supabase
+        .from('whatsapp_connections')
+        .select('connection_type, phone_number_id')
+        .eq('department_id', convData.department_id)
+        .eq('connection_type', 'meta_api')
+        .eq('status', 'connected')
+        .maybeSingle();
+      
+      if (metaConn) {
+        connectionType = 'meta_api';
+        phoneNumberId = metaConn.phone_number_id;
+        console.log('[Robot-Chat Auto] Detectado Meta API para departamento');
+      } else {
+        // Tentar Baileys
+        const { data: baileysConn } = await supabase
+          .from('whatsapp_connections')
+          .select('connection_type, phone_number_id')
+          .eq('department_id', convData.department_id)
+          .eq('connection_type', 'baileys')
+          .eq('status', 'connected')
+          .maybeSingle();
+        
+        if (baileysConn) {
+          connectionType = 'baileys';
+          phoneNumberId = baileysConn.phone_number_id;
+          console.log('[Robot-Chat Auto] Detectado Baileys para departamento, instanceId:', phoneNumberId);
+        }
+      }
+    }
+    
+    // Fallback: tentar qualquer conexão ativa
+    if (!connectionType) {
+      const { data: anyConn } = await supabase
+        .from('whatsapp_connections')
+        .select('connection_type, phone_number_id')
+        .eq('status', 'connected')
+        .limit(1)
+        .maybeSingle();
+      
+      if (anyConn) {
+        connectionType = anyConn.connection_type as 'baileys' | 'meta_api';
+        phoneNumberId = anyConn.phone_number_id;
+        console.log(`[Robot-Chat Auto] Fallback para conexão: ${connectionType}`);
+      }
+    }
+  }
+  
+  // Buscar histórico de mensagens da conversa
+  const { data: messagesData } = await supabase
+    .from('messages')
+    .select('content, sender_id, sender_name, message_type, created_at')
+    .eq('conversation_id', conversationId)
+    .order('created_at', { ascending: true })
+    .limit(20); // Limitar histórico
+
+  // Buscar motivo da transferência (se houver)
+  const { data: lastTransfer } = await supabase
+    .from('transfer_logs')
+    .select('reason, from_user_name, created_at')
+    .eq('conversation_id', conversationId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  
+  // Converter mensagens para formato OpenAI
+  // Identificar robôs pelo sender_name contendo "[ROBOT]" ou "(IA)" - não pelo sender_id
+  const readImages = robot.tools?.readImages ?? true;
+  const conversationHistory = (messagesData || []).map(msg => {
+    const isRobotMessage = msg.sender_name?.includes('[ROBOT]') || msg.sender_name?.includes('(IA)');
+    const isAgentMessage = msg.sender_id !== null;
+    const role = (isRobotMessage || isAgentMessage) ? 'assistant' as const : 'user' as const;
+    
+    // Handle image messages - send as vision content if readImages enabled
+    if (readImages && msg.message_type === 'image' && msg.content) {
+      // Content may be a URL to the image
+      const imageUrl = msg.content.startsWith('http') ? msg.content : null;
+      if (imageUrl) {
+        return {
+          role,
+          content: [
+            { type: "image_url" as const, image_url: { url: imageUrl } },
+            { type: "text" as const, text: "O cliente enviou esta imagem. Analise e responda." }
+          ]
+        };
+      }
+    }
+    
+    if (msg.message_type === 'audio') {
+      return { role, content: msg.content ? `[Áudio transcrito]: ${msg.content}` : '[Áudio recebido - sem transcrição]' };
+    }
+    
+    return {
+      role,
+      content: msg.message_type === 'text' || msg.message_type === 'system' ? msg.content : `[Mídia recebida: ${msg.message_type}]`
+    };
+  });
+  
+  // Buscar departamentos disponíveis para transferência
+  const { data: allDepts } = await supabase
+    .from('departments')
+    .select('id, name')
+    .order('name');
+  
+  // Filtrar departamentos com base na config transferToDepartmentsMode
+  const transferDeptMode = robot.tools?.transferToDepartmentsMode ?? 'all';
+  const currentDeptId = convData?.department_id;
+  const availableDepts = (allDepts || []).filter(d => {
+    // Sempre excluir o departamento atual para evitar transferências circulares
+    if (d.id === currentDeptId) return false;
+    // Se modo 'select', limitar aos departamentos configurados no robô
+    if (transferDeptMode === 'select') {
+      const allowedIds = robot.tools?.transferToDepartmentIds || robot.departments || [];
+      return allowedIds.includes(d.id);
+    }
+    return true;
+  });
+  
+  // Construir config do robô
+  const robotConfig: RobotConfig = {
+    name: robot.name,
+    intelligence: robot.intelligence,
+    tone: robot.tone,
+    maxTokens: robot.max_tokens,
+    instructions: robot.instructions || '',
+    qaPairs: (robot.qa_pairs as any[]) || [],
+    finalizationMessage: robot.finalization_message || '',
+    tools: {
+      transferToAgents: robot.tools?.transferToAgents ?? true,
+      transferToAgentsMode: robot.tools?.transferToAgentsMode ?? 'all',
+      transferToDepartments: robot.tools?.transferToDepartments ?? true,
+      transferToDepartmentsMode: robot.tools?.transferToDepartmentsMode ?? 'all',
+      askHumanAgents: robot.tools?.askHumanAgents ?? true,
+      followUp: robot.tools?.followUp ?? false,
+      groupMessages: robot.tools?.groupMessages ?? true,
+      groupMessagesTime: robot.tools?.groupMessagesTime ?? 40,
+      webSearch: robot.tools?.webSearch ?? true,
+      closeConversations: false,
+      scheduleMessages: robot.tools?.scheduleMessages ?? true,
+      readImages: robot.tools?.readImages ?? true,
+      sendAgentName: robot.tools?.sendAgentName ?? true,
+      manageLabels: robot.tools?.manageLabels ?? false,
+      editContact: robot.tools?.editContact ?? false,
+      typingIndicator: robot.tools?.typingIndicator ?? true,
+      splitByLineBreak: robot.tools?.splitByLineBreak ?? false,
+    }
+  };
+
+  // === DETECTAR TRANSFERÊNCIA RECENTE ===
+  const { data: recentTransfer } = await supabase
+    .from('transfer_logs')
+    .select('id, created_at')
+    .eq('conversation_id', conversationId)
+    .eq('to_robot_id', robotId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  
+  const isFromTransfer = recentTransfer && (Date.now() - new Date(recentTransfer.created_at).getTime()) < 60000;
+  const transferDelay = 30; // 30s delay para transferências
+
+  // === SET LOCK + GROUP MESSAGES ===
+  const groupMessages = robotConfig.tools.groupMessages;
+  const groupMessagesTime = robotConfig.tools.groupMessagesTime || 40;
+  const effectiveDelay = isFromTransfer ? Math.max(transferDelay, groupMessages ? groupMessagesTime : 0) : (groupMessages ? groupMessagesTime : 30);
+  const lockDuration = effectiveDelay; // seconds
+  
+  const lockUntil = new Date(Date.now() + lockDuration * 1000).toISOString();
+  await supabase.from('conversations').update({ robot_lock_until: lockUntil }).eq('id', conversationId);
+  console.log(`[Robot-Chat Auto] Lock setado por ${lockDuration}s até ${lockUntil}${isFromTransfer ? ' (transferência detectada)' : ''}`);
+
+  // Aguardar delay (transferência ou agrupamento)
+  if (isFromTransfer || groupMessages) {
+    const waitTime = isFromTransfer ? transferDelay : groupMessagesTime;
+    console.log(`[Robot-Chat Auto] ${isFromTransfer ? 'Delay de transferência' : 'Agrupando mensagens'} por ${waitTime}s...`);
+    await new Promise(resolve => setTimeout(resolve, waitTime * 1000));
+    
+    // Verificar se a conversa ainda está atribuída a este robô (pode ter sido transferida)
+    const { data: convCheck } = await supabase
+      .from('conversations')
+      .select('assigned_to_robot, assigned_to, status')
+      .eq('id', conversationId)
+      .single();
+    
+    if (!convCheck || convCheck.assigned_to_robot !== robotId || convCheck.status === 'finalizada' || convCheck.assigned_to) {
+      console.log(`[Robot-Chat Auto] Conversa já não está com este robô. Abortando.`);
+      await supabase.from('conversations').update({ robot_lock_until: null }).eq('id', conversationId);
+      return new Response(JSON.stringify({ skipped: true, reason: 'conversation_changed' }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+  }
+
+  // Re-buscar mensagens após agrupamento (pega todas as mensagens acumuladas)
+  if (groupMessages) {
+    const { data: freshMessages } = await supabase
+      .from('messages')
+      .select('content, sender_id, sender_name, message_type, created_at')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: true })
+      .limit(30);
+    
+    // Rebuild conversation history with fresh data
+    const readImagesRefresh = robot.tools?.readImages ?? true;
+    conversationHistory.length = 0;
+    (freshMessages || []).forEach(msg => {
+      const isRobotMessage = msg.sender_name?.includes('[ROBOT]') || msg.sender_name?.includes('(IA)');
+      const isAgentMessage = msg.sender_id !== null;
+      const role = (isRobotMessage || isAgentMessage) ? 'assistant' as const : 'user' as const;
+      
+      if (readImagesRefresh && msg.message_type === 'image' && msg.content?.startsWith('http')) {
+        conversationHistory.push({ role, content: [{ type: "image_url" as const, image_url: { url: msg.content } }, { type: "text" as const, text: "O cliente enviou esta imagem. Analise e responda." }] });
+      } else if (msg.message_type === 'audio') {
+        conversationHistory.push({ role, content: msg.content ? `[Áudio transcrito]: ${msg.content}` : '[Áudio recebido - sem transcrição]' });
+      } else {
+        conversationHistory.push({ role, content: msg.message_type === 'text' || msg.message_type === 'system' ? msg.content : `[Mídia recebida: ${msg.message_type}]` });
+      }
+    });
+    console.log(`[Robot-Chat Auto] Histórico re-carregado com ${conversationHistory.length} mensagens após agrupamento`);
+  }
+
+  const { apiUrl, apiKey, providerName } = getApiConfig(robotConfig.intelligence);
+  
+  if (!apiKey) {
+    console.error(`[Robot-Chat Auto] API Key não configurada para ${providerName}`);
+    return new Response(JSON.stringify({ error: `API Key não configurada para ${providerName}. Configure na página de Integrações de IA.` }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  
+  const model = getModelFromIntelligence(robotConfig.intelligence);
+  const temperature = getTemperatureFromTone(robotConfig.tone);
+  const referenceLinks = (robot.reference_links as any[]) || [];
+  const systemPrompt = buildSystemPrompt(robotConfig, availableDepts || [], referenceLinks);
+  const openaiTools = buildOpenAITools(robotConfig, availableDepts || []);
+  
+  console.log(`[Robot-Chat Auto] Provider: ${providerName}, Model: ${model}, Temperature: ${temperature}, Tools: ${openaiTools.length}`);
+  
+  // Preparar body da requisição
+  const openaiBody: any = {
+    model,
+    messages: [
+      { role: "system", content: systemPrompt },
+      ...conversationHistory,
+      ...(lastTransfer?.reason ? [{
+        role: "system",
+        content: `## Contexto da Transferência — PRIORIDADE MÁXIMA\nO atendente "${lastTransfer.from_user_name}" transferiu esta conversa para você com a seguinte instrução:\n"${lastTransfer.reason}"\n\nIMPORTANTE: NÃO se apresente novamente nem cumprimente o cliente como se fosse um novo atendimento. Continue a conversa naturalmente, usando o motivo acima como guia para ajudar o cliente. Responda diretamente ao assunto da transferência.`
+      }] : []),
+    ],
+    max_tokens: robotConfig.maxTokens || 500,
+    temperature,
+  };
+  
+  // Adicionar tools se disponíveis
+  if (openaiTools.length > 0) {
+    openaiBody.tools = openaiTools;
+    openaiBody.tool_choice = "auto";
+  }
+  
+  // Chamar API com retry automático para 429
+  async function callAIWithRetry(): Promise<Response> {
+    // 1ª tentativa
+    console.log(`[Robot-Chat Auto] Chamando ${providerName}...`);
+    const resp1 = await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(openaiBody),
+    });
+
+    if (resp1.ok) return resp1;
+
+    if (resp1.status === 429) {
+      const errorText1 = await resp1.text();
+      console.warn(`[Robot-Chat Auto] 429 rate limit na 1ª tentativa (${providerName}):`, errorText1);
+
+      // Extrair retryDelay do JSON de erro (Gemini retorna isso)
+      let retryDelay = 25; // default 25s
+      try {
+        const errJson = JSON.parse(errorText1);
+        const retryInfo = errJson?.error?.details?.find((d: any) => d.retryDelay);
+        if (retryInfo?.retryDelay) {
+          const match = retryInfo.retryDelay.match(/(\d+)/);
+          if (match) retryDelay = parseInt(match[1]);
+        }
+      } catch {}
+      
+      console.log(`[Robot-Chat Auto] Aguardando ${retryDelay}s antes do retry...`);
+      await new Promise(r => setTimeout(r, retryDelay * 1000));
+
+      // 2ª tentativa
+      console.log(`[Robot-Chat Auto] 2ª tentativa com ${providerName}...`);
+      const resp2 = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(openaiBody),
+      });
+
+      if (resp2.ok) return resp2;
+
+      // Fallback para Lovable AI
+      const lovableKey = Deno.env.get("LOVABLE_API_KEY");
+      if (lovableKey) {
+        console.log(`[Robot-Chat Auto] 2ª tentativa falhou. Fallback para Lovable AI (google/gemini-2.5-flash)...`);
+        const fallbackBody = { ...openaiBody, model: "google/gemini-2.5-flash" };
+        const resp3 = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${lovableKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(fallbackBody),
+        });
+        if (resp3.ok) {
+          console.log(`[Robot-Chat Auto] Fallback Lovable AI bem-sucedido!`);
+          return resp3;
+        }
+        const errFallback = await resp3.text();
+        console.error(`[Robot-Chat Auto] Fallback Lovable AI também falhou:`, resp3.status, errFallback);
+      }
+
+      // Tudo falhou
+      const errorText2 = resp2.ok ? '' : await resp2.text().catch(() => '');
+      console.error(`[Robot-Chat Auto] Todas as tentativas falharam.`);
+      throw new Error(`AI API unavailable after retry + fallback`);
+    }
+
+    // Erro não-429
+    const errorText = await resp1.text();
+    console.error(`[Robot-Chat Auto] API error (${providerName}):`, resp1.status, errorText);
+    throw new Error(`${providerName} API error: ${resp1.status}`);
+  }
+
+  let openaiResponse: Response;
+  try {
+    openaiResponse = await callAIWithRetry();
+  } catch (retryErr) {
+    console.error(`[Robot-Chat Auto] Erro final após retries:`, retryErr);
+    // Limpar lock em caso de erro
+    await supabase.from('conversations').update({ robot_lock_until: null }).eq('id', conversationId);
+    return new Response(JSON.stringify({ error: `AI API error after retry` }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  
+  const openaiData = await openaiResponse.json();
+  const choice = openaiData.choices?.[0];
+  const toolCalls = choice?.message?.tool_calls;
+  let aiResponse = choice?.message?.content || '';
+  let actionTaken = false;
+  let skipSending = false; // Quando true, salva no DB mas não envia via WhatsApp
+  
+  // Processar tool calls (transferências, fechamento, etc.)
+  if (toolCalls && toolCalls.length > 0) {
+    console.log(`[Robot-Chat Auto] ${toolCalls.length} tool calls recebidas`);
+    
+    // Limpar content da IA quando há tool calls de transferência para evitar duplicação
+    const hasTransferTool = toolCalls.some((tc: any) => 
+      ['transfer_to_department', 'transfer_to_human'].includes(tc.function.name)
+    );
+    if (hasTransferTool) {
+      aiResponse = '';
+    }
+    
+    for (const toolCall of toolCalls) {
+      const functionName = toolCall.function.name;
+      const args = JSON.parse(toolCall.function.arguments);
+      
+      console.log(`[Robot-Chat Auto] Executando tool: ${functionName}`, args);
+      
+      if (functionName === 'transfer_to_department') {
+        // Buscar departamento pelo nome
+        const targetDept = availableDepts?.find(
+          d => d.name.toLowerCase() === args.department_name.toLowerCase()
+        );
+        
+        if (targetDept) {
+          // Verificar se o departamento destino tem um robô ativo
+          const { data: targetRobots } = await supabase
+            .from('robots')
+            .select('id, name, departments, channels')
+            .eq('status', 'active');
+          
+          // Filter by department AND channel
+          const targetRobot = targetRobots?.find(r => 
+            r.departments?.includes(targetDept.id) && 
+            r.id !== robotId &&
+            (r.channels || ['whatsapp','instagram','machine']).includes(conversationChannel)
+          ) || null;
+
+          if (targetRobot) {
+            console.log(`[Robot-Chat Auto] Departamento destino tem robô ativo: ${targetRobot.name}`);
+          }
+
+          // Atualizar conversa para o novo departamento (com robô se existir)
+          await supabase
+            .from('conversations')
+            .update({
+              department_id: targetDept.id,
+              status: targetRobot ? 'em_atendimento' : 'em_fila',
+              assigned_to_robot: targetRobot?.id || null,
+              assigned_to: null,
+              wait_time: 0,
+              robot_transferred: !targetRobot, // Flag para evitar re-captura (apenas quando não tem robô destino)
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', conversationId);
+          
+          // Mensagem de sistema no chat
+          await supabase.from('messages').insert({
+            conversation_id: conversationId,
+            content: `${robot.name} transferiu para ${targetDept.name}`,
+            sender_name: 'SYSTEM',
+            sender_id: null,
+            message_type: 'system',
+            status: 'sent',
+          });
+
+          // Registrar log de transferência
+          await supabase
+            .from('transfer_logs')
+            .insert({
+              conversation_id: conversationId,
+              from_user_name: `${robot.name} (IA)`,
+              to_department_id: targetDept.id,
+              to_department_name: targetDept.name,
+              to_robot_id: targetRobot?.id || null,
+              to_robot_name: targetRobot?.name || null,
+              reason: args.reason
+            });
+          
+        actionTaken = true;
+        
+        // Se o departamento destino tem um robô, chamar robot-chat para ele responder
+        // e NÃO enviar message_to_client via WhatsApp (o robô destino vai cumprimentar)
+        if (targetRobot) {
+          // Salvar message_to_client apenas no DB como registro, sem enviar ao cliente
+          aiResponse = args.message_to_client || '';
+          skipSending = true; // Não enviar via WhatsApp, o robô destino vai responder
+          
+          fetch(`${supabaseUrl}/functions/v1/robot-chat`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseServiceKey}`
+            },
+            body: JSON.stringify({
+              robotId: targetRobot.id,
+              conversationId: conversationId,
+              contactPhone,
+              contactJid,
+              connectionType,
+              phoneNumberId,
+            })
+          }).catch(err => console.error('[Robot-Chat Auto] Erro ao chamar robot-chat do dept destino:', err));
+        } else {
+          // Sem robô no destino: enviar message_to_client normalmente
+          aiResponse = args.message_to_client || `Estou transferindo você para o departamento de ${targetDept.name}. Um atendente entrará em contato em breve!`;
+        }
+        
+        console.log(`[Robot-Chat Auto] Transferido para departamento: ${targetDept.name}${targetRobot ? ` (robô: ${targetRobot.name})` : ''}`);
+        break; // Evitar duplicação de transferências
+        } else {
+          console.error(`[Robot-Chat Auto] Departamento não encontrado: ${args.department_name}`);
+        }
+      }
+      
+      else if (functionName === 'transfer_to_human') {
+        // Colocar na fila para atendente humano
+        await supabase
+          .from('conversations')
+          .update({
+            status: 'em_fila',
+            assigned_to_robot: null,
+            assigned_to: null,
+            wait_time: 0,
+            robot_transferred: true, // Flag para evitar re-captura por robô
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', conversationId);
+        
+        // Mensagem de sistema no chat
+        await supabase.from('messages').insert({
+          conversation_id: conversationId,
+          content: `${robot.name} transferiu para atendimento humano`,
+          sender_name: 'SYSTEM',
+          sender_id: null,
+          message_type: 'system',
+          status: 'sent',
+        });
+
+        // Registrar log de transferência
+        await supabase
+          .from('transfer_logs')
+          .insert({
+            conversation_id: conversationId,
+            from_robot_id: robotId,
+            reason: args.reason
+          });
+        
+        aiResponse = args.message_to_client || 'Vou transferir você para um atendente humano. Por favor, aguarde um momento!';
+        actionTaken = true;
+        
+        console.log(`[Robot-Chat Auto] Transferido para atendente humano`);
+        break; // Evitar duplicação de transferências
+      }
+      
+      else if (functionName === 'manage_labels') {
+        // Gerenciar etiquetas/tags na conversa
+        const { action, label } = args;
+        
+        // Buscar tags atuais da conversa
+        const { data: convTags } = await supabase
+          .from('conversations')
+          .select('tags')
+          .eq('id', conversationId)
+          .single();
+        
+        let currentTags: string[] = convTags?.tags || [];
+        
+        if (action === 'add' && !currentTags.includes(label)) {
+          currentTags.push(label);
+        } else if (action === 'remove') {
+          currentTags = currentTags.filter(t => t !== label);
+        }
+        
+        await supabase
+          .from('conversations')
+          .update({ tags: currentTags, updated_at: new Date().toISOString() })
+          .eq('id', conversationId);
+        
+        console.log(`[Robot-Chat Auto] Labels: ${action} "${label}" -> [${currentTags.join(', ')}]`);
+      }
+      
+      else if (functionName === 'edit_contact') {
+        // Editar informações do contato
+        const { data: convContact } = await supabase
+          .from('conversations')
+          .select('contact_id')
+          .eq('id', conversationId)
+          .single();
+        
+        if (convContact?.contact_id) {
+          const updateData: any = {};
+          if (args.name) { updateData.name = args.name; updateData.name_edited = true; }
+          if (args.email) updateData.email = args.email;
+          if (args.notes) updateData.notes = args.notes;
+          
+          if (Object.keys(updateData).length > 0) {
+            await supabase
+              .from('contacts')
+              .update(updateData)
+              .eq('id', convContact.contact_id);
+            
+            console.log(`[Robot-Chat Auto] Contato atualizado:`, Object.keys(updateData));
+          }
+        }
+      }
+      
+    }
+  }
+  
+  if (!aiResponse && !actionTaken) {
+    console.error('[Robot-Chat Auto] Resposta vazia da OpenAI');
+    return new Response(JSON.stringify({ error: 'Empty response from OpenAI' }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  
+  console.log(`[Robot-Chat Auto] Resposta gerada (${aiResponse.length} chars)`);
+
+  // splitByLineBreak: dividir resposta em múltiplas mensagens por quebra de linha
+  const shouldSplit = robotConfig.tools.splitByLineBreak && aiResponse.includes('\n');
+  const messageParts = shouldSplit 
+    ? aiResponse.split('\n').map(p => p.trim()).filter(p => p.length > 0)
+    : [aiResponse];
+
+  // Delay de 3s para garantir que a mensagem do cliente carregou na tela dos atendentes
+  await new Promise(resolve => setTimeout(resolve, 3000));
+
+  for (let i = 0; i < messageParts.length; i++) {
+    const part = messageParts[i];
+    
+    // Salvar cada parte no banco
+    const { error: msgError } = await supabase
+      .from('messages')
+      .insert({
+        conversation_id: conversationId,
+        content: part,
+        sender_name: `${robot.name} [ROBOT]`,
+        sender_id: null,
+        message_type: 'text',
+        status: 'sent'
+      });
+    
+    if (msgError) {
+      console.error('[Robot-Chat Auto] Erro ao salvar mensagem:', msgError);
+    }
+
+    // Enviar mensagem baseado no canal da conversa (pular se skipSending = true)
+    if (!skipSending) {
+      if (conversationChannel === 'machine') {
+        const senderName = robotConfig.tools.sendAgentName ? robot.name : 'Atendente';
+        await sendViaMachine(conversationId, part, senderName);
+      } else if (contactPhone) {
+        const formattedMessage = robotConfig.tools.sendAgentName 
+          ? `*${robot.name}*: ${part}`
+          : part;
+        
+        if (connectionType === 'meta_api' && phoneNumberId) {
+          await sendViaMetaApi(phoneNumberId, contactPhone, formattedMessage);
+        } else {
+          await sendViaBaileys(contactPhone, contactJid, formattedMessage, phoneNumberId);
+        }
+      }
+    }
+
+    // Delay entre partes para simular digitação
+    if (i < messageParts.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    }
+  }
+
+  // Atualizar last_message_preview e limpar lock
+  await supabase
+    .from('conversations')
+    .update({
+      last_message_preview: messageParts[messageParts.length - 1].substring(0, 80),
+      updated_at: new Date().toISOString(),
+      robot_lock_until: null
+    })
+    .eq('id', conversationId);
+  
+  // Incrementar contador de mensagens do robô
+  await supabase
+    .from('robots')
+    .update({
+      messages_count: (robot.messages_count || 0) + 1,
+      last_triggered: new Date().toISOString()
+    })
+    .eq('id', robotId);
+  
+  return new Response(JSON.stringify({ 
+    success: true, 
+    response: aiResponse 
+  }), {
+    status: 200,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+// Modo streaming - teste manual do frontend
+async function handleStreamingMode(body: { messages: any[]; robotConfig: RobotConfig }, req: Request) {
+  const { messages, robotConfig } = body;
+  
+  const { apiUrl, apiKey, providerName } = getApiConfig(robotConfig.intelligence);
+  if (!apiKey) throw new Error(`API Key não configurada para ${providerName}. Configure na página de Integrações de IA.`);
+
+  const model = getModelFromIntelligence(robotConfig.intelligence);
+  const temperature = getTemperatureFromTone(robotConfig.tone);
+  const systemPrompt = buildSystemPrompt(robotConfig);
+
+  console.log(`[Robot-Chat Stream] Provider: ${providerName}, Model: ${model}, Temperature: ${temperature}`);
+
+  const response = await fetch(apiUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...messages,
+      ],
+      max_tokens: robotConfig.maxTokens || 1000,
+      temperature,
+      stream: true,
+    }),
+  });
+
+  if (!response.ok) {
+    if (response.status === 429) {
+      return new Response(JSON.stringify({ error: "Limite de requisições excedido. Tente novamente em alguns segundos." }), {
+        status: 429,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (response.status === 402) {
+      return new Response(JSON.stringify({ error: "Créditos insuficientes. Adicione créditos à sua conta." }), {
+        status: 402,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (response.status === 401) {
+      return new Response(JSON.stringify({ error: `Erro de autenticação com ${providerName}. Verifique sua API Key nas Integrações de IA.` }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const errorText = await response.text();
+    console.error(`${providerName} API error:`, response.status, errorText);
+    return new Response(JSON.stringify({ error: `Erro na API de IA` }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  return new Response(response.body, {
+    headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
+  });
+}

@@ -1,0 +1,1 @@
+ALTER TABLE public.conversations ADD COLUMN robot_transferred boolean NOT NULL DEFAULT false;

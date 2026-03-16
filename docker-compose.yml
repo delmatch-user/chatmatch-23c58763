@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  # Frontend application (production)
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: chatmatch-frontend
+    ports:
+      - "3000:80"
+    environment:
+      - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+      - VITE_SUPABASE_PUBLISHABLE_KEY=${VITE_SUPABASE_PUBLISHABLE_KEY}
+      - VITE_SUPABASE_PROJECT_ID=${VITE_SUPABASE_PROJECT_ID}
+    restart: unless-stopped
+    depends_on:
+      - baileys-server
+
+  # Baileys WhatsApp Server
+  baileys-server:
+    build:
+      context: ./baileys-server
+      dockerfile: Dockerfile
+    container_name: baileys-whatsapp
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - WEBHOOK_URL=${WEBHOOK_URL:-https://jfbixwfioehqkussmhov.supabase.co/functions/v1/whatsapp-webhook}
+      - AUTH_DIR=/app/auth_sessions
+      - SUPABASE_URL=${SUPABASE_URL:-https://jfbixwfioehqkussmhov.supabase.co}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+    volumes:
+      - baileys_sessions:/app/auth_sessions
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend development mode with hot reload
+  dev:
+    image: node:20-alpine
+    container_name: chatmatch-dev
+    working_dir: /app
+    volumes:
+      - .:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+      - VITE_SUPABASE_PUBLISHABLE_KEY=${VITE_SUPABASE_PUBLISHABLE_KEY}
+      - VITE_SUPABASE_PROJECT_ID=${VITE_SUPABASE_PROJECT_ID}
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    depends_on:
+      - baileys-server
+    profiles:
+      - development
+
+volumes:
+  baileys_sessions:

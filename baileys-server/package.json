@@ -1,0 +1,21 @@
+{
+  "name": "baileys-whatsapp-server",
+  "version": "1.0.0",
+  "description": "Servidor WhatsApp usando Baileys para integração com ChatMatch",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.16",
+    "express": "^4.21.0",
+    "cors": "^2.8.5",
+    "qrcode": "^1.5.4",
+    "pino": "^9.4.0",
+    "axios": "^1.7.7"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.7"
+  }
+}

@@ -1,0 +1,1 @@
+ALTER TABLE public.conversation_logs ADD COLUMN whatsapp_instance_id text;

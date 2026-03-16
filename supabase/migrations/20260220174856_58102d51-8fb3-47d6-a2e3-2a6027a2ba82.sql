@@ -1,0 +1,1 @@
+ALTER TABLE public.contacts ADD COLUMN IF NOT EXISTS name_edited boolean NOT NULL DEFAULT false;

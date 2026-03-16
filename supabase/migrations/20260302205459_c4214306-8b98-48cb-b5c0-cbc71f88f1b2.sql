@@ -1,0 +1,1 @@
+ALTER TABLE public.whatsapp_connections ADD COLUMN access_token TEXT;

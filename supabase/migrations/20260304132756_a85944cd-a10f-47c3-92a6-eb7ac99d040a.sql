@@ -1,0 +1,1 @@
+ALTER TABLE public.conversation_logs ADD COLUMN reset_at timestamptz DEFAULT NULL;

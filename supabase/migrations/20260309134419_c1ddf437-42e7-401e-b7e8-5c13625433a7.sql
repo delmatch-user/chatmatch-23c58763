@@ -1,0 +1,1 @@
+ALTER TABLE public.sdr_remarketing_log ADD CONSTRAINT unique_deal_config UNIQUE (deal_id, config_id);

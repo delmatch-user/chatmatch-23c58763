@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  baileys-server:
+    build: .
+    container_name: baileys-whatsapp
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - WEBHOOK_URL=https://jfbixwfioehqkussmhov.supabase.co/functions/v1/whatsapp-webhook
+      - AUTH_DIR=/app/auth_sessions
+      - SERVER_HOST=100.26.63.137
+      - SUPABASE_URL=https://jfbixwfioehqkussmhov.supabase.co
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+    volumes:
+      - baileys_sessions:/app/auth_sessions
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  baileys_sessions:

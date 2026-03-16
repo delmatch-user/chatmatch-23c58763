@@ -1,0 +1,1 @@
+ALTER TABLE robots ADD COLUMN channels text[] NOT NULL DEFAULT '{whatsapp,instagram,machine}'::text[];

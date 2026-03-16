@@ -1,0 +1,2 @@
+ALTER TABLE public.whatsapp_connections DROP CONSTRAINT whatsapp_connections_connection_type_check;
+ALTER TABLE public.whatsapp_connections ADD CONSTRAINT whatsapp_connections_connection_type_check CHECK (connection_type = ANY (ARRAY['baileys'::text, 'meta_api'::text, 'instagram'::text, 'machine'::text]));

@@ -1,0 +1,1 @@
+ALTER TABLE public.conversations ADD COLUMN IF NOT EXISTS robot_lock_until TIMESTAMPTZ DEFAULT NULL;
