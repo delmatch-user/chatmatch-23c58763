@@ -77,9 +77,9 @@ Deno.serve(async (req) => {
 
     console.log('[Instagram Send] Enviando mensagem:', { page_id, recipient_id, type });
 
-    const rawAccessToken = await getAccessToken(page_id);
+    const tokenCandidates = await getAccessTokenCandidates(page_id);
 
-    if (!rawAccessToken) {
+    if (tokenCandidates.length === 0) {
       console.error('[Instagram Send] Access token não encontrado');
       return new Response(
         JSON.stringify({ success: false, error: 'Access token não configurado' }),
@@ -87,7 +87,10 @@ Deno.serve(async (req) => {
       );
     }
 
-    const accessToken = rawAccessToken.trim();
+    const appSecrets = getInstagramAppSecretCandidates();
+    const attempts = appSecrets.length > 0
+      ? tokenCandidates.flatMap((token) => appSecrets.map((secret) => ({ token, secret })))
+      : tokenCandidates.map((token) => ({ token, secret: '' }));
 
     // Build message payload
     let messagePayload: any;
@@ -111,43 +114,62 @@ Deno.serve(async (req) => {
       };
     }
 
-    // Generate appsecret_proof
-    const appSecret = getInstagramAppSecret();
-    let url = `https://graph.facebook.com/v25.0/${page_id}/messages`;
-    if (appSecret) {
-      const proof = await generateAppSecretProof(accessToken, appSecret);
-      console.log('[Instagram Send] appsecret_proof gerado, tamanho:', proof.length, 'token prefix:', accessToken.substring(0, 10), 'secret prefix:', appSecret.substring(0, 4));
-      url += `?appsecret_proof=${proof}`;
+    let successResult: any = null;
+    let lastStatus = 400;
+    let lastError = 'Erro ao enviar mensagem';
+
+    for (const attempt of attempts) {
+      let url = `https://graph.facebook.com/v25.0/${page_id}/messages`;
+      if (attempt.secret) {
+        const proof = await generateAppSecretProof(attempt.token, attempt.secret);
+        url += `?appsecret_proof=${proof}`;
+      }
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${attempt.token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(messagePayload)
+      });
+
+      const result = await response.json();
+      console.log('[Instagram Send] Resposta da API:', result);
+
+      if (response.ok) {
+        successResult = result;
+        break;
+      }
+
+      lastStatus = response.status;
+      lastError = result.error?.message || 'Erro ao enviar mensagem';
+      const isProofError = String(lastError).includes('appsecret_proof');
+      console.warn('[Instagram Send] Tentativa falhou:', {
+        status: response.status,
+        isProofError,
+        tokenPrefix: attempt.token.substring(0, 10),
+        secretPrefix: attempt.secret ? attempt.secret.substring(0, 4) : 'none'
+      });
+
+      if (!isProofError) {
+        break;
+      }
     }
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(messagePayload)
-    });
-
-    const result = await response.json();
-    console.log('[Instagram Send] Resposta da API:', result);
-
-    if (!response.ok) {
-      console.error('[Instagram Send] Erro da API Meta:', result);
+    if (!successResult) {
+      console.error('[Instagram Send] Erro da API Meta:', lastError);
       return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: result.error?.message || 'Erro ao enviar mensagem'
-        }),
-        { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: false, error: lastError }),
+        { status: lastStatus, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     return new Response(
       JSON.stringify({ 
         success: true, 
-        messageId: result.message_id,
-        recipientId: result.recipient_id
+        messageId: successResult.message_id,
+        recipientId: successResult.recipient_id
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
