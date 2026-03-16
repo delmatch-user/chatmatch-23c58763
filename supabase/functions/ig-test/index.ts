@@ -8,11 +8,27 @@ const corsHeaders = {
 /**
  * Fetch Instagram user profile (name + profile_pic) via Graph API
  */
+async function generateAppSecretProof(token: string, secret: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(token));
+  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function getInstagramAppSecret(): string {
+  return (Deno.env.get('META_INSTAGRAM_APP_SECRET') || Deno.env.get('META_WHATSAPP_APP_SECRET') || '').trim();
+}
+
 async function fetchIGProfile(senderId: string, accessToken: string): Promise<{ name?: string; profilePic?: string }> {
   try {
-    const res = await fetch(
-      `https://graph.facebook.com/v25.0/${senderId}?fields=name,profile_pic&access_token=${accessToken}`
-    );
+    const token = accessToken.trim();
+    let url = `https://graph.facebook.com/v25.0/${senderId}?fields=name,profile_pic&access_token=${token}`;
+    const appSecret = getInstagramAppSecret();
+    if (appSecret) {
+      const proof = await generateAppSecretProof(token, appSecret);
+      url += `&appsecret_proof=${proof}`;
+    }
+    const res = await fetch(url);
     if (!res.ok) {
       console.warn('[IG] Erro ao buscar perfil:', await res.text());
       return {};
