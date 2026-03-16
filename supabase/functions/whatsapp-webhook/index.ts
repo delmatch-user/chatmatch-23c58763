@@ -1186,6 +1186,32 @@ serve(async (req) => {
           }
         } else {
           conversationId = existingConv.id;
+
+          const shouldFixRoutingMismatch =
+            !existingConv.assigned_to &&
+            !existingConv.assigned_to_robot &&
+            (existingConv.department_id !== targetDepartmentId || existingConv.whatsapp_instance_id !== effectiveInstanceId);
+
+          if (shouldFixRoutingMismatch) {
+            console.log(
+              `[WhatsApp] Corrigindo roteamento da conversa ${conversationId}: dept ${existingConv.department_id} -> ${targetDepartmentId}, instance ${existingConv.whatsapp_instance_id || 'null'} -> ${effectiveInstanceId}`
+            );
+
+            await supabase
+              .from('conversations')
+              .update({
+                department_id: targetDepartmentId,
+                whatsapp_instance_id: effectiveInstanceId,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', conversationId);
+
+            existingConv = {
+              ...existingConv,
+              department_id: targetDepartmentId,
+              whatsapp_instance_id: effectiveInstanceId,
+            };
+          }
           
           // Se a conversa já tem sdr_deal_id, não chamar robot-chat regular
           if (existingConv.sdr_deal_id) {
