@@ -11,7 +11,7 @@ const corsHeaders = {
 async function fetchIGProfile(senderId: string, accessToken: string): Promise<{ name?: string; profilePic?: string }> {
   try {
     const res = await fetch(
-      `https://graph.facebook.com/v18.0/${senderId}?fields=name,profile_pic&access_token=${accessToken}`
+      `https://graph.facebook.com/v25.0/${senderId}?fields=name,profile_pic&access_token=${accessToken}`
     );
     if (!res.ok) {
       console.warn('[IG] Erro ao buscar perfil:', await res.text());
@@ -343,7 +343,17 @@ Deno.serve(async (req) => {
                 const rd = await resp.json();
                 if (rd.response) {
                   if (accessToken) {
-                    const sr = await fetch(`https://graph.facebook.com/v18.0/${connection.waba_id}/messages`, {
+                    // Generate appsecret_proof for robot reply
+                    const appSecret = Deno.env.get('META_WHATSAPP_APP_SECRET');
+                    let sendUrl = `https://graph.facebook.com/v25.0/${connection.waba_id}/messages`;
+                    if (appSecret) {
+                      const encoder = new TextEncoder();
+                      const key = await crypto.subtle.importKey('raw', encoder.encode(appSecret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+                      const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(accessToken));
+                      const proof = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+                      sendUrl += `?appsecret_proof=${proof}`;
+                    }
+                    const sr = await fetch(sendUrl, {
                       method: 'POST',
                       headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
                       body: JSON.stringify({ recipient: { id: senderId }, message: { text: rd.response }, messaging_type: 'RESPONSE' })
