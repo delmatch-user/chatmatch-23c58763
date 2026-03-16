@@ -16,7 +16,17 @@ async function generateAppSecretProof(token: string, secret: string): Promise<st
 }
 
 function getInstagramAppSecret(): string {
-  return (Deno.env.get('META_INSTAGRAM_APP_SECRET') || Deno.env.get('META_WHATSAPP_APP_SECRET') || '').trim();
+  const instagramSecret = (Deno.env.get('META_INSTAGRAM_APP_SECRET') || '').trim();
+  if (/^[a-fA-F0-9]{32}$/.test(instagramSecret)) {
+    return instagramSecret;
+  }
+
+  const whatsappSecret = (Deno.env.get('META_WHATSAPP_APP_SECRET') || '').trim();
+  if (/^[a-fA-F0-9]{32}$/.test(whatsappSecret)) {
+    return whatsappSecret;
+  }
+
+  return '';
 }
 
 async function fetchIGProfile(senderId: string, accessToken: string): Promise<{ name?: string; profilePic?: string }> {

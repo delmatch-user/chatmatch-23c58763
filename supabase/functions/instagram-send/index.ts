@@ -17,7 +17,11 @@ interface SendRequest {
 }
 
 async function getAccessToken(pageId: string): Promise<string | null> {
-  // 1. Try from DB (OAuth flow)
+  const envToken = (Deno.env.get('META_INSTAGRAM_ACCESS_TOKEN') || '').trim();
+  if (envToken) {
+    return envToken;
+  }
+
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
   const { data: connection } = await supabase
     .from('whatsapp_connections')
@@ -26,12 +30,7 @@ async function getAccessToken(pageId: string): Promise<string | null> {
     .eq('waba_id', pageId)
     .maybeSingle();
 
-  if (connection?.access_token) {
-    return connection.access_token;
-  }
-
-  // 2. Fallback to env secret
-  return Deno.env.get('META_INSTAGRAM_ACCESS_TOKEN') || null;
+  return (connection?.access_token || '').trim() || null;
 }
 
 async function generateAppSecretProof(accessToken: string, appSecret: string): Promise<string> {
