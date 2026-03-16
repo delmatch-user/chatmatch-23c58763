@@ -69,11 +69,13 @@ export default function AdminIntegrations() {
   const [instagramCredentials, setInstagramCredentials] = useState({
     pageId: '',
     instagramAccountId: '',
+    accessToken: '',
     verifyToken: '',
     departmentId: '',
     name: '',
     pageName: ''
   });
+  const [showIgToken, setShowIgToken] = useState(false);
   const [instagramConnectionId, setInstagramConnectionId] = useState<string | null>(null);
   const [facebookAppId, setFacebookAppId] = useState('');
   const [fbSdkLoaded, setFbSdkLoaded] = useState(false);
