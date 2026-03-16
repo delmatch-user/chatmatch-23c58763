@@ -185,7 +185,8 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        const accessToken = (Deno.env.get('META_INSTAGRAM_ACCESS_TOKEN') || connection.access_token || '').trim();
+        const accessTokens = getInstagramAccessTokens(connection.access_token);
+        const accessToken = accessTokens[0] || '';
 
         for (const messaging of entry.messaging || []) {
           const senderId = messaging.sender?.id;
