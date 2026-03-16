@@ -499,7 +499,6 @@ serve(async (req) => {
             .from('whatsapp_connections')
             .select('department_id')
             .eq('connection_type', 'baileys')
-            .eq('status', 'connected')
             .eq('phone_number_id', effectiveInstanceId)
             .maybeSingle()
         ]);
