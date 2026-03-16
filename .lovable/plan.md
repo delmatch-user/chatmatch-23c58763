@@ -1,30 +1,31 @@
 
 
-## Plano: Corrigir conversa do Fábio (5516997502209)
+## Diagnóstico: Conversas caindo no departamento errado
 
-### Diagnóstico
+### Causa raiz
 
-A conversa do Fábio (5516997502209) foi fragmentada:
+No webhook (`whatsapp-webhook/index.ts`, linha 502), a busca pela conexão Baileys para determinar o departamento filtra por `status = 'connected'`:
 
-- **Conv 64b3b5d9** (protocolo 00022) — Contato `3e7a8dbe` (phone: 5516997502209) — contém a mensagem enviada pelo Fábio ("eu sou Fábio da area comercial...")
-- **Conv 091eb816** (protocolo 00131) — Contato `8a2dda93` ("Contato WhatsApp", LID-only: 277291745701923@lid) — contém as respostas "Podemos" e "Boa tarde Fabio" que pertencem à conversa do Fábio
+```typescript
+.eq('status', 'connected')   // ← PROBLEMA
+.eq('phone_number_id', effectiveInstanceId)
+```
 
-**Causa**: A resposta veio de um LID (277291745701923@lid) que o sistema não conseguiu vincular ao contato 5516997502209, criando um contato órfão.
+Pela imagem, ambas as instâncias ("suporte" e "comercial") estão conectadas agora. Porém, quando uma instância momentaneamente cai e reconecta, o status fica `disconnected` no banco durante esse intervalo. Nesse momento, qualquer mensagem recebida não encontra o mapeamento instância→departamento e cai no **fallback** (linhas 1033-1042) que pega o primeiro departamento da tabela — resultando em roteamento errado (ex: Administrativo em vez de Suporte).
 
-A conversa da Mayara (92831f09, contato 5516996194049) está correta — suas mensagens ("Lincoln consegue vir amanhã...", "falo com o Lincoln?", "abriu uma nova vaga") estão no lugar certo.
+O mapeamento instância→departamento é uma configuração estática e não deve depender do status de conexão.
 
-### Ações
+### Correção proposta
 
-**Passo 1 — Mover mensagens para a conversa do Fábio:**
-- Mover "Podemos" e "Boa tarde Fabio" (+ mensagem SYSTEM) de conv 091eb816 para conv 64b3b5d9
+**Arquivo:** `supabase/functions/whatsapp-webhook/index.ts`
 
-**Passo 2 — Merge dos contatos:**
-- `merge_duplicate_contacts(primary: 3e7a8dbe, duplicate: 8a2dda93)` para unificar o contato LID-only no contato do Fábio
+**Única alteração:** Remover `.eq('status', 'connected')` da query que busca o `department_id` pela conexão Baileys (linha 502).
 
-**Passo 3 — Mapear LID → phone:**
-- Inserir na `whatsapp_lid_map`: LID `277291745701923@lid` → phone `5516997502209`
-- Atualizar notes do contato primário para incluir o LID
+Isso garante que:
+- A instância "suporte" sempre roteie para o departamento Suporte
+- A instância "comercial" sempre roteie para o departamento Comercial
+- Nenhuma conversa nova será enviada para um departamento diferente do configurado
+- Transferências continuam sendo feitas apenas por atendentes ou IA, como esperado
 
-**Passo 4 — Deletar conversa órfã vazia:**
-- Após mover as mensagens, a conv 091eb816 ficará vazia e será finalizada pelo merge RPC
+Nenhuma outra lógica será alterada — o webhook continuará respeitando o departamento da conexão sem mudar conversas existentes nem fazer transferências automáticas.
 
