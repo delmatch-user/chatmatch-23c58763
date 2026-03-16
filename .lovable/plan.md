@@ -1,53 +1,42 @@
 
+Objetivo: eliminar o erro `Invalid appsecret_proof` no envio Instagram e voltar a preencher nome real do contato.
 
-## Problemas Identificados
+1) Diagnóstico confirmado (baseado em logs + banco)
+- O webhook de entrada funciona (recebe mensagens), mas isso não valida envio.
+- O envio falha na função `instagram-send`.
+- Há tentativa com dois “secrets”; um deles aparece com prefixo `EAAb` (formato de token, não App Secret), gerando tentativas inválidas.
+- O token atual da conexão Instagram pode estar expirado/incorreto para o app que assina o `appsecret_proof`.
 
-### 1. Auto-online fica brigando com status manual
-Quando o atendente está **dentro do horário** e muda manualmente para offline (ex: foi ao banheiro), o monitor detecta `status === 'offline'` e reseta `autoOnlineDoneRef` (linha 115-117), forçando-o de volta para online no próximo tick. Isso cria um loop conflitante.
+2) Correção de lógica (determinística) em `instagram-send`
+- Ajustar seleção de token para priorizar **token salvo na conexão Instagram (banco)** e usar env apenas como fallback.
+- Ajustar seleção de secret:
+  - se `META_INSTAGRAM_APP_SECRET` existir, usar **somente ele**;
+  - usar `META_WHATSAPP_APP_SECRET` apenas quando o secret de Instagram estiver ausente.
+- Adicionar validação de formato de secret para ignorar valor com cara de token (`EA...`), evitando assinar com credencial errada.
+- Melhorar política de retry:
+  - tentar todos os tokens candidatos relevantes antes de encerrar;
+  - preservar erro final mais útil (expirado/permissão/proof), sem mascarar por tentativa secundária.
 
-### 2. Guard de auto-online está quebrado
-O `autoOnlineDoneRef` é resetado quando `profile?.status !== 'offline'` (linha 115), ou seja: online → manual offline → auto-online novamente. O guard não protege nada.
+3) Aplicar a mesma política em `ig-test`
+- `fetchIGProfile`: reutilizar a mesma estratégia de token/secret para recuperar `name` e `profile_pic`.
+- Resposta de robô no Instagram: alinhar com a mesma função de assinatura/retry para evitar divergência entre caminhos de envio.
 
-### 3. Escala cross-midnight não busca dia anterior
-Se a escala é Sábado 22:00-02:00, no Domingo às 01:00 o código busca `day_of_week = 0` (Domingo). Mas a escala está em `day_of_week = 6` (Sábado). O atendente fica "sem escala" e é posto offline.
+4) Melhorias de observabilidade (sem vazar segredo)
+- Logar apenas: fonte do token (`db`/`env`), status HTTP, code/subcode da Meta e tipo de falha (`proof`, `expired`, `permission`).
+- Remover ambiguidade de logs atuais para identificar rapidamente se o problema é token, app secret ou escopo.
 
-### 4. Auto-offline dispara mesmo com extensão ativa
-Quando `remaining <= 0` e o atendente estendeu o turno, o cálculo pode oscilar dependendo de como `extensionMinutes` é somado no `endMinutes`, causando disparo prematuro.
+5) Validação fim a fim
+- Teste 1: enviar mensagem no painel para conversa Instagram e confirmar:
+  - mensagem entregue no Instagram;
+  - `messages.external_id` preenchido no banco.
+- Teste 2: nova mensagem recebida do usuário Instagram e confirmar:
+  - contato deixa de ficar como `Instagram 123456` e passa a nome real.
+- Teste 3: revisar logs das funções `instagram-send` e `ig-test` para confirmar ausência de `Invalid appsecret_proof`.
 
----
-
-## Solução
-
-### Arquivo: `src/hooks/useWorkScheduleMonitor.tsx`
-
-**A. Corrigir fetch para incluir dia anterior (cross-midnight)**
-- Buscar escala do dia atual E do dia anterior
-- Se a escala do dia anterior tem `end_time < start_time` (cross-midnight), verificar se ainda estamos dentro dela
-
-**B. Auto-online apenas no início do turno (janela de 2 min)**
-- Só disparar auto-online se estamos nos primeiros 2 minutos do turno
-- Usar `autoOnlineDoneRef` sem reset por mudança de status — só resetar quando muda de dia/escala
-- Remover o reset em linha 115-117 que causa o conflito
-
-**C. Auto-offline robusto**
-- Quando `remaining <= 0`, verificar se realmente saiu do horário (double-check `isWithinSchedule` ficou false)
-- Usar `autoOfflineDoneRef` corretamente sem resetar dentro do horário
-
-**D. Não interferir com mudanças manuais durante o turno**
-- Adicionar flag `manualOverrideRef` que é setada quando o atendente muda status manualmente via Topbar
-- O monitor respeita essa flag e não força auto-online durante o turno ativo
-
-### Arquivo: `src/components/layout/Topbar.tsx`
-
-**E. Sinalizar mudança manual**
-- Quando `handleStatusChange` é chamado pelo usuário, emitir um evento ou setar uma flag no localStorage para que o monitor saiba que foi manual e não force auto-online
-
----
-
-## Resumo das mudanças
-
-| Arquivo | Mudança |
-|---|---|
-| `useWorkScheduleMonitor.tsx` | Fetch dia anterior para cross-midnight; auto-online só nos primeiros 2min; remover reset de ref que causa loop; respeitar override manual |
-| `Topbar.tsx` | Marcar mudanças manuais de status para evitar conflito com auto-online |
-
+Detalhes técnicos (implementação)
+- Arquivos-alvo:
+  - `supabase/functions/instagram-send/index.ts`
+  - `supabase/functions/ig-test/index.ts`
+- Refactor principal:
+  - criar helpers internos reutilizáveis de “candidatos de token/secret” + “callGraphWithProof”.
+- Sem mudança de schema/RLS necessária nesta correção.
