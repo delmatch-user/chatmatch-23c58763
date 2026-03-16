@@ -44,7 +44,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const appSecret = Deno.env.get('META_WHATSAPP_APP_SECRET');
+    const appSecret = Deno.env.get('META_INSTAGRAM_APP_SECRET') || Deno.env.get('META_WHATSAPP_APP_SECRET');
     if (!appSecret) {
       return new Response(
         JSON.stringify({ success: false, error: 'META_WHATSAPP_APP_SECRET não configurado no backend' }),
