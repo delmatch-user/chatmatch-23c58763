@@ -34,6 +34,21 @@ async function getAccessToken(pageId: string): Promise<string | null> {
   return Deno.env.get('META_INSTAGRAM_ACCESS_TOKEN') || null;
 }
 
+async function generateAppSecretProof(accessToken: string, appSecret: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(appSecret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(accessToken));
+  return Array.from(new Uint8Array(signature))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -81,17 +96,22 @@ Deno.serve(async (req) => {
       };
     }
 
-    const response = await fetch(
-      `https://graph.facebook.com/v18.0/${page_id}/messages`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(messagePayload)
-      }
-    );
+    // Generate appsecret_proof
+    const appSecret = Deno.env.get('META_WHATSAPP_APP_SECRET');
+    let url = `https://graph.facebook.com/v21.0/${page_id}/messages`;
+    if (appSecret) {
+      const proof = await generateAppSecretProof(accessToken, appSecret);
+      url += `?appsecret_proof=${proof}`;
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(messagePayload)
+    });
 
     const result = await response.json();
     console.log('[Instagram Send] Resposta da API:', result);
