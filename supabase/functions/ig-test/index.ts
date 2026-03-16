@@ -21,30 +21,40 @@ function getInstagramAppSecrets(): string[] {
   return Array.from(new Set([instagramSecret, whatsappSecret].filter(Boolean)));
 }
 
-async function fetchIGProfile(senderId: string, accessToken: string): Promise<{ name?: string; profilePic?: string }> {
+function getInstagramAccessTokens(connectionAccessToken?: string): string[] {
+  const envToken = (Deno.env.get('META_INSTAGRAM_ACCESS_TOKEN') || '').trim();
+  const dbToken = (connectionAccessToken || '').trim();
+  return Array.from(new Set([envToken, dbToken].filter(Boolean)));
+}
+
+async function fetchIGProfile(senderId: string, accessTokens: string[]): Promise<{ name?: string; profilePic?: string }> {
   try {
-    const token = accessToken.trim();
     const secrets = getInstagramAppSecrets();
-    const attempts = secrets.length > 0 ? secrets : [''];
+    const secretAttempts = secrets.length > 0 ? secrets : [''];
 
-    for (const secret of attempts) {
-      let url = `https://graph.facebook.com/v25.0/${senderId}?fields=name,profile_pic&access_token=${token}`;
-      if (secret) {
-        const proof = await generateAppSecretProof(token, secret);
-        url += `&appsecret_proof=${proof}`;
-      }
+    for (const accessToken of accessTokens) {
+      const token = accessToken.trim();
+      for (const secret of secretAttempts) {
+        let url = `https://graph.facebook.com/v25.0/${senderId}?fields=name,profile_pic&access_token=${token}`;
+        if (secret) {
+          const proof = await generateAppSecretProof(token, secret);
+          url += `&appsecret_proof=${proof}`;
+        }
 
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        return { name: data.name || undefined, profilePic: data.profile_pic || undefined };
-      }
+        const res = await fetch(url);
+        if (res.ok) {
+          const data = await res.json();
+          return { name: data.name || undefined, profilePic: data.profile_pic || undefined };
+        }
 
-      const errorText = await res.text();
-      const isProofError = errorText.includes('appsecret_proof');
-      console.warn('[IG] Erro ao buscar perfil:', errorText);
-      if (!isProofError) {
-        break;
+        const errorText = await res.text();
+        const isProofError = errorText.includes('appsecret_proof');
+        const isExpiredToken = errorText.includes('Session has expired');
+        console.warn('[IG] Erro ao buscar perfil:', errorText);
+
+        if (!isProofError && !isExpiredToken) {
+          break;
+        }
       }
     }
 
