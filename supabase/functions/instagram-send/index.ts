@@ -55,18 +55,11 @@ async function generateAppSecretProof(accessToken: string, appSecret: string): P
     .join('');
 }
 
-function getInstagramAppSecret(): string {
+function getInstagramAppSecretCandidates(): string[] {
   const instagramSecret = (Deno.env.get('META_INSTAGRAM_APP_SECRET') || '').trim();
-  if (/^[a-fA-F0-9]{32}$/.test(instagramSecret)) {
-    return instagramSecret;
-  }
-
   const whatsappSecret = (Deno.env.get('META_WHATSAPP_APP_SECRET') || '').trim();
-  if (/^[a-fA-F0-9]{32}$/.test(whatsappSecret)) {
-    return whatsappSecret;
-  }
 
-  return '';
+  return Array.from(new Set([instagramSecret, whatsappSecret].filter(Boolean)));
 }
 
 Deno.serve(async (req) => {
