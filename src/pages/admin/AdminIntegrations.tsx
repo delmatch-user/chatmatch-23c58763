@@ -444,7 +444,7 @@ export default function AdminIntegrations() {
     setIsSavingInstagram(true);
     
     try {
-      const connectionData = {
+      const connectionData: Record<string, any> = {
         connection_type: 'instagram',
         phone_number_id: instagramCredentials.instagramAccountId,
         waba_id: instagramCredentials.pageId,
@@ -453,6 +453,11 @@ export default function AdminIntegrations() {
         name: instagramCredentials.name || 'Instagram Direct',
         status: 'active'
       };
+      
+      // Só incluir access_token se preenchido, para não sobrescrever o existente
+      if (instagramCredentials.accessToken.trim()) {
+        connectionData.access_token = instagramCredentials.accessToken.trim();
+      }
       
       if (instagramConnectionId) {
         const { error } = await supabase
