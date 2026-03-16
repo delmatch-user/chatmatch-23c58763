@@ -1062,7 +1062,7 @@ export default function AdminIntegrations() {
                         <div className="flex gap-2">
                           <Input
                             readOnly
-                            value={`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/instagram-webhook`}
+                            value={`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ig-test`}
                             className="font-mono text-sm"
                           />
                           <Button 
