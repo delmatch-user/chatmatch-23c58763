@@ -16,13 +16,25 @@ interface SendRequest {
   media_url?: string;
 }
 
-async function getAccessTokenCandidates(pageId: string): Promise<string[]> {
-  const tokens: string[] = [];
+/** Returns true if value looks like a Meta access token (not an app secret) */
+function looksLikeAccessToken(value: string): boolean {
+  return value.startsWith('EAA') || value.length > 80;
+}
 
-  const envToken = (Deno.env.get('META_INSTAGRAM_ACCESS_TOKEN') || '').trim();
-  if (envToken) {
-    tokens.push(envToken);
-  }
+/** Get the single valid App Secret, ignoring values that look like tokens */
+function getAppSecret(): string | null {
+  const igSecret = (Deno.env.get('META_INSTAGRAM_APP_SECRET') || '').trim();
+  if (igSecret && !looksLikeAccessToken(igSecret)) return igSecret;
+
+  const waSecret = (Deno.env.get('META_WHATSAPP_APP_SECRET') || '').trim();
+  if (waSecret && !looksLikeAccessToken(waSecret)) return waSecret;
+
+  return null;
+}
+
+/** Get access token candidates, prioritizing DB over env */
+async function getAccessTokenCandidates(pageId: string): Promise<{ token: string; source: string }[]> {
+  const candidates: { token: string; source: string }[] = [];
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
   const { data: connection } = await supabase
@@ -33,33 +45,88 @@ async function getAccessTokenCandidates(pageId: string): Promise<string[]> {
     .maybeSingle();
 
   const dbToken = (connection?.access_token || '').trim();
-  if (dbToken && !tokens.includes(dbToken)) {
-    tokens.push(dbToken);
-  }
+  if (dbToken) candidates.push({ token: dbToken, source: 'db' });
 
-  return tokens;
+  const envToken = (Deno.env.get('META_INSTAGRAM_ACCESS_TOKEN') || '').trim();
+  if (envToken && envToken !== dbToken) candidates.push({ token: envToken, source: 'env' });
+
+  return candidates;
 }
 
 async function generateAppSecretProof(accessToken: string, appSecret: string): Promise<string> {
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(appSecret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
+    'raw', encoder.encode(appSecret),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
   );
   const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(accessToken));
-  return Array.from(new Uint8Array(signature))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
+  return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-function getInstagramAppSecretCandidates(): string[] {
-  const instagramSecret = (Deno.env.get('META_INSTAGRAM_APP_SECRET') || '').trim();
-  const whatsappSecret = (Deno.env.get('META_WHATSAPP_APP_SECRET') || '').trim();
+/** Call Meta Graph API with appsecret_proof, trying all token candidates */
+async function callGraphAPI(
+  pageId: string,
+  payload: any,
+  tokenCandidates: { token: string; source: string }[],
+  appSecret: string | null
+): Promise<{ ok: boolean; result: any; status: number; error: string }> {
+  let lastError = 'Nenhum token disponível';
+  let lastStatus = 500;
 
-  return Array.from(new Set([instagramSecret, whatsappSecret].filter(Boolean)));
+  for (const { token, source } of tokenCandidates) {
+    let url = `https://graph.facebook.com/v25.0/${pageId}/messages`;
+    if (appSecret) {
+      const proof = await generateAppSecretProof(token, appSecret);
+      url += `?appsecret_proof=${proof}`;
+    }
+
+    console.log(`[Instagram Send] Tentando com token ${source} (${token.substring(0, 8)}...), secret: ${appSecret ? 'yes' : 'none'}`);
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const result = await response.json();
+
+    if (response.ok) {
+      console.log('[Instagram Send] Sucesso:', { source, messageId: result.message_id });
+      return { ok: true, result, status: 200, error: '' };
+    }
+
+    const errMsg = result?.error?.message || 'Erro desconhecido';
+    const errCode = result?.error?.code;
+    const errSubcode = result?.error?.error_subcode;
+    lastStatus = response.status;
+    lastError = errMsg;
+
+    const isProofError = String(errMsg).includes('appsecret_proof');
+    const isExpiredToken = String(errMsg).includes('Session has expired') || errCode === 190;
+
+    console.warn(`[Instagram Send] Falha: source=${source}, status=${response.status}, code=${errCode}, subcode=${errSubcode}, proof_error=${isProofError}, expired=${isExpiredToken}`);
+
+    // If it's a proof error, the secret is wrong — no point trying same secret with another token
+    if (isProofError) {
+      lastError = `App Secret inválido para este token (${source}). Verifique META_INSTAGRAM_APP_SECRET.`;
+      break;
+    }
+
+    // If token expired, try next token
+    if (isExpiredToken) {
+      lastStatus = 401;
+      lastError = `Token expirado (${source}): ${errMsg}`;
+      continue;
+    }
+
+    // Other errors (permissions, rate limit, etc.) — stop
+    break;
+  }
+
+  return { ok: false, result: null, status: lastStatus, error: lastError };
 }
 
 Deno.serve(async (req) => {
@@ -78,23 +145,21 @@ Deno.serve(async (req) => {
     console.log('[Instagram Send] Enviando mensagem:', { page_id, recipient_id, type });
 
     const tokenCandidates = await getAccessTokenCandidates(page_id);
-
     if (tokenCandidates.length === 0) {
-      console.error('[Instagram Send] Access token não encontrado');
+      console.error('[Instagram Send] Nenhum access token encontrado');
       return new Response(
         JSON.stringify({ success: false, error: 'Access token não configurado' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const appSecrets = getInstagramAppSecretCandidates();
-    const attempts = appSecrets.length > 0
-      ? tokenCandidates.flatMap((token) => appSecrets.map((secret) => ({ token, secret })))
-      : tokenCandidates.map((token) => ({ token, secret: '' }));
+    const appSecret = getAppSecret();
+    if (!appSecret) {
+      console.warn('[Instagram Send] Nenhum App Secret válido encontrado — tentando sem appsecret_proof');
+    }
 
     // Build message payload
     let messagePayload: any;
-
     if (type === 'text') {
       messagePayload = {
         recipient: { id: recipient_id },
@@ -114,72 +179,21 @@ Deno.serve(async (req) => {
       };
     }
 
-    let successResult: any = null;
-    let lastStatus = 400;
-    let lastError = 'Erro ao enviar mensagem';
-    let expiredTokenError = '';
+    const { ok, result, status, error } = await callGraphAPI(page_id, messagePayload, tokenCandidates, appSecret);
 
-    for (const attempt of attempts) {
-      let url = `https://graph.facebook.com/v25.0/${page_id}/messages`;
-      if (attempt.secret) {
-        const proof = await generateAppSecretProof(attempt.token, attempt.secret);
-        url += `?appsecret_proof=${proof}`;
-      }
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${attempt.token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(messagePayload)
-      });
-
-      const result = await response.json();
-      console.log('[Instagram Send] Resposta da API:', result);
-
-      if (response.ok) {
-        successResult = result;
-        break;
-      }
-
-      lastStatus = response.status;
-      lastError = result.error?.message || 'Erro ao enviar mensagem';
-      const isProofError = String(lastError).includes('appsecret_proof');
-      const isExpiredToken = String(lastError).includes('Session has expired') || result?.error?.code === 190;
-      if (isExpiredToken && !expiredTokenError) {
-        expiredTokenError = String(lastError);
-      }
-      console.warn('[Instagram Send] Tentativa falhou:', {
-        status: response.status,
-        isProofError,
-        isExpiredToken,
-        tokenPrefix: attempt.token.substring(0, 10),
-        secretPrefix: attempt.secret ? attempt.secret.substring(0, 4) : 'none'
-      });
-
-      if (!isProofError && !isExpiredToken) {
-        break;
-      }
-    }
-
-    if (!successResult) {
-      if (expiredTokenError) {
-        lastStatus = 401;
-        lastError = expiredTokenError;
-      }
-      console.error('[Instagram Send] Erro da API Meta:', lastError);
+    if (!ok) {
+      console.error('[Instagram Send] Erro final:', error);
       return new Response(
-        JSON.stringify({ success: false, error: lastError }),
-        { status: lastStatus, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: false, error }),
+        { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     return new Response(
-      JSON.stringify({ 
-        success: true, 
-        messageId: successResult.message_id,
-        recipientId: successResult.recipient_id
+      JSON.stringify({
+        success: true,
+        messageId: result.message_id,
+        recipientId: result.recipient_id
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
