@@ -48,6 +48,20 @@ async function generateAppSecretProof(accessToken: string, appSecret: string): P
     .join('');
 }
 
+function getInstagramAppSecret(): string {
+  const instagramSecret = (Deno.env.get('META_INSTAGRAM_APP_SECRET') || '').trim();
+  if (/^[a-fA-F0-9]{32}$/.test(instagramSecret)) {
+    return instagramSecret;
+  }
+
+  const whatsappSecret = (Deno.env.get('META_WHATSAPP_APP_SECRET') || '').trim();
+  if (/^[a-fA-F0-9]{32}$/.test(whatsappSecret)) {
+    return whatsappSecret;
+  }
+
+  return '';
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
