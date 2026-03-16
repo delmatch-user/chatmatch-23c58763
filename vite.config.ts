@@ -110,9 +110,9 @@ export default defineConfig(({ mode }) => ({
     }),
   ].filter(Boolean),
   resolve: {
-    alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url)),
-    },
+    alias: [
+      { find: /^@\//, replacement: `${fileURLToPath(new URL("./src/", import.meta.url))}` },
+    ],
     dedupe: ["react", "react-dom"],
   },
   optimizeDeps: {
