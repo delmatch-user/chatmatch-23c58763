@@ -253,8 +253,23 @@ serve(async (req) => {
             
             if (phonelessContacts && phonelessContacts.length > 0) {
               for (const pc of phonelessContacts) {
-                await supabase.from('contacts').update({ phone: formatBrazilianPhone(c.phone) || c.phone }).eq('id', pc.id);
+                const phoneForUpdate = formatBrazilianPhone(c.phone) || c.phone;
+                await supabase.from('contacts').update({ phone: phoneForUpdate }).eq('id', pc.id);
                 console.log(`[WhatsApp] contacts.sync: Contato ${pc.id} recebeu phone=${c.phone} via JID`);
+                
+                // ====== AUTO-MERGE: Verificar duplicata após atribuir phone ======
+                const digitsCheck = phoneForUpdate.replace(/\D/g, '');
+                if (digitsCheck.length >= 10 && digitsCheck.length <= 13) {
+                  const { data: existingByPhone2 } = await supabase
+                    .rpc('find_contact_by_phone', { phone_input: digitsCheck });
+                  if (existingByPhone2 && existingByPhone2.length > 0 && existingByPhone2[0].id !== pc.id) {
+                    console.log(`[WhatsApp] contacts.sync JID: 🔄 MERGE: ${pc.id} → ${existingByPhone2[0].id}`);
+                    await supabase.rpc('merge_duplicate_contacts', {
+                      primary_id: existingByPhone2[0].id,
+                      duplicate_id: pc.id
+                    });
+                  }
+                }
               }
             }
           }
