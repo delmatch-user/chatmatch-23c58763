@@ -54,7 +54,18 @@ async function generateAppSecretProof(accessToken: string, appSecret: string): P
     { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
   );
   const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(accessToken));
-  return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('');
+  return Array.from(new Uint8Array(signature)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function parseGraphError(result: any): { code: number | null; message: string } {
+  return {
+    code: typeof result?.error?.code === 'number' ? result.error.code : null,
+    message: result?.error?.message || 'Erro desconhecido',
+  };
+}
+
+function isPageAccessTokenRequired(code: number | null, message: string): boolean {
+  return code === 190 && message.includes('Page Access Token');
 }
 
 async function fetchWithProofFallback(
@@ -103,6 +114,53 @@ async function fetchWithProofFallback(
   return { response: res, usedProof: false };
 }
 
+async function derivePageAccessToken(
+  pageId: string,
+  token: string,
+  appSecret: string | null
+): Promise<{ token: string; strategy: 'page_fields' | 'me_accounts' } | null> {
+  // Strategy 1: read page access_token directly from page object
+  const pageUrl = `https://graph.facebook.com/v25.0/${pageId}?fields=access_token`;
+  const pageRes = await fetchWithProofFallback(pageUrl, token, appSecret, 'GET');
+  const pageData = await pageRes.response.json().catch(() => ({}));
+  if (pageRes.response.ok && typeof pageData?.access_token === 'string' && pageData.access_token.trim()) {
+    return { token: pageData.access_token.trim(), strategy: 'page_fields' };
+  }
+
+  // Strategy 2: list accounts and pick matching page token
+  const accountsUrl = 'https://graph.facebook.com/v25.0/me/accounts?fields=id,access_token';
+  const accountsRes = await fetchWithProofFallback(accountsUrl, token, appSecret, 'GET');
+  const accountsData = await accountsRes.response.json().catch(() => ({}));
+
+  if (accountsRes.response.ok && Array.isArray(accountsData?.data)) {
+    const match = accountsData.data.find((item: any) => String(item?.id) === String(pageId));
+    const derivedToken = (match?.access_token || '').trim();
+    if (derivedToken) {
+      return { token: derivedToken, strategy: 'me_accounts' };
+    }
+  }
+
+  return null;
+}
+
+async function persistDerivedDbToken(pageId: string, oldToken: string, newToken: string): Promise<void> {
+  if (!oldToken || !newToken || oldToken === newToken) return;
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+  const { error } = await supabase
+    .from('whatsapp_connections')
+    .update({ access_token: newToken, updated_at: new Date().toISOString() })
+    .eq('connection_type', 'instagram')
+    .eq('waba_id', pageId)
+    .eq('access_token', oldToken);
+
+  if (error) {
+    console.warn('[Instagram Send] Não foi possível persistir token derivado no banco:', error.message);
+  } else {
+    console.log('[Instagram Send] Token de página persistido no banco para próximos envios');
+  }
+}
+
 async function callGraphAPI(
   pageId: string,
   payload: any,
@@ -112,33 +170,61 @@ async function callGraphAPI(
   let lastError = 'Nenhum token disponível';
   let lastStatus = 500;
 
-  for (const { token, source } of tokenCandidates) {
+  for (const candidate of tokenCandidates) {
     const url = `https://graph.facebook.com/v25.0/${pageId}/messages`;
-    console.log(`[Instagram Send] Tentando com token ${source} (${token.substring(0, 8)}...), secret: ${appSecret ? 'yes' : 'none'}`);
+    const originalToken = candidate.token;
+    let activeToken = candidate.token;
+    let triedDerive = false;
 
-    const { response } = await fetchWithProofFallback(url, token, appSecret, 'POST', JSON.stringify(payload));
-    const result = await response.json();
+    while (true) {
+      console.log(`[Instagram Send] Tentando com token ${candidate.source} (${activeToken.substring(0, 8)}...), secret: ${appSecret ? 'yes' : 'none'}`);
 
-    if (response.ok) {
-      console.log('[Instagram Send] Sucesso:', { source, messageId: result.message_id });
-      return { ok: true, result, status: 200, error: '' };
+      const { response } = await fetchWithProofFallback(url, activeToken, appSecret, 'POST', JSON.stringify(payload));
+      const result = await response.json().catch(() => ({}));
+
+      if (response.ok) {
+        console.log('[Instagram Send] Sucesso:', { source: candidate.source, messageId: result.message_id });
+        return { ok: true, result, status: 200, error: '' };
+      }
+
+      const { code, message } = parseGraphError(result);
+      const isExpiredToken = message.includes('Session has expired');
+      const needsPageToken = isPageAccessTokenRequired(code, message);
+
+      lastStatus = response.status;
+      lastError = message;
+
+      console.warn(`[Instagram Send] Falha: source=${candidate.source}, status=${response.status}, code=${code}, expired=${isExpiredToken}, pageTokenRequired=${needsPageToken}, msg=${message}`);
+
+      if (needsPageToken && !triedDerive) {
+        triedDerive = true;
+        const derived = await derivePageAccessToken(pageId, activeToken, appSecret);
+
+        if (derived && derived.token !== activeToken) {
+          console.log(`[Instagram Send] Token de página derivado via ${derived.strategy} para source=${candidate.source}`);
+          activeToken = derived.token;
+
+          if (candidate.source === 'db') {
+            await persistDerivedDbToken(pageId, originalToken, derived.token);
+          }
+
+          continue;
+        }
+
+        lastStatus = 401;
+        lastError = `Token inválido (${candidate.source}): a Meta exige Page Access Token para esta página`;
+        break;
+      }
+
+      if (isExpiredToken || code === 190) {
+        lastStatus = 401;
+        lastError = `Token inválido (${candidate.source}): ${message}`;
+        break;
+      }
+
+      // non-auth error: stop trying this and next candidates
+      return { ok: false, result: null, status: lastStatus, error: lastError };
     }
-
-    const errMsg = result?.error?.message || 'Erro desconhecido';
-    const errCode = result?.error?.code;
-    lastStatus = response.status;
-    lastError = errMsg;
-
-    const isExpiredToken = String(errMsg).includes('Session has expired') || errCode === 190;
-    console.warn(`[Instagram Send] Falha: source=${source}, status=${response.status}, code=${errCode}, expired=${isExpiredToken}, msg=${errMsg}`);
-
-    if (isExpiredToken) {
-      lastStatus = 401;
-      lastError = `Token expirado (${source}): ${errMsg}`;
-      continue;
-    }
-
-    break;
   }
 
   return { ok: false, result: null, status: lastStatus, error: lastError };
