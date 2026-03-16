@@ -468,7 +468,7 @@ export default function AdminIntegrations() {
       } else {
         const { data, error } = await supabase
           .from('whatsapp_connections')
-          .insert(connectionData)
+          .insert(connectionData as any)
           .select()
           .single();
         if (error) throw error;
