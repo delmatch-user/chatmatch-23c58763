@@ -99,7 +99,7 @@ Deno.serve(async (req) => {
     }
 
     // Generate appsecret_proof
-    const appSecret = (Deno.env.get('META_WHATSAPP_APP_SECRET') || '').trim();
+    const appSecret = (Deno.env.get('META_INSTAGRAM_APP_SECRET') || Deno.env.get('META_WHATSAPP_APP_SECRET') || '').trim();
     let url = `https://graph.facebook.com/v25.0/${page_id}/messages`;
     if (appSecret) {
       const proof = await generateAppSecretProof(accessToken, appSecret);

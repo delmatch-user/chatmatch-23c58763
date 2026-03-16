@@ -360,13 +360,10 @@ Deno.serve(async (req) => {
                 if (rd.response) {
                   if (accessToken) {
                     // Generate appsecret_proof for robot reply
-                    const appSecret = Deno.env.get('META_WHATSAPP_APP_SECRET');
+                    const appSecret = getInstagramAppSecret();
                     let sendUrl = `https://graph.facebook.com/v25.0/${connection.waba_id}/messages`;
                     if (appSecret) {
-                      const encoder = new TextEncoder();
-                      const key = await crypto.subtle.importKey('raw', encoder.encode(appSecret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-                      const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(accessToken));
-                      const proof = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+                      const proof = await generateAppSecretProof(accessToken.trim(), appSecret);
                       sendUrl += `?appsecret_proof=${proof}`;
                     }
                     const sr = await fetch(sendUrl, {
