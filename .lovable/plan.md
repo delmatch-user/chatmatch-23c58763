@@ -1,48 +1,42 @@
 
 
-## Unificar conversas duplicadas + garantir deploy da Prova 4
+## Unificar conversas duplicadas "Doce Delicia" + persistir LID map
 
-### Situação atual
+### Situação
 
-| Conversa | Contato | Phone | JID | Status | Mensagens |
-|----------|---------|-------|-----|--------|-----------|
-| `5ed95d5f` (Mayara) | `d3125f8f` | `5516997307870` | `@s.whatsapp.net` | em_atendimento | 2 outbound |
-| `a70c4b78` (fila) | `dca93fe5` | null | `206622320263200@lid` | em_fila | 3 inbound |
+| Conversa | Contato | Phone | JID | Msgs | Status |
+|----------|---------|-------|-----|------|--------|
+| `6b2873cf` (primária) | `f1f40928` | `+55 16 99753-0152` | `@s.whatsapp.net` | 70 | em_atendimento |
+| `73dc6bb6` (duplicada) | `56f8b4df` | null | `70661439516698@lid` | 16 | em_atendimento |
 
-A Prova 4 existe no código mas **não foi deployada** — sem logs no edge function. As mensagens de resposta do Alessandro caíram em conversa separada.
+Mesmo caso anterior: contato respondeu via LID sem mapeamento prévio. Não há entrada em `whatsapp_lid_map` para este LID.
 
-### Plano (2 partes)
+### Plano (SQL migration)
 
-**1. Merge imediato via SQL** (migration)
+1. Mover 16 mensagens da conversa LID (`73dc6bb6`) para a conversa primária (`6b2873cf`)
+2. Deletar conversa duplicada
+3. Marcar contato LID (`56f8b4df`) como merged
+4. Atualizar notes do contato primário para incluir o LID
+5. Inserir mapeamento em `whatsapp_lid_map` para prevenir futuras duplicações
 
 ```sql
--- Mover mensagens da conversa LID para a conversa original
-UPDATE messages SET conversation_id = '5ed95d5f-940e-469a-9c04-396ebff65ce0'
-WHERE conversation_id = 'a70c4b78-0fc1-4b4f-980a-a43f14503838';
+-- Mover mensagens
+UPDATE messages SET conversation_id = '6b2873cf-322e-4af6-b946-b9f28e1dbad8'
+WHERE conversation_id = '73dc6bb6-dbd5-49a8-8de5-8df251d4129c';
 
 -- Deletar conversa duplicada
-DELETE FROM conversations WHERE id = 'a70c4b78-0fc1-4b4f-980a-a43f14503838';
+DELETE FROM conversations WHERE id = '73dc6bb6-dbd5-49a8-8de5-8df251d4129c';
 
 -- Marcar contato LID como merged
-UPDATE contacts SET phone = null, notes = 'merged_into:d3125f8f-5e8d-4264-928b-28870758af5d'
-WHERE id = 'dca93fe5-eb7e-4359-b465-b5bf33660d84';
+UPDATE contacts SET phone = null, notes = 'merged_into:f1f40928-aae1-4fd6-8ba4-9fca8a87f36b'
+WHERE id = '56f8b4df-20ed-472d-be94-56330532bb0a';
 
--- Atualizar contato primário com JID do LID e nome correto
-UPDATE contacts SET 
-  notes = 'jid:206622320263200@lid',
-  name = 'Alessandro'
-WHERE id = 'd3125f8f-5e8d-4264-928b-28870758af5d' AND name_edited = false;
-
--- Persistir mapeamento LID para prevenir futuras duplicações
+-- Persistir mapeamento LID
 INSERT INTO whatsapp_lid_map (lid_jid, phone_digits, instance_id)
-VALUES ('206622320263200@lid', '5516997307870', 'comercial')
-ON CONFLICT (lid_jid, instance_id) DO UPDATE SET phone_digits = '5516997307870', updated_at = now();
+VALUES ('70661439516698@lid', '5516997530152', 'comercial')
+ON CONFLICT (lid_jid, instance_id) DO UPDATE SET phone_digits = '5516997530152', updated_at = now();
 ```
 
-**2. Deploy da edge function** — A Prova 4 já está no código mas precisa ser deployada para funcionar em mensagens futuras.
-
-### Resultado esperado
-- Conversa de Mayara (`5ed95d5f`) terá todas as 5 mensagens (2 outbound + 3 inbound)
-- Conversa duplicada da fila desaparece
-- LID mapeado → futuras mensagens do Alessandro vão direto para a conversa certa
+### Arquivo editado
+Nenhum — apenas SQL migration + redeploy do `whatsapp-webhook` (que já contém a Prova 4) para garantir que está ativo.
 
