@@ -750,7 +750,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               messages: updatedMessages,
               updatedAt: new Date()
             };
-          });
+          }).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
           });
 
           // Atualizar selectedConversation também
