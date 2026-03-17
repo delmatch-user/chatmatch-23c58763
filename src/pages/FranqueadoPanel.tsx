@@ -161,13 +161,16 @@ export default function FranqueadoPanel() {
   }, [fetchConversations]);
 
   const filteredConversations = useMemo(() => {
-    if (!searchTerm) return conversations;
-    const lower = searchTerm.toLowerCase();
-    return conversations.filter(c => 
-      c.contact.name.toLowerCase().includes(lower) ||
-      (c.contact.phone && c.contact.phone.toLowerCase().includes(lower)) ||
-      (extractCidade(c.contact.notes) || '').toLowerCase().includes(lower)
-    );
+    let list = conversations;
+    if (searchTerm) {
+      const lower = searchTerm.toLowerCase();
+      list = list.filter(c => 
+        c.contact.name.toLowerCase().includes(lower) ||
+        (c.contact.phone && c.contact.phone.toLowerCase().includes(lower)) ||
+        (extractCidade(c.contact.notes) || '').toLowerCase().includes(lower)
+      );
+    }
+    return [...list].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
   }, [conversations, searchTerm]);
 
   const handleLogout = async () => {
