@@ -3,6 +3,7 @@ import { User, Conversation, Department, QuickMessage, Contact, Message, Message
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { playNotificationSoundGlobal } from '@/hooks/useNotificationSound';
+import { sendNativeNotification } from '@/lib/notifications';
 interface AppContextType {
   user: User | null;
   setUser: Dispatch<SetStateAction<User | null>>;
@@ -590,9 +591,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
             deleted: newMsg.deleted || false,
           };
 
-          // Tocar som se mensagem é de um contato (não do próprio usuário)
+          // Tocar som e notificação nativa se mensagem é de um contato (não do próprio usuário)
           if (!newMsg.sender_id) {
             playNotificationSoundGlobal('message');
+            
+            // Notificação nativa (usa sender_name como fallback)
+            sendNativeNotification('Nova mensagem recebida', {
+              body: newMsg.content?.substring(0, 100) || 'Nova mensagem',
+              tag: `msg-${newMsg.conversation_id}`,
+              renotify: true,
+            });
           }
 
           // Atualizar conversations de forma granular

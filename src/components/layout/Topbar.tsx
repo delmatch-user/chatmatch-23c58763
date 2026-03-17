@@ -34,6 +34,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { useQueueNotifications } from '@/hooks/useQueueNotifications';
+import { requestNotificationPermission, getNotificationStatusMessage } from '@/lib/notifications';
 import { useWorkScheduleMonitor } from '@/hooks/useWorkScheduleMonitor';
 import { EndOfShiftDialog } from '@/components/schedule/EndOfShiftDialog';
 import { Switch } from '@/components/ui/switch';
@@ -351,9 +352,21 @@ export function Topbar({ title = 'Match Conversa', onOpenSidebar }: TopbarProps)
             variant="ghost" 
             size="icon" 
             className="relative"
-            onClick={() => {
-              setNotificationsEnabled(!notificationsEnabled);
-              toast.success(notificationsEnabled ? 'Notificações desativadas' : 'Notificações ativadas');
+            onClick={async () => {
+              const newValue = !notificationsEnabled;
+              setNotificationsEnabled(newValue);
+              if (newValue) {
+                const permission = await requestNotificationPermission();
+                if (permission === 'denied') {
+                  toast.error(getNotificationStatusMessage());
+                } else if (permission === 'unsupported') {
+                  toast.warning(getNotificationStatusMessage());
+                } else {
+                  toast.success('Notificações ativadas');
+                }
+              } else {
+                toast.success('Notificações desativadas');
+              }
             }}
             title={notificationsEnabled ? 'Desativar notificações' : 'Ativar notificações'}
           >
@@ -577,7 +590,19 @@ export function Topbar({ title = 'Match Conversa', onOpenSidebar }: TopbarProps)
                   </div>
                   <Switch
                     checked={notificationsEnabled}
-                    onCheckedChange={setNotificationsEnabled}
+                    onCheckedChange={async (checked) => {
+                      setNotificationsEnabled(checked);
+                      if (checked) {
+                        const permission = await requestNotificationPermission();
+                        if (permission === 'denied') {
+                          toast.error(getNotificationStatusMessage());
+                        } else if (permission === 'unsupported') {
+                          toast.warning(getNotificationStatusMessage());
+                        } else {
+                          toast.success('Notificações ativadas');
+                        }
+                      }
+                    }}
                   />
                 </div>
               </div>
