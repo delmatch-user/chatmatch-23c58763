@@ -34,6 +34,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { useQueueNotifications } from '@/hooks/useQueueNotifications';
+import { requestNotificationPermission, getNotificationStatusMessage } from '@/lib/notifications';
 import { useWorkScheduleMonitor } from '@/hooks/useWorkScheduleMonitor';
 import { EndOfShiftDialog } from '@/components/schedule/EndOfShiftDialog';
 import { Switch } from '@/components/ui/switch';
