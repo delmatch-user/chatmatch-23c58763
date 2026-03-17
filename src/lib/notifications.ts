@@ -62,7 +62,7 @@ export async function sendNativeNotification(
     return false;
   }
 
-  const notifOptions: NotificationOptions = {
+  const notifOptions: NotificationOptions & { renotify?: boolean } = {
     body: options.body || '',
     icon: options.icon || '/pwa-192x192.png',
     badge: options.badge || '/pwa-192x192.png',
