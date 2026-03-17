@@ -595,11 +595,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (!newMsg.sender_id) {
             playNotificationSoundGlobal('message');
             
-            // Buscar nome do contato para a notificação nativa
-            const conv = prev.find(c => c.id === newMsg.conversation_id);
-            const contactName = conv?.contact?.name || 'Contato';
-            sendNativeNotification(`Nova mensagem de ${contactName}`, {
-              body: newMsg.content?.substring(0, 100) || 'Nova mensagem recebida',
+            // Notificação nativa (usa sender_name como fallback)
+            sendNativeNotification('Nova mensagem recebida', {
+              body: newMsg.content?.substring(0, 100) || 'Nova mensagem',
               tag: `msg-${newMsg.conversation_id}`,
               renotify: true,
             });
