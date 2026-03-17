@@ -620,6 +620,32 @@ serve(async (req) => {
         if (existingContact) {
           contactId = existingContact.id;
           console.log(`[WhatsApp] Contato encontrado: ${contactId} (${existingContact.name})`);
+
+          // Se chegou por LID e já resolvemos para um contato com telefone,
+          // unificar qualquer contato duplicado pré-existente com o mesmo JID LID.
+          if (isLid && senderJid?.endsWith('@lid') && existingContact.phone) {
+            const { data: lidDuplicates } = await supabase
+              .from('contacts')
+              .select('id, name')
+              .ilike('notes', `%jid:${senderJid}%`)
+              .neq('id', existingContact.id)
+              .limit(1);
+
+            if (lidDuplicates && lidDuplicates.length > 0) {
+              const duplicate = lidDuplicates[0];
+              console.log(`[WhatsApp] 🔄 Unificando duplicado LID ${duplicate.id} (${duplicate.name}) → ${existingContact.id} (${existingContact.name})`);
+              const { data: mergeResult } = await supabase.rpc('merge_duplicate_contacts', {
+                primary_id: existingContact.id,
+                duplicate_id: duplicate.id,
+              });
+
+              if (mergeResult?.success) {
+                console.log(`[WhatsApp] ✅ Duplicado LID unificado: ${JSON.stringify(mergeResult)}`);
+              } else {
+                console.warn(`[WhatsApp] ⚠️ Falha ao unificar duplicado LID: ${JSON.stringify(mergeResult)}`);
+              }
+            }
+          }
           
           // ====== PROTEÇÃO CONTRA CROSS-CONTAMINATION ======
           // Se temos um resolvedPhone/participant que difere do phone do contato encontrado,
