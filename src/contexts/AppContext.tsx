@@ -591,9 +591,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
             deleted: newMsg.deleted || false,
           };
 
-          // Tocar som se mensagem é de um contato (não do próprio usuário)
+          // Tocar som e notificação nativa se mensagem é de um contato (não do próprio usuário)
           if (!newMsg.sender_id) {
             playNotificationSoundGlobal('message');
+            
+            // Buscar nome do contato para a notificação nativa
+            const conv = prev.find(c => c.id === newMsg.conversation_id);
+            const contactName = conv?.contact?.name || 'Contato';
+            sendNativeNotification(`Nova mensagem de ${contactName}`, {
+              body: newMsg.content?.substring(0, 100) || 'Nova mensagem recebida',
+              tag: `msg-${newMsg.conversation_id}`,
+              renotify: true,
+            });
           }
 
           // Atualizar conversations de forma granular

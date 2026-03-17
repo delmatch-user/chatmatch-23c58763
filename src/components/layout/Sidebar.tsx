@@ -453,7 +453,19 @@ export function Sidebar({ className, variant = 'desktop', onNavigate }: SidebarP
                   </div>
                   <Switch
                     checked={notificationsEnabled}
-                    onCheckedChange={setNotificationsEnabled}
+                    onCheckedChange={async (checked) => {
+                      setNotificationsEnabled(checked);
+                      if (checked) {
+                        const permission = await requestNotificationPermission();
+                        if (permission === 'denied') {
+                          toast.error(getNotificationStatusMessage());
+                        } else if (permission === 'unsupported') {
+                          toast.warning(getNotificationStatusMessage());
+                        } else {
+                          toast.success('Notificações ativadas');
+                        }
+                      }
+                    }}
                   />
                 </div>
               </div>
