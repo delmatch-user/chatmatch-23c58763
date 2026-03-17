@@ -222,25 +222,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const tags = conv.tags || [];
           const isInternal = tags.includes('interno') || tags.includes('equipe') || tags.includes('internal');
           
-          // Use last message for preview (single message array)
-          // Fallback to last_message_preview from DB when message query hits 1000-row limit
-          const lastMsg = lastMsgMap.get(conv.id);
+          // Use last_message_preview from conversations table for preview (no extra query)
           let previewMessages: Message[] = [];
-          if (lastMsg) {
-            previewMessages = [{
-              id: lastMsg.id,
-              conversationId: lastMsg.conversation_id,
-              senderId: lastMsg.sender_id || '',
-              senderName: lastMsg.sender_name,
-              content: lastMsg.content,
-              type: lastMsg.message_type as Message['type'],
-              timestamp: new Date(lastMsg.created_at),
-              read: true,
-              status: lastMsg.status as Message['status'],
-              deleted: lastMsg.deleted || false,
-            }];
-          } else if (conv.last_message_preview) {
-            // Synthetic preview from DB field (covers conversations beyond 1000-msg limit)
+          if (conv.last_message_preview) {
             previewMessages = [{
               id: `preview-${conv.id}`,
               conversationId: conv.id,
