@@ -321,6 +321,14 @@ serve(async (req) => {
         
         // ====== CONSULTAR MAPA PERSISTENTE LID → PHONE ======
         let effectiveResolvedPhone = resolvedPhone;
+        const extractPhoneFromJid = (jidValue: string | null | undefined): string | null => {
+          if (!jidValue) return null;
+          const normalizedJid = String(jidValue).toLowerCase();
+          if (!normalizedJid.endsWith('@s.whatsapp.net')) return null;
+          const digits = normalizedJid.split('@')[0].replace(/\D/g, '');
+          return digits.length >= 10 && digits.length <= 13 ? digits : null;
+        };
+
         if (isLid && !effectiveResolvedPhone && senderJid?.endsWith('@lid')) {
           console.log(`[WhatsApp] LID sem resolvedPhone - consultando mapa persistente para ${senderJid} (instance: ${effectiveInstanceId})`);
           
@@ -365,6 +373,32 @@ serve(async (req) => {
                 effectiveResolvedPhone = lidMapGlobal.phone_digits;
                 console.log(`[WhatsApp] ⚠️ LID resolvido via mapa GLOBAL (instance ${lidMapGlobal.instance_id}): ${senderJid} → ${effectiveResolvedPhone}`);
               }
+            }
+          }
+        }
+
+        // 4) Fallback ativo: perguntar ao Baileys se o próprio LID resolve para @s.whatsapp.net
+        if (isLid && !effectiveResolvedPhone && senderJid?.endsWith('@lid')) {
+          const lidCandidates = Array.from(new Set([
+            senderJid.toLowerCase(),
+            senderJid.toLowerCase().replace(/:\d+@/, '@'),
+          ]));
+
+          for (const lidCandidate of lidCandidates) {
+            try {
+              const checkUrl = `${BAILEYS_SERVER_URL}/instances/${effectiveInstanceId}/check/${encodeURIComponent(lidCandidate)}`;
+              const checkResp = await fetch(checkUrl, { method: 'GET' });
+              if (!checkResp.ok) continue;
+
+              const checkData = await checkResp.json();
+              const phoneFromCheck = extractPhoneFromJid(checkData?.jid);
+              if (checkData?.exists && phoneFromCheck) {
+                effectiveResolvedPhone = phoneFromCheck;
+                console.log(`[WhatsApp] ✅ LID resolvido via check(${lidCandidate}): ${checkData?.jid} → ${effectiveResolvedPhone}`);
+                break;
+              }
+            } catch (error) {
+              console.log(`[WhatsApp] Fallback check LID falhou para ${lidCandidate}: ${error}`);
             }
           }
         }
@@ -586,6 +620,32 @@ serve(async (req) => {
         if (existingContact) {
           contactId = existingContact.id;
           console.log(`[WhatsApp] Contato encontrado: ${contactId} (${existingContact.name})`);
+
+          // Se chegou por LID e já resolvemos para um contato com telefone,
+          // unificar qualquer contato duplicado pré-existente com o mesmo JID LID.
+          if (isLid && senderJid?.endsWith('@lid') && existingContact.phone) {
+            const { data: lidDuplicates } = await supabase
+              .from('contacts')
+              .select('id, name')
+              .ilike('notes', `%jid:${senderJid}%`)
+              .neq('id', existingContact.id)
+              .limit(1);
+
+            if (lidDuplicates && lidDuplicates.length > 0) {
+              const duplicate = lidDuplicates[0];
+              console.log(`[WhatsApp] 🔄 Unificando duplicado LID ${duplicate.id} (${duplicate.name}) → ${existingContact.id} (${existingContact.name})`);
+              const { data: mergeResult } = await supabase.rpc('merge_duplicate_contacts', {
+                primary_id: existingContact.id,
+                duplicate_id: duplicate.id,
+              });
+
+              if (mergeResult?.success) {
+                console.log(`[WhatsApp] ✅ Duplicado LID unificado: ${JSON.stringify(mergeResult)}`);
+              } else {
+                console.warn(`[WhatsApp] ⚠️ Falha ao unificar duplicado LID: ${JSON.stringify(mergeResult)}`);
+              }
+            }
+          }
           
           // ====== PROTEÇÃO CONTRA CROSS-CONTAMINATION ======
           // Se temos um resolvedPhone/participant que difere do phone do contato encontrado,
