@@ -1,42 +1,43 @@
 
 
-## Unificar conversas duplicadas "Doce Delicia" + persistir LID map
+## Plano: Otimização Mobile/iOS + Notificações em Background + Pipeline Comercial
 
-### Situação
+### 1. Otimizar carregamento de mensagens no mobile
 
-| Conversa | Contato | Phone | JID | Msgs | Status |
-|----------|---------|-------|-----|------|--------|
-| `6b2873cf` (primária) | `f1f40928` | `+55 16 99753-0152` | `@s.whatsapp.net` | 70 | em_atendimento |
-| `73dc6bb6` (duplicada) | `56f8b4df` | null | `70661439516698@lid` | 16 | em_atendimento |
+**Problema**: O `fetchConversations` (AppContext linha 219-222) faz uma query de até 1000 mensagens só para pegar previews. No mobile com conexão lenta, isso trava o boot.
 
-Mesmo caso anterior: contato respondeu via LID sem mapeamento prévio. Não há entrada em `whatsapp_lid_map` para este LID.
+**Correção** em `src/contexts/AppContext.tsx`:
+- Remover a query `supabase.from('messages')` do `Promise.all` no `fetchConversations`
+- Usar exclusivamente `conv.last_message_preview` (que já existe na tabela `conversations`) para construir o preview sintético
+- As mensagens completas continuam sendo lazy-loaded ao selecionar uma conversa — nenhuma mensagem é removida
 
-### Plano (SQL migration)
+### 2. Corrigir Service Worker para notificações em background
 
-1. Mover 16 mensagens da conversa LID (`73dc6bb6`) para a conversa primária (`6b2873cf`)
-2. Deletar conversa duplicada
-3. Marcar contato LID (`56f8b4df`) como merged
-4. Atualizar notes do contato primário para incluir o LID
-5. Inserir mapeamento em `whatsapp_lid_map` para prevenir futuras duplicações
+**Problema**: O `main.tsx` (linhas 5-14) está **desregistrando todos os service workers e limpando caches** no boot. Isso mata a capacidade de receber notificações com o app fechado no iOS/Android PWA.
 
-```sql
--- Mover mensagens
-UPDATE messages SET conversation_id = '6b2873cf-322e-4af6-b946-b9f28e1dbad8'
-WHERE conversation_id = '73dc6bb6-dbd5-49a8-8de5-8df251d4129c';
+**Correção** em `src/main.tsx`:
+- Remover o bloco que desregistra service workers e limpa caches
+- O VitePWA com `registerType: "autoUpdate"` já gerencia atualizações automaticamente
 
--- Deletar conversa duplicada
-DELETE FROM conversations WHERE id = '73dc6bb6-dbd5-49a8-8de5-8df251d4129c';
+### 3. Notificações nativas com app fechado (iOS 16.4+ PWA)
 
--- Marcar contato LID como merged
-UPDATE contacts SET phone = null, notes = 'merged_into:f1f40928-aae1-4fd6-8ba4-9fca8a87f36b'
-WHERE id = '56f8b4df-20ed-472d-be94-56330532bb0a';
+O sistema já usa `ServiceWorkerRegistration.showNotification()` em `src/lib/notifications.ts`, que é o método correto para background. O problema era apenas o service worker sendo desregistrado no boot (item 2 acima).
 
--- Persistir mapeamento LID
-INSERT INTO whatsapp_lid_map (lid_jid, phone_digits, instance_id)
-VALUES ('70661439516698@lid', '5516997530152', 'comercial')
-ON CONFLICT (lid_jid, instance_id) DO UPDATE SET phone_digits = '5516997530152', updated_at = now();
-```
+Além disso, no `vite.config.ts` o PWA já está configurado corretamente com `registerType: "autoUpdate"`. Após remover o desregistro forçado, as notificações via SW voltarão a funcionar em background.
 
-### Arquivo editado
-Nenhum — apenas SQL migration + redeploy do `whatsapp-webhook` (que já contém a Prova 4) para garantir que está ativo.
+### 4. Corrigir acesso ao Pipeline Comercial (SDRRoute)
+
+**Problema**: O `SDRRoute` verifica `useApp().user` que carrega assincronamente. Quando `isLoading` do auth é `false` mas o `user` do AppContext ainda é `null`, redireciona para `/fila` antes de avaliar permissões.
+
+**Correção** em `src/components/sdr/SDRRoute.tsx`:
+- Importar `loading` do `useApp()`
+- Adicionar guard: se `loading` é true ou `user` é null (mas auth está autenticado), mostrar spinner
+
+### Resumo de arquivos
+
+| Arquivo | Mudança |
+|---|---|
+| `src/contexts/AppContext.tsx` | Remover query de mensagens do boot; usar `last_message_preview` direto |
+| `src/main.tsx` | Remover desregistro forçado de service workers |
+| `src/components/sdr/SDRRoute.tsx` | Aguardar AppContext carregar antes de decidir acesso |
 
