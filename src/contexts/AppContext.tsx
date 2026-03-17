@@ -210,7 +210,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (convData) {
         // Fetch all contacts for these conversations
         const contactIds = [...new Set(convData.map(c => c.contact_id))];
-        const convIds = convData.map(c => c.id);
+        
         
         // Fetch only contacts (messages are lazy-loaded per conversation on selection)
         const contactsResult = await supabase.from('contacts').select('*').in('id', contactIds);
