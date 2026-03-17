@@ -321,6 +321,14 @@ serve(async (req) => {
         
         // ====== CONSULTAR MAPA PERSISTENTE LID → PHONE ======
         let effectiveResolvedPhone = resolvedPhone;
+        const extractPhoneFromJid = (jidValue: string | null | undefined): string | null => {
+          if (!jidValue) return null;
+          const normalizedJid = String(jidValue).toLowerCase();
+          if (!normalizedJid.endsWith('@s.whatsapp.net')) return null;
+          const digits = normalizedJid.split('@')[0].replace(/\D/g, '');
+          return digits.length >= 10 && digits.length <= 13 ? digits : null;
+        };
+
         if (isLid && !effectiveResolvedPhone && senderJid?.endsWith('@lid')) {
           console.log(`[WhatsApp] LID sem resolvedPhone - consultando mapa persistente para ${senderJid} (instance: ${effectiveInstanceId})`);
           
@@ -365,6 +373,32 @@ serve(async (req) => {
                 effectiveResolvedPhone = lidMapGlobal.phone_digits;
                 console.log(`[WhatsApp] ⚠️ LID resolvido via mapa GLOBAL (instance ${lidMapGlobal.instance_id}): ${senderJid} → ${effectiveResolvedPhone}`);
               }
+            }
+          }
+        }
+
+        // 4) Fallback ativo: perguntar ao Baileys se o próprio LID resolve para @s.whatsapp.net
+        if (isLid && !effectiveResolvedPhone && senderJid?.endsWith('@lid')) {
+          const lidCandidates = Array.from(new Set([
+            senderJid.toLowerCase(),
+            senderJid.toLowerCase().replace(/:\d+@/, '@'),
+          ]));
+
+          for (const lidCandidate of lidCandidates) {
+            try {
+              const checkUrl = `${BAILEYS_SERVER_URL}/instances/${effectiveInstanceId}/check/${encodeURIComponent(lidCandidate)}`;
+              const checkResp = await fetch(checkUrl, { method: 'GET' });
+              if (!checkResp.ok) continue;
+
+              const checkData = await checkResp.json();
+              const phoneFromCheck = extractPhoneFromJid(checkData?.jid);
+              if (checkData?.exists && phoneFromCheck) {
+                effectiveResolvedPhone = phoneFromCheck;
+                console.log(`[WhatsApp] ✅ LID resolvido via check(${lidCandidate}): ${checkData?.jid} → ${effectiveResolvedPhone}`);
+                break;
+              }
+            } catch (error) {
+              console.log(`[WhatsApp] Fallback check LID falhou para ${lidCandidate}: ${error}`);
             }
           }
         }
