@@ -8,6 +8,7 @@ const corsHeaders = {
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const BAILEYS_SERVER_URL = Deno.env.get('BAILEYS_SERVER_URL') || 'http://100.26.63.137:3001';
 
 // Secret for validating requests from Baileys server
 const BAILEYS_WEBHOOK_SECRET = Deno.env.get('BAILEYS_WEBHOOK_SECRET') || '';
