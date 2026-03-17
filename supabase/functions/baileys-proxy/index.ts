@@ -778,6 +778,41 @@ serve(async (req) => {
       );
     }
 
+    // ====== PÓS-ENVIO: Persistir resolvedLid proativo (capturado via onWhatsApp no servidor) ======
+    if (action === 'send' && data?.success && data?.resolvedLid && data?.usedJid) {
+      const usedDigits = data.usedJid.split('@')[0]?.replace(/\D/g, '') || '';
+      const isValidPhone = usedDigits.length >= 10 && usedDigits.length <= 13;
+      
+      if (data.usedJid.endsWith('@s.whatsapp.net') && isValidPhone) {
+        try {
+          const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+          const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+          
+          await supabaseAdmin.from('whatsapp_lid_map').upsert({
+            lid_jid: data.resolvedLid,
+            phone_digits: usedDigits,
+            instance_id: instanceId || 'default',
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'lid_jid,instance_id' });
+          console.log(`Baileys Proxy - 🔑 Proactive LID persistido: ${data.resolvedLid} → ${usedDigits} (instance: ${instanceId || 'default'})`);
+          
+          // Também persistir variante canônica (sem :NN)
+          const canonicalLid = data.resolvedLid.replace(/:\d+@/, '@');
+          if (canonicalLid !== data.resolvedLid) {
+            await supabaseAdmin.from('whatsapp_lid_map').upsert({
+              lid_jid: canonicalLid,
+              phone_digits: usedDigits,
+              instance_id: instanceId || 'default',
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'lid_jid,instance_id' });
+            console.log(`Baileys Proxy - 🔑 Canonical LID persistido: ${canonicalLid} → ${usedDigits}`);
+          }
+        } catch (persistErr) {
+          console.error('Baileys Proxy - Erro ao persistir resolvedLid proativo:', persistErr);
+        }
+      }
+    }
+
     // ====== PÓS-ENVIO: Persistir resolução LID ↔ Phone quando o servidor retornou usedJid diferente ======
     if (action === 'send' && data?.success && data?.usedJid && data?.originalTo) {
       const originalTo = data.originalTo;
