@@ -779,6 +779,21 @@ export default function InternalChat() {
                     placeholder="Digite / para mensagens rápidas..."
                     className="flex-1 input-search min-h-[40px] max-h-[120px] resize-none overflow-y-auto py-2"
                     onKeyDown={handleKeyDown}
+                    onPaste={async (e: React.ClipboardEvent) => {
+                      const items = e.clipboardData?.items;
+                      if (!items || !user) return;
+                      for (const item of Array.from(items)) {
+                        if (item.type.startsWith('image/')) {
+                          e.preventDefault();
+                          const file = item.getAsFile();
+                          if (file) {
+                            const namedFile = new File([file], `screenshot-${Date.now()}.png`, { type: file.type });
+                            const uploaded = await uploadFile(namedFile, user.id);
+                            if (uploaded) setPendingFiles(prev => [...prev, uploaded]);
+                          }
+                        }
+                      }
+                    }}
                     disabled={uploading}
                     rows={1}
                   />
