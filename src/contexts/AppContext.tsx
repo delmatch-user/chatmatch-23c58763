@@ -212,25 +212,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const contactIds = [...new Set(convData.map(c => c.contact_id))];
         const convIds = convData.map(c => c.id);
         
-        // Fetch contacts and last messages in parallel
-        const [contactsResult, lastMsgsResult] = await Promise.all([
-          supabase.from('contacts').select('*').in('id', contactIds),
-          // Fetch latest message per conversation for preview
-          supabase.from('messages').select('*')
-            .in('conversation_id', convIds)
-            .order('created_at', { ascending: false })
-        ]);
-        
+        // Fetch only contacts (messages are lazy-loaded per conversation on selection)
+        const contactsResult = await supabase.from('contacts').select('*').in('id', contactIds);
         const contactsData = contactsResult.data;
-        const allLastMsgs = lastMsgsResult.data || [];
-        
-        // Build map: conversation_id -> latest message (first occurrence per conv since ordered desc)
-        const lastMsgMap = new Map<string, any>();
-        for (const msg of allLastMsgs) {
-          if (!lastMsgMap.has(msg.conversation_id)) {
-            lastMsgMap.set(msg.conversation_id, msg);
-          }
-        }
 
         // Messages are lazy-loaded per conversation on selection (performance optimization)
         const mappedConversations: Conversation[] = convData.map(conv => {
