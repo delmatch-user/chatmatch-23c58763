@@ -9,9 +9,10 @@ interface SDRRouteProps {
 
 export function SDRRoute({ children }: SDRRouteProps) {
   const { user: authUser, isLoading, isAdmin } = useAuth();
-  const { user, departments } = useApp();
+  const { user, departments, loading: appLoading } = useApp();
 
-  if (isLoading) {
+  // Wait for both auth AND app context to finish loading
+  if (isLoading || appLoading || (!user && authUser)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">

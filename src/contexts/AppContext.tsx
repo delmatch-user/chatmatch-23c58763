@@ -210,27 +210,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (convData) {
         // Fetch all contacts for these conversations
         const contactIds = [...new Set(convData.map(c => c.contact_id))];
-        const convIds = convData.map(c => c.id);
         
-        // Fetch contacts and last messages in parallel
-        const [contactsResult, lastMsgsResult] = await Promise.all([
-          supabase.from('contacts').select('*').in('id', contactIds),
-          // Fetch latest message per conversation for preview
-          supabase.from('messages').select('*')
-            .in('conversation_id', convIds)
-            .order('created_at', { ascending: false })
-        ]);
         
+        // Fetch only contacts (messages are lazy-loaded per conversation on selection)
+        const contactsResult = await supabase.from('contacts').select('*').in('id', contactIds);
         const contactsData = contactsResult.data;
-        const allLastMsgs = lastMsgsResult.data || [];
-        
-        // Build map: conversation_id -> latest message (first occurrence per conv since ordered desc)
-        const lastMsgMap = new Map<string, any>();
-        for (const msg of allLastMsgs) {
-          if (!lastMsgMap.has(msg.conversation_id)) {
-            lastMsgMap.set(msg.conversation_id, msg);
-          }
-        }
 
         // Messages are lazy-loaded per conversation on selection (performance optimization)
         const mappedConversations: Conversation[] = convData.map(conv => {
@@ -238,25 +222,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const tags = conv.tags || [];
           const isInternal = tags.includes('interno') || tags.includes('equipe') || tags.includes('internal');
           
-          // Use last message for preview (single message array)
-          // Fallback to last_message_preview from DB when message query hits 1000-row limit
-          const lastMsg = lastMsgMap.get(conv.id);
+          // Use last_message_preview from conversations table for preview (no extra query)
           let previewMessages: Message[] = [];
-          if (lastMsg) {
-            previewMessages = [{
-              id: lastMsg.id,
-              conversationId: lastMsg.conversation_id,
-              senderId: lastMsg.sender_id || '',
-              senderName: lastMsg.sender_name,
-              content: lastMsg.content,
-              type: lastMsg.message_type as Message['type'],
-              timestamp: new Date(lastMsg.created_at),
-              read: true,
-              status: lastMsg.status as Message['status'],
-              deleted: lastMsg.deleted || false,
-            }];
-          } else if (conv.last_message_preview) {
-            // Synthetic preview from DB field (covers conversations beyond 1000-msg limit)
+          if (conv.last_message_preview) {
             previewMessages = [{
               id: `preview-${conv.id}`,
               conversationId: conv.id,
