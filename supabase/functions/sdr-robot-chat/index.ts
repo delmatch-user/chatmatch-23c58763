@@ -568,7 +568,7 @@ serve(async (req) => {
     // Build system prompt with stage-specific instructions
     const stagePrompt = stage.ai_trigger_criteria || '';
     const contactInfo = deal.company ? `Empresa: ${deal.company}` : '';
-    const dealValue = deal.value ? `Valor: R$ ${Number(deal.value).toFixed(2)}` : '';
+    const dealValue = deal.value ? `Valor: R$ ${Number(deal.value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '';
 
     let systemPrompt = `Você é ${robot.name}, um assistente de vendas inteligente.\n\n`;
     
