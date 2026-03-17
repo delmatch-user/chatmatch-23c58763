@@ -568,7 +568,7 @@ serve(async (req) => {
     // Build system prompt with stage-specific instructions
     const stagePrompt = stage.ai_trigger_criteria || '';
     const contactInfo = deal.company ? `Empresa: ${deal.company}` : '';
-    const dealValue = deal.value ? `Valor: R$ ${Number(deal.value).toFixed(2)}` : '';
+    const dealValue = deal.value ? `Valor: R$ ${Number(deal.value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '';
 
     let systemPrompt = `Você é ${robot.name}, um assistente de vendas inteligente.\n\n`;
     
@@ -651,6 +651,7 @@ serve(async (req) => {
     systemPrompt += `\n## Diretrizes\n`;
     systemPrompt += `- Seja cordial, profissional e focado em vendas.\n`;
     systemPrompt += `- Responda de forma concisa e direta.\n`;
+    systemPrompt += `- FORMATAÇÃO NUMÉRICA: Sempre use o padrão brasileiro para números e valores monetários. Use ponto como separador de milhar e vírgula como separador decimal. Exemplos: 700.000 (setecentos mil), R$ 7.000,00 (sete mil reais), 1,5% (um e meio por cento). NUNCA use o formato americano (ex: 700,000 ou R$ 7,000.00).\n`;
     systemPrompt += `- REGRA CRÍTICA: Avance o lead proativamente! Não fique preso na mesma etapa. Ao perceber interesse, chame advance_lead_stage IMEDIATAMENTE junto com sua resposta.\n`;
     if (robot.tools?.sendAgentName) {
       systemPrompt += `- Identifique-se como ${robot.name}. Nunca mencione que é uma IA.\n`;
