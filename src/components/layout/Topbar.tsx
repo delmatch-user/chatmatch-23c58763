@@ -352,9 +352,21 @@ export function Topbar({ title = 'Match Conversa', onOpenSidebar }: TopbarProps)
             variant="ghost" 
             size="icon" 
             className="relative"
-            onClick={() => {
-              setNotificationsEnabled(!notificationsEnabled);
-              toast.success(notificationsEnabled ? 'Notificações desativadas' : 'Notificações ativadas');
+            onClick={async () => {
+              const newValue = !notificationsEnabled;
+              setNotificationsEnabled(newValue);
+              if (newValue) {
+                const permission = await requestNotificationPermission();
+                if (permission === 'denied') {
+                  toast.error(getNotificationStatusMessage());
+                } else if (permission === 'unsupported') {
+                  toast.warning(getNotificationStatusMessage());
+                } else {
+                  toast.success('Notificações ativadas');
+                }
+              } else {
+                toast.success('Notificações desativadas');
+              }
             }}
             title={notificationsEnabled ? 'Desativar notificações' : 'Ativar notificações'}
           >
