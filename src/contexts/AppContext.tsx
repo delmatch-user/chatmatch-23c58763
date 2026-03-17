@@ -3,6 +3,7 @@ import { User, Conversation, Department, QuickMessage, Contact, Message, Message
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { playNotificationSoundGlobal } from '@/hooks/useNotificationSound';
+import { sendNativeNotification } from '@/lib/notifications';
 interface AppContextType {
   user: User | null;
   setUser: Dispatch<SetStateAction<User | null>>;
