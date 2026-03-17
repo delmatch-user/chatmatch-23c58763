@@ -8,6 +8,7 @@ const corsHeaders = {
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const BAILEYS_SERVER_URL = Deno.env.get('BAILEYS_SERVER_URL') || 'http://100.26.63.137:3001';
 
 // Secret for validating requests from Baileys server
 const BAILEYS_WEBHOOK_SECRET = Deno.env.get('BAILEYS_WEBHOOK_SECRET') || '';
@@ -877,11 +878,49 @@ serve(async (req) => {
                         }
                       }
                     }
+
+                    // Prova 4: Para LIDs sem resolução, verificar via onWhatsApp se o phone do órfão resolve para o mesmo LID do sender
+                    let orphanPhoneMatchesViaCheck = false;
+                    if (!jidMatchesLid && !phoneMatchesIncoming && !orphanPhoneMatchesViaLidMap 
+                        && isLid && senderJid?.endsWith('@lid') && orphanContact.phone) {
+                      const orphanDigits = orphanContact.phone.replace(/\D/g, '');
+                      if (orphanDigits.length >= 10 && orphanDigits.length <= 13) {
+                        try {
+                          const checkUrl = `${BAILEYS_SERVER_URL}/instances/${effectiveInstanceId}/check/${encodeURIComponent(orphanDigits)}`;
+                          console.log(`[WhatsApp] Prova 4: Verificando ${checkUrl} para LID ${senderJid}`);
+                          const checkResp = await fetch(checkUrl, { method: 'GET' });
+                          if (checkResp.ok) {
+                            const checkData = await checkResp.json();
+                            if (checkData?.exists && checkData?.jid) {
+                              const checkedJid = String(checkData.jid).toLowerCase();
+                              // Normalizar: remover sufixos como :NN para comparação canônica
+                              const senderBase = senderJid.split(':')[0].split('@')[0];
+                              const checkedBase = checkedJid.split(':')[0].split('@')[0];
+                              if (checkedJid.endsWith('@lid') && senderBase === checkedBase) {
+                                orphanPhoneMatchesViaCheck = true;
+                                console.log(`[WhatsApp] ✅ Prova 4: check(${orphanDigits}) retornou ${checkedJid} que corresponde ao sender ${senderJid}`);
+                                // Persistir no LID map imediatamente
+                                await supabase.from('whatsapp_lid_map').upsert({
+                                  lid_jid: senderJid,
+                                  phone_digits: orphanDigits,
+                                  instance_id: effectiveInstanceId,
+                                  updated_at: new Date().toISOString()
+                                }, { onConflict: 'lid_jid,instance_id' });
+                              } else {
+                                console.log(`[WhatsApp] ❌ Prova 4: check(${orphanDigits}) retornou ${checkedJid} — não corresponde ao sender ${senderJid}`);
+                              }
+                            }
+                          }
+                        } catch (e) {
+                          console.log(`[WhatsApp] Prova 4: Erro ao verificar — ${e}`);
+                        }
+                      }
+                    }
                     
-                    if (jidMatchesLid || phoneMatchesIncoming || orphanPhoneMatchesViaLidMap) {
+                    if (jidMatchesLid || phoneMatchesIncoming || orphanPhoneMatchesViaLidMap || orphanPhoneMatchesViaCheck) {
                       contactId = orphanContact.id;
                       existingContact = orphanContact;
-                      console.log(`[WhatsApp] ✅ CONVERSA ÓRFÃ: Contato ${contactId} (${orphanContact.name}, phone: ${orphanContact.phone}, jid: ${jidInNotes}) vinculado ao LID ${sender} [prova: ${jidMatchesLid ? 'JID' : phoneMatchesIncoming ? 'PHONE' : 'LID_MAP'}]`);
+                      console.log(`[WhatsApp] ✅ CONVERSA ÓRFÃ: Contato ${contactId} (${orphanContact.name}, phone: ${orphanContact.phone}, jid: ${jidInNotes}) vinculado ao LID ${sender} [prova: ${jidMatchesLid ? 'JID' : phoneMatchesIncoming ? 'PHONE' : orphanPhoneMatchesViaLidMap ? 'LID_MAP' : 'CHECK'}]`);
                       
                       // Atualizar JID e nome do contato
                       const orphanUpdates: Record<string, string> = {};
