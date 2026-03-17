@@ -1673,6 +1673,30 @@ app.post('/instances/:instanceId/send', async (req, res) => {
 
     logger.info({ instanceId, to: usedJid, type, originalTo: to, attemptedCandidates }, 'Mensagem enviada');
 
+    // ====== PROACTIVE LID CAPTURE: após envio bem-sucedido para @s.whatsapp.net, descobrir LID associado ======
+    let resolvedLid = null;
+    if (usedJid && usedJid.endsWith('@s.whatsapp.net') && instance.sock) {
+      try {
+        const phoneForLookup = usedJid.split('@')[0];
+        const lookupPromise = instance.sock.onWhatsApp(usedJid);
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000));
+        const [lookupResult] = await Promise.race([lookupPromise, timeoutPromise]);
+        
+        if (lookupResult?.jid && lookupResult.jid.endsWith('@lid')) {
+          resolvedLid = lookupResult.jid;
+          const canonicalLid = normalizeLidCanonical(resolvedLid);
+          instance.lidMap.set(resolvedLid, { phone: phoneForLookup, name: null });
+          if (canonicalLid && canonicalLid !== resolvedLid) {
+            instance.lidMap.set(canonicalLid, { phone: phoneForLookup, name: null });
+          }
+          logger.info({ instanceId, phone: phoneForLookup, resolvedLid, canonicalLid }, '🔑 LID capturado proativamente após envio');
+        }
+      } catch (lidErr) {
+        // Timeout ou erro — não bloqueia o envio
+        logger.debug({ instanceId, usedJid, error: lidErr?.message }, 'onWhatsApp pós-envio falhou (não-crítico)');
+      }
+    }
+
     res.json({ 
       success: true, 
       messageId: result.key.id,
@@ -1680,6 +1704,7 @@ app.post('/instances/:instanceId/send', async (req, res) => {
       usedJid: usedJid,
       originalTo: to,
       attemptedCandidates,
+      resolvedLid,
     });
   } catch (error) {
     logger.error({ instanceId, error: error.message }, 'Erro ao enviar mensagem');
@@ -2055,12 +2080,36 @@ app.post('/send', async (req, res) => {
 
     logger.info({ instanceId, to: usedJid, type, originalTo: to }, 'Mensagem enviada');
 
+    // ====== PROACTIVE LID CAPTURE (legacy route) ======
+    let resolvedLid = null;
+    if (usedJid && usedJid.endsWith('@s.whatsapp.net') && instance.sock) {
+      try {
+        const phoneForLookup = usedJid.split('@')[0];
+        const lookupPromise = instance.sock.onWhatsApp(usedJid);
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000));
+        const [lookupResult] = await Promise.race([lookupPromise, timeoutPromise]);
+        
+        if (lookupResult?.jid && lookupResult.jid.endsWith('@lid')) {
+          resolvedLid = lookupResult.jid;
+          const canonicalLid = normalizeLidCanonical(resolvedLid);
+          instance.lidMap.set(resolvedLid, { phone: phoneForLookup, name: null });
+          if (canonicalLid && canonicalLid !== resolvedLid) {
+            instance.lidMap.set(canonicalLid, { phone: phoneForLookup, name: null });
+          }
+          logger.info({ instanceId, phone: phoneForLookup, resolvedLid, canonicalLid }, '🔑 [Legacy] LID capturado proativamente após envio');
+        }
+      } catch (lidErr) {
+        logger.debug({ instanceId, usedJid, error: lidErr?.message }, '[Legacy] onWhatsApp pós-envio falhou (não-crítico)');
+      }
+    }
+
     res.json({ 
       success: true, 
       messageId: result.key.id,
       status: 'sent',
       usedJid: usedJid,
-      originalTo: to
+      originalTo: to,
+      resolvedLid,
     });
   } catch (error) {
     logger.error({ instanceId, error: error.message }, 'Erro ao enviar mensagem');
