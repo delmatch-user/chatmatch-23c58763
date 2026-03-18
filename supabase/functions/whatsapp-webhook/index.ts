@@ -1457,8 +1457,7 @@ serve(async (req) => {
                           .from('contacts')
                           .update({ avatar_url: result.url })
                           .eq('id', contactId)
-                          .then(() => console.log(`[WhatsApp] Avatar atualizado para contato ${contactId}`))
-                          .catch(err => console.error('[WhatsApp] Erro ao salvar avatar:', err));
+                          .then(() => console.log(`[WhatsApp] Avatar atualizado para contato ${contactId}`));
                       } else {
                         console.log(`[WhatsApp] Avatar não disponível para ${senderJid}`);
                       }
