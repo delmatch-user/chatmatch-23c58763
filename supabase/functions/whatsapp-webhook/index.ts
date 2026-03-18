@@ -8,7 +8,7 @@ const corsHeaders = {
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const BAILEYS_SERVER_URL = Deno.env.get('BAILEYS_SERVER_URL') || 'http://100.26.63.137:3001';
+const BAILEYS_SERVER_URL = Deno.env.get('BAILEYS_SERVER_URL');
 
 // Secret for validating requests from Baileys server
 const BAILEYS_WEBHOOK_SECRET = Deno.env.get('BAILEYS_WEBHOOK_SECRET') || '';
@@ -71,7 +71,8 @@ serve(async (req) => {
     const baileysSecret = req.headers.get('x-baileys-secret');
     
     if (BAILEYS_WEBHOOK_SECRET && baileysSecret !== BAILEYS_WEBHOOK_SECRET) {
-      console.warn('[WhatsApp Webhook] Invalid or missing baileys secret');
+      console.error('[WhatsApp Webhook] Assinatura inválida — request rejeitado');
+      return new Response('Unauthorized', { status: 401 });
     }
     
     const body = await req.json();

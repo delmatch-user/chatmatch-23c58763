@@ -7,7 +7,8 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
 };
 
-const BAILEYS_SERVER_URL = Deno.env.get('BAILEYS_SERVER_URL') || 'http://100.26.63.137:3001';
+const BAILEYS_SERVER_URL = Deno.env.get('BAILEYS_SERVER_URL');
+if (!BAILEYS_SERVER_URL) console.error('[Baileys Proxy] BAILEYS_SERVER_URL não configurado!');
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
 

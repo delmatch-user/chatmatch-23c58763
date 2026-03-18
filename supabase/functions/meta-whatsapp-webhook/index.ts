@@ -156,10 +156,9 @@ serve(async (req) => {
       const isValid = await verifySignature(rawBody, signature);
 
       if (!isValid) {
-        // Log detalhado mas ACEITAR mesmo assim para não perder mensagens
-        // enquanto o APP_SECRET estiver sendo configurado
-        console.error('[Meta Webhook] ⚠️ Assinatura inválida - processando mesmo assim para debug');
+        console.error('[Meta Webhook] ⚠️ Assinatura inválida — request rejeitado');
         console.error('[Meta Webhook] Header x-hub-signature-256:', signature ? 'presente' : 'AUSENTE');
+        return new Response('Unauthorized', { status: 401 });
       }
 
       const body = JSON.parse(rawBody);

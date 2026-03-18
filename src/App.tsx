@@ -118,11 +118,7 @@ const App = () => {
                       />
                       <Route
                         path="/configuracoes"
-                        element={
-                          <ProtectedRoute>
-                            <Queue />
-                          </ProtectedRoute>
-                        }
+                        element={<Navigate to="/admin/dashboard" replace />}
                       />
 
                       {/* SDR Routes */}
@@ -195,11 +191,7 @@ const App = () => {
                       />
                       <Route
                         path="/admin/permissoes"
-                        element={
-                          <ProtectedRoute requireAdmin>
-                            <AdminUsers />
-                          </ProtectedRoute>
-                        }
+                        element={<Navigate to="/admin/usuarios" replace />}
                       />
                       <Route
                         path="/admin/robos"
@@ -267,11 +259,7 @@ const App = () => {
                       />
                       <Route
                         path="/admin/configuracoes"
-                        element={
-                          <ProtectedRoute requireAdmin>
-                            <AdminDashboard />
-                          </ProtectedRoute>
-                        }
+                        element={<Navigate to="/admin/dashboard" replace />}
                       />
 
                       {/* Franqueado route */}
