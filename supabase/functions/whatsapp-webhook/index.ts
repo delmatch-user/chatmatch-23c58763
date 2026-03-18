@@ -1165,6 +1165,98 @@ serve(async (req) => {
           (activeConversations || [])[0] ||
           null;
 
+        // ====== CROSS-CONTACT DEDUP: LID contact sem phone + sem conversa ativa → buscar match em conversas ativas da instância ======
+        if (!existingConv && isLid && existingContact && !existingContact.phone && senderJid?.endsWith('@lid') && BAILEYS_SERVER_URL) {
+          console.log(`[WhatsApp] 🔍 CROSS-DEDUP: Contato ${contactId} (LID, sem phone) sem conversa ativa. Buscando match na instância ${effectiveInstanceId}...`);
+          
+          // Buscar conversas ativas na mesma instância para OUTROS contatos
+          const { data: otherActiveConvs } = await supabase
+            .from('conversations')
+            .select('id, contact_id')
+            .eq('whatsapp_instance_id', effectiveInstanceId)
+            .eq('channel', 'whatsapp')
+            .neq('contact_id', contactId)
+            .in('status', ['em_fila', 'em_atendimento', 'pendente', 'transferida'])
+            .order('updated_at', { ascending: false })
+            .limit(30);
+          
+          if (otherActiveConvs && otherActiveConvs.length > 0) {
+            // Coletar contact_ids únicos
+            const otherContactIds = [...new Set(otherActiveConvs.map((c: any) => c.contact_id))];
+            
+            // Buscar contatos que TÊM phone
+            const { data: otherContacts } = await supabase
+              .from('contacts')
+              .select('id, name, phone, notes')
+              .in('id', otherContactIds)
+              .not('phone', 'is', null);
+            
+            if (otherContacts && otherContacts.length > 0) {
+              const senderBase = senderJid.split(':')[0].split('@')[0];
+              
+              for (const oc of otherContacts) {
+                const ocDigits = oc.phone!.replace(/\D/g, '');
+                if (ocDigits.length < 10 || ocDigits.length > 13) continue;
+                
+                try {
+                  const checkUrl = `${BAILEYS_SERVER_URL}/instances/${effectiveInstanceId}/check/${encodeURIComponent(ocDigits)}`;
+                  console.log(`[WhatsApp] CROSS-DEDUP: Verificando ${ocDigits} para LID ${senderJid}`);
+                  const checkResp = await fetch(checkUrl, { method: 'GET' });
+                  if (checkResp.ok) {
+                    const checkData = await checkResp.json();
+                    if (checkData?.exists && checkData?.jid) {
+                      const checkedJid = String(checkData.jid).toLowerCase();
+                      const checkedBase = checkedJid.split(':')[0].split('@')[0];
+                      
+                      if (checkedJid.endsWith('@lid') && senderBase === checkedBase) {
+                        console.log(`[WhatsApp] ✅ CROSS-DEDUP MATCH: phone ${ocDigits} (contato ${oc.id}) → LID ${checkedJid} == sender ${senderJid}`);
+                        
+                        // Persistir no LID map
+                        await supabase.from('whatsapp_lid_map').upsert({
+                          lid_jid: senderJid,
+                          phone_digits: ocDigits,
+                          instance_id: effectiveInstanceId,
+                          updated_at: new Date().toISOString()
+                        }, { onConflict: 'lid_jid,instance_id' });
+                        
+                        // Merge: contato com phone é o primário
+                        const { data: mergeResult } = await supabase.rpc('merge_duplicate_contacts', {
+                          primary_id: oc.id,
+                          duplicate_id: contactId
+                        });
+                        console.log(`[WhatsApp] 🔄 CROSS-DEDUP MERGE: ${JSON.stringify(mergeResult)}`);
+                        
+                        // Atualizar referências para o contato primário
+                        contactId = oc.id;
+                        existingContact = oc;
+                        
+                        // Re-buscar conversa ativa do contato primário
+                        const { data: primaryConvs } = await supabase
+                          .from('conversations')
+                          .select('id, assigned_to_robot, assigned_to, status, department_id, sdr_deal_id, robot_transferred, whatsapp_instance_id')
+                          .eq('contact_id', contactId)
+                          .eq('channel', 'whatsapp')
+                          .in('status', ['em_fila', 'em_atendimento', 'pendente', 'transferida'])
+                          .order('updated_at', { ascending: false })
+                          .limit(5);
+                        
+                        existingConv = (primaryConvs || []).find((conv: any) => conv.whatsapp_instance_id === effectiveInstanceId) || (primaryConvs || [])[0] || null;
+                        
+                        if (existingConv) {
+                          console.log(`[WhatsApp] ✅ CROSS-DEDUP: Conversa ${existingConv.id} do contato primário será reutilizada`);
+                        }
+                        break;
+                      }
+                    }
+                  }
+                } catch (e) {
+                  console.log(`[WhatsApp] CROSS-DEDUP: Erro ao verificar ${ocDigits}: ${e}`);
+                }
+              }
+            }
+          }
+        }
+
         // Aguardar upload de mídia se estiver em andamento
         if (mediaUploadPromise) {
           finalContent = await mediaUploadPromise;
