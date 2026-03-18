@@ -49,7 +49,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Conversation, Message, MessageReaction } from '@/types';
 import { cn } from '@/lib/utils';
-import { extractRealPhone, formatPhoneForDisplay, extractJid, getContactDisplayName } from '@/lib/phoneUtils';
+import { extractRealPhone, formatPhoneForDisplay, extractJid, getContactDisplayName, getInstagramDisplayHandle } from '@/lib/phoneUtils';
 import { useApp } from '@/contexts/AppContext';
 import { TransferDialog } from '@/components/chat/TransferDialog';
 import { useConversations } from '@/hooks/useConversations';
