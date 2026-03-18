@@ -10,6 +10,7 @@ interface AttachmentData {
   type: string;
   size?: number;
   mediaId?: string;
+  isStoryMention?: boolean;
 }
 
 interface MessageAttachmentProps {
