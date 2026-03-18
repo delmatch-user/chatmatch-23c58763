@@ -599,15 +599,27 @@ serve(async (req) => {
 
     // Reference links
     const referenceLinks = (robot.reference_links as any[]) || [];
-    if (referenceLinks.length > 0) {
+    const linkRefs = referenceLinks.filter(l => !l.type || l.type === 'link');
+    const fileRefs = referenceLinks.filter(l => l.type === 'file');
+
+    if (linkRefs.length > 0) {
       systemPrompt += `## Links de Referência\n`;
-      referenceLinks.forEach(link => {
+      linkRefs.forEach(link => {
         if (link.title && link.url) {
           systemPrompt += `- **${link.title}**: ${link.url}\n`;
           if (link.content) systemPrompt += `  Conteúdo: ${link.content}\n`;
         }
       });
       systemPrompt += `\n`;
+    }
+
+    if (fileRefs.length > 0) {
+      systemPrompt += `## Base de Consulta - Documentos\n`;
+      fileRefs.forEach(link => {
+        if (link.fileContent) {
+          systemPrompt += `### Documento: ${link.fileName || link.title}\n${link.fileContent}\n\n`;
+        }
+      });
     }
 
     // Calculate next stage BEFORE building prompt
