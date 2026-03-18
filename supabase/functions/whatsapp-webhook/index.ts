@@ -1457,8 +1457,7 @@ serve(async (req) => {
                           .from('contacts')
                           .update({ avatar_url: result.url })
                           .eq('id', contactId)
-                          .then(() => console.log(`[WhatsApp] Avatar atualizado para contato ${contactId}`))
-                          .catch(err => console.error('[WhatsApp] Erro ao salvar avatar:', err));
+                          .then(() => console.log(`[WhatsApp] Avatar atualizado para contato ${contactId}`));
                       } else {
                         console.log(`[WhatsApp] Avatar não disponível para ${senderJid}`);
                       }
@@ -1485,7 +1484,7 @@ serve(async (req) => {
               .eq('is_active', true)
               .maybeSingle();
 
-            if (autoConfig?.keywords?.length > 0) {
+            if (autoConfig && autoConfig.keywords?.length > 0) {
               const msgLower = finalContent.toLowerCase();
               const matched = autoConfig.keywords.some((kw: string) => msgLower.includes(kw.toLowerCase()));
 

@@ -366,7 +366,7 @@ Deno.serve(async (req) => {
         .eq('is_active', true)
         .maybeSingle();
 
-      if (autoConfig?.keywords?.length > 0) {
+      if (autoConfig && autoConfig.keywords?.length > 0) {
         const msgLower = mensagem.toLowerCase();
         const matched = autoConfig.keywords.some((kw: string) => msgLower.includes(kw.toLowerCase()));
 

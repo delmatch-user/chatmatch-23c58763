@@ -401,7 +401,7 @@ serve(async (req) => {
                 // ====== CONVERSÃO ÁUDIO WebM → OGG/Opus ======
                 if (sendBody.type === 'audio') {
                   try {
-                    binaryData = ensureOggOpus(binaryData);
+                    binaryData = ensureOggOpus(binaryData) as Uint8Array<ArrayBuffer>;
                     mimeType = 'audio/ogg';
                     console.log(`Baileys Proxy - Áudio processado: ${binaryData.length} bytes (OGG/Opus)`);
                   } catch (convErr) {

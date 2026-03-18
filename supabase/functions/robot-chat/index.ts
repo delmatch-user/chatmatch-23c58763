@@ -1215,7 +1215,7 @@ async function handleAutomaticMode(body: {
   // splitByLineBreak: dividir resposta em múltiplas mensagens por quebra de linha
   const shouldSplit = robotConfig.tools.splitByLineBreak && aiResponse.includes('\n');
   const messageParts = shouldSplit 
-    ? aiResponse.split('\n').map(p => p.trim()).filter(p => p.length > 0)
+    ? aiResponse.split('\n').map((p: string) => p.trim()).filter((p: string) => p.length > 0)
     : [aiResponse];
 
   // Delay de 3s para garantir que a mensagem do cliente carregou na tela dos atendentes
