@@ -398,10 +398,13 @@ serve(async (req) => {
 
         // 4) Fallback ativo: perguntar ao Baileys se o próprio LID resolve para @s.whatsapp.net
         if (isLid && !effectiveResolvedPhone && senderJid?.endsWith('@lid')) {
+          // Expandir candidatos: JID completo, sem sufixo :NN, e apenas dígitos
+          const senderDigitsOnly = senderJid.split(':')[0].split('@')[0];
           const lidCandidates = Array.from(new Set([
             senderJid.toLowerCase(),
             senderJid.toLowerCase().replace(/:\d+@/, '@'),
-          ]));
+            senderDigitsOnly, // digits only — Baileys pode resolver para @s.whatsapp.net
+          ].filter(Boolean)));
 
           for (const lidCandidate of lidCandidates) {
             try {
