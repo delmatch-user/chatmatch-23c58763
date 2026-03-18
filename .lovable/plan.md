@@ -1,53 +1,43 @@
 
 
-## Problemas Identificados
+## Visualizar Story Mentions do Instagram no Chat
 
-### 1. Auto-online fica brigando com status manual
-Quando o atendente está **dentro do horário** e muda manualmente para offline (ex: foi ao banheiro), o monitor detecta `status === 'offline'` e reseta `autoOnlineDoneRef` (linha 115-117), forçando-o de volta para online no próximo tick. Isso cria um loop conflitante.
+### Problema
+Quando alguém menciona sua conta no Story do Instagram, o webhook da Meta envia um evento com `attachments[].type = "story_mention"` e a URL CDN do story. Atualmente, o `mapAttachmentType` no `ig-test` não reconhece `story_mention`, tratando-o como arquivo genérico. A URL do story (CDN temporária) não é persistida corretamente e não há indicação visual de que se trata de uma menção em story.
 
-### 2. Guard de auto-online está quebrado
-O `autoOnlineDoneRef` é resetado quando `profile?.status !== 'offline'` (linha 115), ou seja: online → manual offline → auto-online novamente. O guard não protege nada.
+### Solução
 
-### 3. Escala cross-midnight não busca dia anterior
-Se a escala é Sábado 22:00-02:00, no Domingo às 01:00 o código busca `day_of_week = 0` (Domingo). Mas a escala está em `day_of_week = 6` (Sábado). O atendente fica "sem escala" e é posto offline.
+**1. Backend: `supabase/functions/ig-test/index.ts`**
 
-### 4. Auto-offline dispara mesmo com extensão ativa
-Quando `remaining <= 0` e o atendente estendeu o turno, o cálculo pode oscilar dependendo de como `extensionMinutes` é somado no `endMinutes`, causando disparo prematuro.
+Adicionar `story_mention` ao `mapAttachmentType`:
+```typescript
+case 'story_mention': return { mimePrefix: 'image/jpeg', messageType: 'story_mention', label: '📸 Menção no Story' };
+```
 
----
+Na lógica de processamento de attachments (linhas 383-406), tratar `story_mention` especificamente:
+- Baixar e persistir a mídia CDN no storage (já acontece via `persistMedia`)
+- Marcar o `messageType` como `story_mention` para o frontend saber renderizar diferente
+- Incluir flag `isStoryMention: true` no JSON do attachment
 
-## Solução
+**2. Frontend: `src/components/chat/MessageAttachment.tsx`**
 
-### Arquivo: `src/hooks/useWorkScheduleMonitor.tsx`
+Adicionar renderização especial para story mentions:
+- Detectar `isStoryMention` no attachment ou `story_mention` no type
+- Renderizar com um badge/label "📸 Menção no Story" sobre a imagem/vídeo
+- Usar o mesmo `ImagePreview` para imagens de story, com um wrapper visual distinto (borda gradiente estilo Instagram)
 
-**A. Corrigir fetch para incluir dia anterior (cross-midnight)**
-- Buscar escala do dia atual E do dia anterior
-- Se a escala do dia anterior tem `end_time < start_time` (cross-midnight), verificar se ainda estamos dentro dela
+**3. Frontend: `src/components/chat/ChatPanel.tsx`**
 
-**B. Auto-online apenas no início do turno (janela de 2 min)**
-- Só disparar auto-online se estamos nos primeiros 2 minutos do turno
-- Usar `autoOnlineDoneRef` sem reset por mudança de status — só resetar quando muda de dia/escala
-- Remover o reset em linha 115-117 que causa o conflito
+Garantir que `message_type === 'story_mention'` seja tratado como mídia (attachment) na renderização de mensagens, parseando o JSON do content normalmente.
 
-**C. Auto-offline robusto**
-- Quando `remaining <= 0`, verificar se realmente saiu do horário (double-check `isWithinSchedule` ficou false)
-- Usar `autoOfflineDoneRef` corretamente sem resetar dentro do horário
-
-**D. Não interferir com mudanças manuais durante o turno**
-- Adicionar flag `manualOverrideRef` que é setada quando o atendente muda status manualmente via Topbar
-- O monitor respeita essa flag e não força auto-online durante o turno ativo
-
-### Arquivo: `src/components/layout/Topbar.tsx`
-
-**E. Sinalizar mudança manual**
-- Quando `handleStatusChange` é chamado pelo usuário, emitir um evento ou setar uma flag no localStorage para que o monitor saiba que foi manual e não force auto-online
-
----
-
-## Resumo das mudanças
+### Arquivos alterados
 
 | Arquivo | Mudança |
 |---|---|
-| `useWorkScheduleMonitor.tsx` | Fetch dia anterior para cross-midnight; auto-online só nos primeiros 2min; remover reset de ref que causa loop; respeitar override manual |
-| `Topbar.tsx` | Marcar mudanças manuais de status para evitar conflito com auto-online |
+| `supabase/functions/ig-test/index.ts` | Adicionar `story_mention` ao map de tipos e persistir mídia do story |
+| `src/components/chat/MessageAttachment.tsx` | Renderização visual especial para story mentions |
+| `src/components/chat/ChatPanel.tsx` | Tratar `story_mention` como tipo de mídia na renderização |
+
+### Nota sobre URLs de Story
+As URLs de story CDN da Meta são temporárias (expiram em ~24h). O sistema já faz download e upload para o storage próprio via `persistMedia`, então a visualização continuará funcionando após a expiração da URL original.
 
