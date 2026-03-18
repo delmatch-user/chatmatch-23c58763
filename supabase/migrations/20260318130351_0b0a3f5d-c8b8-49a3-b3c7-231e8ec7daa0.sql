@@ -1,0 +1,1 @@
+UPDATE contacts SET name_edited = false WHERE channel = 'instagram' AND (name LIKE 'Instagram %' OR name = 'Desconhecido') AND name_edited = true
