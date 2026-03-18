@@ -330,7 +330,16 @@ serve(async (req) => {
                       (sender && sender.length >= 13 && !sender.startsWith('55'));
         
         // ====== CONSULTAR MAPA PERSISTENTE LID → PHONE ======
-        let effectiveResolvedPhone = resolvedPhone;
+        // Validar resolvedPhone: só aceitar 10-13 dígitos (telefone real)
+        let effectiveResolvedPhone: string | null = null;
+        if (resolvedPhone) {
+          const rpDigits = resolvedPhone.replace(/\D/g, '');
+          if (rpDigits.length >= 10 && rpDigits.length <= 13) {
+            effectiveResolvedPhone = resolvedPhone;
+          } else {
+            console.log(`[WhatsApp] resolvedPhone inválido descartado: ${resolvedPhone} (${rpDigits.length} dígitos)`);
+          }
+        }
         const extractPhoneFromJid = (jidValue: string | null | undefined): string | null => {
           if (!jidValue) return null;
           const normalizedJid = String(jidValue).toLowerCase();
