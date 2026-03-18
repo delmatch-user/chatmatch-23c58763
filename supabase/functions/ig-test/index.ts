@@ -80,18 +80,18 @@ async function fetchWithProofFallback(
 
 // ===== Fetch IG profile =====
 
-async function fetchIGProfile(senderId: string, tokenCandidates: { token: string; source: string }[]): Promise<{ name?: string; profilePic?: string }> {
+async function fetchIGProfile(senderId: string, tokenCandidates: { token: string; source: string }[]): Promise<{ name?: string; username?: string; profilePic?: string }> {
   const appSecret = getAppSecret();
 
   for (const { token, source } of tokenCandidates) {
     try {
-      const baseUrl = `https://graph.facebook.com/v25.0/${senderId}?fields=name,profile_pic&access_token=${token}`;
+      const baseUrl = `https://graph.facebook.com/v25.0/${senderId}?fields=name,username,profile_pic&access_token=${token}`;
       const res = await fetchWithProofFallback(baseUrl, token, appSecret, 'GET');
 
       if (res.ok) {
         const data = await res.json();
-        console.log(`[IG] Perfil obtido via ${source}:`, data.name);
-        return { name: data.name || undefined, profilePic: data.profile_pic || undefined };
+        console.log(`[IG] Perfil obtido via ${source}:`, data.name, data.username);
+        return { name: data.name || undefined, username: data.username || undefined, profilePic: data.profile_pic || undefined };
       }
 
       const errText = await res.text();
