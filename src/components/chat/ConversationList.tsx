@@ -8,7 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Badge } from '@/components/ui/badge';
 import { Conversation, ConversationStatus } from '@/types';
 import { cn } from '@/lib/utils';
-import { extractRealPhone, formatPhoneForDisplay, getContactDisplayName, phoneMatchesBr } from '@/lib/phoneUtils';
+import { extractRealPhone, formatPhoneForDisplay, getContactDisplayName, phoneMatchesBr, getInstagramDisplayHandle } from '@/lib/phoneUtils';
 import { useApp } from '@/contexts/AppContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
