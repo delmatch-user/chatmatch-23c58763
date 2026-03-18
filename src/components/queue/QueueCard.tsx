@@ -154,9 +154,16 @@ export function QueueCard({ conversation, onAssume, canPreview = false }: QueueC
             </span>
           </div>
 
-          {/* Só exibe telefone se NÃO for machine e se houver número real */}
+          {/* Subtítulo: telefone para WhatsApp, @handle para Instagram, nada para machine */}
           {(() => {
-            if ((conversation.channel || conversation.contact.channel) === 'machine') return null;
+            const channel = conversation.channel || conversation.contact.channel;
+            if (channel === 'machine') return null;
+            if (channel === 'instagram') {
+              const username = extractInstagramUsername(conversation.contact.notes);
+              return username ? (
+                <p className="text-sm text-muted-foreground mb-2">@{username}</p>
+              ) : null;
+            }
             const realPhone = extractRealPhone(conversation.contact.phone, conversation.contact.notes);
             const formatted = realPhone ? formatPhoneForDisplay(realPhone) : null;
             return formatted ? (
