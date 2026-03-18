@@ -330,7 +330,16 @@ serve(async (req) => {
                       (sender && sender.length >= 13 && !sender.startsWith('55'));
         
         // ====== CONSULTAR MAPA PERSISTENTE LID → PHONE ======
-        let effectiveResolvedPhone = resolvedPhone;
+        // Validar resolvedPhone: só aceitar 10-13 dígitos (telefone real)
+        let effectiveResolvedPhone: string | null = null;
+        if (resolvedPhone) {
+          const rpDigits = resolvedPhone.replace(/\D/g, '');
+          if (rpDigits.length >= 10 && rpDigits.length <= 13) {
+            effectiveResolvedPhone = resolvedPhone;
+          } else {
+            console.log(`[WhatsApp] resolvedPhone inválido descartado: ${resolvedPhone} (${rpDigits.length} dígitos)`);
+          }
+        }
         const extractPhoneFromJid = (jidValue: string | null | undefined): string | null => {
           if (!jidValue) return null;
           const normalizedJid = String(jidValue).toLowerCase();
@@ -389,10 +398,13 @@ serve(async (req) => {
 
         // 4) Fallback ativo: perguntar ao Baileys se o próprio LID resolve para @s.whatsapp.net
         if (isLid && !effectiveResolvedPhone && senderJid?.endsWith('@lid')) {
+          // Expandir candidatos: JID completo, sem sufixo :NN, e apenas dígitos
+          const senderDigitsOnly = senderJid.split(':')[0].split('@')[0];
           const lidCandidates = Array.from(new Set([
             senderJid.toLowerCase(),
             senderJid.toLowerCase().replace(/:\d+@/, '@'),
-          ]));
+            senderDigitsOnly, // digits only — Baileys pode resolver para @s.whatsapp.net
+          ].filter(Boolean)));
 
           for (const lidCandidate of lidCandidates) {
             try {
@@ -1073,6 +1085,15 @@ serve(async (req) => {
             } else {
               contactId = newContact.id;
               console.log(`[WhatsApp] Novo contato criado: ${contactId}`);
+              // Hidratar existingContact para permitir dedup downstream
+              existingContact = {
+                id: contactId,
+                name: contactName,
+                phone: formatBrazilianPhone(phoneToSave) || null,
+                notes: jidNote || null,
+                channel: 'whatsapp',
+                name_edited: false
+              };
             }
           }
         }
@@ -1737,6 +1758,47 @@ serve(async (req) => {
 
         if (updated && updated.length > 0) {
           console.log(`[WhatsApp] Status atualizado para msg ${updated[0].id}`);
+          
+          // ====== PERSISTIR LID MAP VIA STATUS (match direto) ======
+          if (recipient) {
+            const recipDigits = recipient.replace(/\D/g, '');
+            const isRecipientLid = recipDigits.length > 13;
+            if (isRecipientLid) {
+              // Recipient é pseudo-LID: buscar phone do contato da conversa
+              const { data: statusMsg } = await supabase
+                .from('messages')
+                .select('conversation_id')
+                .eq('id', updated[0].id)
+                .single();
+              if (statusMsg) {
+                const { data: statusConv } = await supabase
+                  .from('conversations')
+                  .select('contact_id')
+                  .eq('id', statusMsg.conversation_id)
+                  .single();
+                if (statusConv) {
+                  const { data: statusCt } = await supabase
+                    .from('contacts')
+                    .select('phone')
+                    .eq('id', statusConv.contact_id)
+                    .single();
+                  if (statusCt?.phone) {
+                    const ctDigits = statusCt.phone.replace(/\D/g, '');
+                    if (ctDigits.length >= 10 && ctDigits.length <= 13) {
+                      const lidJidFromRecip = `${recipDigits}@lid`;
+                      await supabase.from('whatsapp_lid_map').upsert({
+                        lid_jid: lidJidFromRecip,
+                        phone_digits: ctDigits,
+                        instance_id: effectiveInstanceId,
+                        updated_at: new Date().toISOString()
+                      }, { onConflict: 'lid_jid,instance_id' });
+                      console.log(`[WhatsApp] LID map criado via status (direct match): ${lidJidFromRecip} → ${ctDigits}`);
+                    }
+                  }
+                }
+              }
+            }
+          }
         } else {
           // 2. Fallback RESTRITO: buscar mensagem recente do agente sem external_id
           // REGRA: Só aplicar fallback se recipient é telefone real (≤13 dígitos)
@@ -1792,6 +1854,26 @@ serve(async (req) => {
                       .update({ external_id: messageId, delivery_status: status })
                       .eq('id', recentMsg.id);
                     console.log(`[WhatsApp] Fallback restrito (LID+instance): external_id ${messageId} → msg ${recentMsg.id}`);
+                    
+                    // ====== PERSISTIR LID MAP VIA STATUS ======
+                    // Buscar phone do contato para criar mapeamento LID→phone
+                    const { data: statusContact } = await supabase
+                      .from('contacts')
+                      .select('phone')
+                      .eq('id', lidContact.id)
+                      .single();
+                    if (statusContact?.phone) {
+                      const scDigits = statusContact.phone.replace(/\D/g, '');
+                      if (scDigits.length >= 10 && scDigits.length <= 13) {
+                        await supabase.from('whatsapp_lid_map').upsert({
+                          lid_jid: lidJid,
+                          phone_digits: scDigits,
+                          instance_id: effectiveInstanceId,
+                          updated_at: new Date().toISOString()
+                        }, { onConflict: 'lid_jid,instance_id' });
+                        console.log(`[WhatsApp] LID map criado via status (pseudo-LID): ${lidJid} → ${scDigits}`);
+                      }
+                    }
                   } else {
                     console.log(`[WhatsApp] Fallback restrito: sem msg recente sem external_id na conv ${instConv.id}`);
                   }
@@ -1870,6 +1952,27 @@ serve(async (req) => {
                       
                       if (!fallbackErr) {
                         console.log(`[WhatsApp] Fallback: external_id ${messageId} associado à msg ${agentMsg.id} com status ${status}`);
+                        
+                        // ====== PERSISTIR LID MAP VIA STATUS (telefone real) ======
+                        // Se recipient é telefone real, buscar se contato tem LID no notes
+                        const { data: statusContact2 } = await supabase
+                          .from('contacts')
+                          .select('notes')
+                          .eq('id', contactId!)
+                          .single();
+                        if (statusContact2?.notes) {
+                          const lidMatch = statusContact2.notes.match(/jid:(\d+@lid)/);
+                          if (lidMatch) {
+                            const contactLid = lidMatch[1];
+                            await supabase.from('whatsapp_lid_map').upsert({
+                              lid_jid: contactLid,
+                              phone_digits: recipientDigits,
+                              instance_id: effectiveInstanceId,
+                              updated_at: new Date().toISOString()
+                            }, { onConflict: 'lid_jid,instance_id' });
+                            console.log(`[WhatsApp] LID map criado via status (phone→LID): ${contactLid} → ${recipientDigits}`);
+                          }
+                        }
                       } else {
                         console.error(`[WhatsApp] Fallback: erro ao associar external_id:`, fallbackErr);
                       }
