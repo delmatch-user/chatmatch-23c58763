@@ -185,28 +185,31 @@ export function phoneMatchesBr(phoneA: string | undefined | null, phoneB: string
 
 export function formatPhoneForDisplay(phone?: string): string {
   if (!phone) return '';
-  
+
+  // Nunca exibir ID bruto do Instagram como telefone
+  if (phone.startsWith('ig:')) return '';
+
   const cleaned = phone.replace(/\D/g, '');
-  
+
   // Formato: 55 88 99647 6068 → +55 (88) 99647-6068
   if (cleaned.length === 13 && cleaned.startsWith('55')) {
     return `+${cleaned.slice(0, 2)} (${cleaned.slice(2, 4)}) ${cleaned.slice(4, 9)}-${cleaned.slice(9)}`;
   }
-  
+
   // Formato: 5588996476068 (12 dígitos) → +55 (88) 9964-76068
   if (cleaned.length === 12 && cleaned.startsWith('55')) {
     return `+${cleaned.slice(0, 2)} (${cleaned.slice(2, 4)}) ${cleaned.slice(4, 8)}-${cleaned.slice(8)}`;
   }
-  
+
   // Formato: 88996476068 (11 dígitos com 9) → (88) 99647-6068
   if (cleaned.length === 11) {
     return `(${cleaned.slice(0, 2)}) ${cleaned.slice(2, 7)}-${cleaned.slice(7)}`;
   }
-  
+
   // Formato: 8896476068 (10 dígitos sem 9) → (88) 9647-6068
   if (cleaned.length === 10) {
     return `(${cleaned.slice(0, 2)}) ${cleaned.slice(2, 6)}-${cleaned.slice(6)}`;
   }
-  
+
   return phone;
 }

@@ -11,12 +11,13 @@ function looksLikeAccessToken(value: string): boolean {
   return value.startsWith('EAA') || value.length > 80;
 }
 
-function getAppSecret(): string | null {
+function getAppSecrets(): string[] {
   const igSecret = (Deno.env.get('META_INSTAGRAM_APP_SECRET') || '').trim();
-  if (igSecret && !looksLikeAccessToken(igSecret)) return igSecret;
   const waSecret = (Deno.env.get('META_WHATSAPP_APP_SECRET') || '').trim();
-  if (waSecret && !looksLikeAccessToken(waSecret)) return waSecret;
-  return null;
+
+  return [igSecret, waSecret]
+    .filter((secret) => !!secret && !looksLikeAccessToken(secret))
+    .filter((secret, index, arr) => arr.indexOf(secret) === index);
 }
 
 async function generateAppSecretProof(token: string, secret: string): Promise<string> {
@@ -46,7 +47,7 @@ function parseGraphError(result: any): { code: number | null; message: string } 
 async function fetchWithProofFallback(
   baseUrl: string,
   token: string,
-  appSecret: string | null,
+  appSecrets: string[],
   method: string,
   body?: string
 ): Promise<Response> {
@@ -56,8 +57,16 @@ async function fetchWithProofFallback(
   };
   const fetchOpts: RequestInit = { method, headers, ...(body ? { body } : {}) };
 
-  if (appSecret) {
-    const proof = await generateAppSecretProof(token, appSecret);
+  if (appSecrets.length === 0) {
+    return await fetch(baseUrl, fetchOpts);
+  }
+
+  let hadProofError = false;
+
+  for (let i = 0; i < appSecrets.length; i++) {
+    const secret = appSecrets[i];
+    const secretLabel = i === 0 ? 'secret[0]' : 'secret[fallback]';
+    const proof = await generateAppSecretProof(token, secret);
     const separator = baseUrl.includes('?') ? '&' : '?';
     const urlWithProof = `${baseUrl}${separator}appsecret_proof=${proof}`;
     const res = await fetch(urlWithProof, fetchOpts);
@@ -71,18 +80,20 @@ async function fetchWithProofFallback(
     const isProofError = String(errMsg).includes('appsecret_proof') || errCode === 100;
 
     if (isProofError) {
-      console.warn('[IG] appsecret_proof inválido. Retentando SEM proof...');
-      const retryRes = await fetch(baseUrl, fetchOpts);
-      if (retryRes.ok) {
-        console.warn('[IG] ⚠️ Funcionou SEM proof — App Secret incorreto. Corrija META_INSTAGRAM_APP_SECRET.');
-      }
-      return retryRes;
+      hadProofError = true;
+      console.warn(`[IG] appsecret_proof inválido com ${secretLabel}. Tentando próximo secret...`);
+      continue;
     }
 
     return res;
   }
 
-  return await fetch(baseUrl, fetchOpts);
+  // Fallback final sem proof (apenas para apps/configs que não exigem)
+  const retryRes = await fetch(baseUrl, fetchOpts);
+  if (retryRes.ok && hadProofError) {
+    console.warn('[IG] ⚠️ Funcionou SEM proof — revisar META_INSTAGRAM_APP_SECRET / META_WHATSAPP_APP_SECRET.');
+  }
+  return retryRes;
 }
 
 // ===== Derive Page Access Token (same strategy as instagram-send) =====
@@ -90,12 +101,12 @@ async function fetchWithProofFallback(
 async function derivePageAccessToken(
   pageId: string,
   token: string,
-  appSecret: string | null
+  appSecrets: string[]
 ): Promise<{ token: string; strategy: string } | null> {
   // Strategy 1: read page access_token directly
   try {
     const pageUrl = `https://graph.facebook.com/v25.0/${pageId}?fields=access_token`;
-    const pageRes = await fetchWithProofFallback(pageUrl, token, appSecret, 'GET');
+    const pageRes = await fetchWithProofFallback(pageUrl, token, appSecrets, 'GET');
     const pageData = await pageRes.json().catch(() => ({}));
     if (pageRes.ok && typeof pageData?.access_token === 'string' && pageData.access_token.trim()) {
       console.log('[IG] Page token derivado via page_fields');
@@ -108,7 +119,7 @@ async function derivePageAccessToken(
   // Strategy 2: list accounts
   try {
     const accountsUrl = 'https://graph.facebook.com/v25.0/me/accounts?fields=id,access_token';
-    const accountsRes = await fetchWithProofFallback(accountsUrl, token, appSecret, 'GET');
+    const accountsRes = await fetchWithProofFallback(accountsUrl, token, appSecrets, 'GET');
     const accountsData = await accountsRes.json().catch(() => ({}));
     if (accountsRes.ok && Array.isArray(accountsData?.data)) {
       const match = accountsData.data.find((item: any) => String(item?.id) === String(pageId));
@@ -148,7 +159,7 @@ async function fetchIGProfile(
   tokenCandidates: { token: string; source: string }[],
   igAccountId: string
 ): Promise<{ name?: string; username?: string; profilePic?: string }> {
-  const appSecret = getAppSecret();
+  const appSecrets = getAppSecrets();
 
   for (const { token, source } of tokenCandidates) {
     let activeToken = token;
@@ -157,17 +168,17 @@ async function fetchIGProfile(
     while (true) {
       try {
         const baseUrl = `https://graph.facebook.com/v25.0/${senderId}?fields=name,username,profile_pic&access_token=${activeToken}`;
-        const res = await fetchWithProofFallback(baseUrl, activeToken, appSecret, 'GET');
+        const res = await fetchWithProofFallback(baseUrl, activeToken, appSecrets, 'GET');
 
         if (res.ok) {
           const data = await res.json();
           console.log(`[IG] Perfil obtido via ${source}${triedDerive ? ' (derived)' : ''}:`, data.name, data.username);
-          
+
           // Persist derived token if it worked
           if (triedDerive && activeToken !== token) {
             await persistDerivedToken(igAccountId, token, activeToken);
           }
-          
+
           return { name: data.name || undefined, username: data.username || undefined, profilePic: data.profile_pic || undefined };
         }
 
@@ -191,7 +202,7 @@ async function fetchIGProfile(
         if (!triedDerive && (needsPageToken || isPermissionError || res.status === 403)) {
           triedDerive = true;
           console.log(`[IG] Tentando derivar Page Access Token para ${igAccountId}...`);
-          const derived = await derivePageAccessToken(igAccountId, token, appSecret);
+          const derived = await derivePageAccessToken(igAccountId, token, appSecrets);
           if (derived) {
             activeToken = derived.token;
             continue; // retry with derived token
@@ -221,12 +232,12 @@ async function sendInstagramMessage(
   text: string,
   tokenCandidates: { token: string; source: string }[]
 ): Promise<{ sent: boolean; messageId?: string }> {
-  const appSecret = getAppSecret();
+  const appSecrets = getAppSecrets();
   const payload = { recipient: { id: recipientId }, message: { text }, messaging_type: 'RESPONSE' };
 
   for (const { token, source } of tokenCandidates) {
     const url = `https://graph.facebook.com/v25.0/${pageId}/messages`;
-    const res = await fetchWithProofFallback(url, token, appSecret, 'POST', JSON.stringify(payload));
+    const res = await fetchWithProofFallback(url, token, appSecrets, 'POST', JSON.stringify(payload));
     const result = await res.json();
 
     if (res.ok) {
