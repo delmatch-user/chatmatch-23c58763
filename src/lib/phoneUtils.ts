@@ -76,18 +76,14 @@ export function getContactDisplayName(name?: string, phone?: string, notes?: str
   const isPlaceholder =
     !name ||
     name === 'Desconhecido' ||
-    /^Instagram \d+$/.test(name) ||
+    /^Instagram(?:\s+\d+)?$/.test(name) ||
     name.startsWith('ig:');
 
   if (isPlaceholder) {
     if (isInstagramContact) {
       const username = extractInstagramUsername(notes);
       if (username) return `@${username}`;
-
-      if (name && /^Instagram \d+$/.test(name)) return name;
-
-      const igId = phone?.slice(3);
-      return igId ? `Instagram ${igId.slice(-6)}` : 'Instagram';
+      return 'Instagram';
     }
 
     const realPhone = extractRealPhone(phone, notes);
