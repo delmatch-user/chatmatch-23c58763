@@ -285,6 +285,7 @@ function mapAttachmentType(attType: string): { mimePrefix: string; messageType: 
     case 'image': return { mimePrefix: 'image/jpeg', messageType: 'image', label: '📷 Imagem' };
     case 'video': return { mimePrefix: 'video/mp4', messageType: 'video', label: '🎬 Vídeo' };
     case 'audio': return { mimePrefix: 'audio/mpeg', messageType: 'audio', label: '🎤 Áudio' };
+    case 'story_mention': return { mimePrefix: 'image/jpeg', messageType: 'story_mention', label: '📸 Menção no Story' };
     default: return { mimePrefix: 'application/octet-stream', messageType: 'file', label: '📎 Arquivo' };
   }
 }
