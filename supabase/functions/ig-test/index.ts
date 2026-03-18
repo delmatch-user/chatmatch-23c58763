@@ -417,13 +417,21 @@ Deno.serve(async (req) => {
             contact = nc;
           } else {
             const updates: any = {};
-            // Update name if current name is a placeholder (Instagram XXXX or @handle) and we have a real name
-            const isPlaceholderName = contact.name.startsWith('Instagram ') || contact.name.startsWith('@') || contact.name === 'Desconhecido';
+            // Update name if current name is a placeholder (Instagram XXXX, @handle, ig:ID, desconhecido)
+            const isPlaceholderName =
+              contact.name.startsWith('Instagram ') ||
+              contact.name.startsWith('@') ||
+              contact.name.startsWith('ig:') ||
+              contact.name === 'Desconhecido';
+
             if (!contact.name_edited && isPlaceholderName && profile.name) {
               updates.name = profile.name;
             } else if (!contact.name_edited && isPlaceholderName && !profile.name && profile.username) {
               updates.name = `@${profile.username}`;
+            } else if (!contact.name_edited && contact.name.startsWith('ig:')) {
+              updates.name = `Instagram ${senderId.slice(-6)}`;
             }
+
             if (profile.profilePic && !contact.avatar_url) updates.avatar_url = profile.profilePic;
             // Update username in notes if changed or missing
             const newNotes = buildNotes(contact.notes);
@@ -453,7 +461,7 @@ Deno.serve(async (req) => {
           // Save message
           await supabase.from('messages').insert({
             conversation_id: conv.id,
-            sender_name: contact.name_edited ? contact.name : (profile.name || contact.name),
+            sender_name: contact.name_edited ? contact.name : (profile.name || (profile.username ? `@${profile.username}` : contact.name)),
             content, message_type: messageType, external_id: message.mid, status: 'sent'
           });
 
