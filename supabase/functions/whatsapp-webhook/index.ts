@@ -1813,6 +1813,26 @@ serve(async (req) => {
                       .update({ external_id: messageId, delivery_status: status })
                       .eq('id', recentMsg.id);
                     console.log(`[WhatsApp] Fallback restrito (LID+instance): external_id ${messageId} → msg ${recentMsg.id}`);
+                    
+                    // ====== PERSISTIR LID MAP VIA STATUS ======
+                    // Buscar phone do contato para criar mapeamento LID→phone
+                    const { data: statusContact } = await supabase
+                      .from('contacts')
+                      .select('phone')
+                      .eq('id', lidContact.id)
+                      .single();
+                    if (statusContact?.phone) {
+                      const scDigits = statusContact.phone.replace(/\D/g, '');
+                      if (scDigits.length >= 10 && scDigits.length <= 13) {
+                        await supabase.from('whatsapp_lid_map').upsert({
+                          lid_jid: lidJid,
+                          phone_digits: scDigits,
+                          instance_id: effectiveInstanceId,
+                          updated_at: new Date().toISOString()
+                        }, { onConflict: 'lid_jid,instance_id' });
+                        console.log(`[WhatsApp] LID map criado via status (pseudo-LID): ${lidJid} → ${scDigits}`);
+                      }
+                    }
                   } else {
                     console.log(`[WhatsApp] Fallback restrito: sem msg recente sem external_id na conv ${instConv.id}`);
                   }
