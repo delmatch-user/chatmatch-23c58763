@@ -290,18 +290,31 @@ Deno.serve(async (req) => {
           // Contact handling
           const contactPhone = `ig:${senderId}`;
           let { data: contact } = await supabase.from('contacts').select('*').eq('phone', contactPhone).maybeSingle();
-          const displayName = profile.name || `Instagram ${senderId.slice(-6)}`;
+          const displayName = profile.name || (profile.username ? `@${profile.username}` : `Instagram ${senderId.slice(-6)}`);
+
+          // Build notes with ig_username if available
+          const buildNotes = (existingNotes?: string | null): string | null => {
+            if (!profile.username) return existingNotes || null;
+            const tag = `ig_username:${profile.username}`;
+            if (existingNotes && existingNotes.includes('ig_username:')) {
+              return existingNotes.replace(/ig_username:[^\s|]+/, tag);
+            }
+            return existingNotes ? `${existingNotes}|${tag}` : tag;
+          };
 
           if (!contact) {
             const { data: nc, error: ce } = await supabase.from('contacts')
-              .insert({ name: displayName, phone: contactPhone, channel: 'instagram', avatar_url: profile.profilePic || null })
+              .insert({ name: displayName, phone: contactPhone, channel: 'instagram', avatar_url: profile.profilePic || null, notes: buildNotes(null) })
               .select().single();
             if (ce) { console.error('[IG] Erro contato:', ce); continue; }
             contact = nc;
           } else {
             const updates: any = {};
-            if (!contact.name_edited && contact.name.startsWith('Instagram ') && profile.name) updates.name = profile.name;
+            if (!contact.name_edited && (contact.name.startsWith('Instagram ') || contact.name.startsWith('@')) && profile.name) updates.name = profile.name;
             if (profile.profilePic && !contact.avatar_url) updates.avatar_url = profile.profilePic;
+            // Update username in notes if changed or missing
+            const newNotes = buildNotes(contact.notes);
+            if (newNotes && newNotes !== contact.notes) updates.notes = newNotes;
             if (Object.keys(updates).length > 0) {
               await supabase.from('contacts').update(updates).eq('id', contact.id);
             }
