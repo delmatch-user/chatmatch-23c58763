@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Conversation, Message } from '@/types';
 import { cn } from '@/lib/utils';
-import { extractRealPhone, formatPhoneForDisplay, getContactDisplayName } from '@/lib/phoneUtils';
+import { extractRealPhone, formatPhoneForDisplay, getContactDisplayName, extractInstagramUsername } from '@/lib/phoneUtils';
 import { ConversationPreviewDialog } from './ConversationPreviewDialog';
 
 interface QueueCardProps {
