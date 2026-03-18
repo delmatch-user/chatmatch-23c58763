@@ -72,21 +72,29 @@ export function extractRealPhone(phone?: string, notes?: string): string | undef
  * Se o nome for "Desconhecido" ou vazio, retorna o telefone formatado.
  */
 export function getContactDisplayName(name?: string, phone?: string, notes?: string): string {
-  // Treat placeholder names as "no name"
-  const isPlaceholder = !name || name === 'Desconhecido' || /^Instagram \d+$/.test(name);
-  
+  const isInstagramContact = !!phone && phone.startsWith('ig:');
+  const isPlaceholder =
+    !name ||
+    name === 'Desconhecido' ||
+    /^Instagram \d+$/.test(name) ||
+    name.startsWith('ig:');
+
   if (isPlaceholder) {
-    // For Instagram contacts, try to show @username from notes
-    if (phone && phone.startsWith('ig:')) {
+    if (isInstagramContact) {
       const username = extractInstagramUsername(notes);
       if (username) return `@${username}`;
+
+      if (name && /^Instagram \d+$/.test(name)) return name;
+
+      const igId = phone?.slice(3);
+      return igId ? `Instagram ${igId.slice(-6)}` : 'Instagram';
     }
-    // If we have a non-placeholder name, use it
-    if (name && !isPlaceholder) return name;
+
     const realPhone = extractRealPhone(phone, notes);
     const formatted = formatPhoneForDisplay(realPhone);
     return formatted || name || 'Desconhecido';
   }
+
   return name;
 }
 
