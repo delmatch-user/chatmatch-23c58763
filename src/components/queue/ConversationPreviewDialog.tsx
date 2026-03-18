@@ -249,7 +249,7 @@ export function ConversationPreviewDialog({
 
             <div className="flex-1">
               <DialogTitle className="text-lg font-semibold">
-                {conversation.contact.name}
+                {getContactDisplayName(conversation.contact.name, conversation.contact.phone, conversation.contact.notes)}
               </DialogTitle>
               <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
                 {(() => {
