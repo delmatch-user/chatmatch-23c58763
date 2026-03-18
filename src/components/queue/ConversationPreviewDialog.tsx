@@ -11,7 +11,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Conversation, Message } from '@/types';
 import { cn } from '@/lib/utils';
-import { extractRealPhone, formatPhoneForDisplay } from '@/lib/phoneUtils';
+import { extractRealPhone, formatPhoneForDisplay, getContactDisplayName, getInstagramDisplayHandle } from '@/lib/phoneUtils';
 import { getTagColorClasses } from '@/lib/tagColors';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
