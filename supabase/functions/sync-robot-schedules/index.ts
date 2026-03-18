@@ -563,7 +563,7 @@ Deno.serve(async (req) => {
           console.log("[auto-finalize] Nenhuma conversa candidata.");
         }
       } else {
-        console.log(`[auto-finalize] Departamento '${afDeptName}' não encontrado.`);
+        console.log(`[auto-finalize] Departamento '${afDeptValue}' não encontrado.`);
       }
     } else {
       console.log("[auto-finalize] Desabilitado.");
