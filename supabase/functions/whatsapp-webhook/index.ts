@@ -1911,6 +1911,27 @@ serve(async (req) => {
                       
                       if (!fallbackErr) {
                         console.log(`[WhatsApp] Fallback: external_id ${messageId} associado à msg ${agentMsg.id} com status ${status}`);
+                        
+                        // ====== PERSISTIR LID MAP VIA STATUS (telefone real) ======
+                        // Se recipient é telefone real, buscar se contato tem LID no notes
+                        const { data: statusContact2 } = await supabase
+                          .from('contacts')
+                          .select('notes')
+                          .eq('id', contactId!)
+                          .single();
+                        if (statusContact2?.notes) {
+                          const lidMatch = statusContact2.notes.match(/jid:(\d+@lid)/);
+                          if (lidMatch) {
+                            const contactLid = lidMatch[1];
+                            await supabase.from('whatsapp_lid_map').upsert({
+                              lid_jid: contactLid,
+                              phone_digits: recipientDigits,
+                              instance_id: effectiveInstanceId,
+                              updated_at: new Date().toISOString()
+                            }, { onConflict: 'lid_jid,instance_id' });
+                            console.log(`[WhatsApp] LID map criado via status (phone→LID): ${contactLid} → ${recipientDigits}`);
+                          }
+                        }
                       } else {
                         console.error(`[WhatsApp] Fallback: erro ao associar external_id:`, fallbackErr);
                       }
