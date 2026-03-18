@@ -101,6 +101,15 @@ export function extractInstagramId(phone?: string): string | null {
 }
 
 /**
+ * Extrai o @username do Instagram do campo notes (formato ig_username:HANDLE)
+ */
+export function extractInstagramUsername(notes?: string): string | null {
+  if (!notes) return null;
+  const match = notes.match(/ig_username:([^\s|]+)/);
+  return match ? match[1] : null;
+}
+
+/**
  * Gera variantes de um número brasileiro para comparação.
  * Ex: 5588996476068 → ['5588996476068', '88996476068', '8896476068', '5588996476068']
  */
