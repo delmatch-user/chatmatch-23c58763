@@ -1085,6 +1085,15 @@ serve(async (req) => {
             } else {
               contactId = newContact.id;
               console.log(`[WhatsApp] Novo contato criado: ${contactId}`);
+              // Hidratar existingContact para permitir dedup downstream
+              existingContact = {
+                id: contactId,
+                name: contactName,
+                phone: formatBrazilianPhone(phoneToSave) || null,
+                notes: jidNote || null,
+                channel: 'whatsapp',
+                name_edited: false
+              };
             }
           }
         }
