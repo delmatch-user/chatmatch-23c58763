@@ -678,7 +678,7 @@ export default function AdminRobos() {
                         className="gap-2"
                       >
                         <Link2 className="w-4 h-4" />
-                        Links de consulta ({selectedRobot.referenceLinks.length}/5)
+                        Base de Consulta ({selectedRobot.referenceLinks.length}/10)
                       </Button>
                     </div>
 
