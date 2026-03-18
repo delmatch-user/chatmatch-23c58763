@@ -678,7 +678,7 @@ export default function AdminRobos() {
                         className="gap-2"
                       >
                         <Link2 className="w-4 h-4" />
-                        Links de consulta ({selectedRobot.referenceLinks.length}/5)
+                        Base de Consulta ({selectedRobot.referenceLinks.length}/10)
                       </Button>
                     </div>
 
@@ -780,22 +780,37 @@ export default function AdminRobos() {
                       </div>
                     )}
 
-                    {/* Links Tab */}
+                    {/* Links / Base de Consulta Tab */}
                     {knowledgeTab === 'links' && (
                       <div className="space-y-4">
                         {selectedRobot.referenceLinks.map((link, index) => (
-                          <div key={link.id} className="flex items-center gap-2">
-                            <Input
-                              placeholder="https://..."
-                              value={link.url}
-                              onChange={(e) => {
-                                const updated = selectedRobot.referenceLinks.map(l => 
-                                  l.id === link.id ? { ...l, url: e.target.value } : l
-                                );
-                                setSelectedRobot({ ...selectedRobot, referenceLinks: updated });
-                              }}
-                              className="flex-1"
-                            />
+                          <div key={link.id} className="flex items-center gap-2 bg-muted/30 rounded-lg p-3">
+                            {link.type === 'file' ? (
+                              <>
+                                <FileText className="w-5 h-5 text-primary shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium truncate">{link.fileName || link.title}</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {link.fileContent ? `${link.fileContent.length.toLocaleString()} caracteres extraídos` : 'Processando...'}
+                                  </p>
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <Link2 className="w-5 h-5 text-primary shrink-0" />
+                                <Input
+                                  placeholder="https://..."
+                                  value={link.url}
+                                  onChange={(e) => {
+                                    const updated = selectedRobot.referenceLinks.map(l => 
+                                      l.id === link.id ? { ...l, url: e.target.value } : l
+                                    );
+                                    setSelectedRobot({ ...selectedRobot, referenceLinks: updated });
+                                  }}
+                                  className="flex-1"
+                                />
+                              </>
+                            )}
                             <Button
                               variant="ghost"
                               size="icon"
@@ -810,30 +825,90 @@ export default function AdminRobos() {
                           </div>
                         ))}
 
-                        {selectedRobot.referenceLinks.length < 5 && (
-                          <Button
-                            variant="outline"
-                            className="w-full border-dashed border-success text-success hover:bg-success/10 hover:text-success"
-                            onClick={() => {
-                              const newLink: ReferenceLink = {
-                                id: Date.now().toString(),
-                                url: '',
-                                title: '',
-                              };
-                              setSelectedRobot({
-                                ...selectedRobot,
-                                referenceLinks: [...selectedRobot.referenceLinks, newLink],
-                              });
-                            }}
-                          >
-                            <Plus className="w-4 h-4 mr-2" />
-                            Adicionar link
-                          </Button>
+                        {selectedRobot.referenceLinks.length < 10 && (
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              className="flex-1 border-dashed border-success text-success hover:bg-success/10 hover:text-success"
+                              onClick={() => {
+                                const newLink: ReferenceLink = {
+                                  id: Date.now().toString(),
+                                  url: '',
+                                  title: '',
+                                  type: 'link',
+                                };
+                                setSelectedRobot({
+                                  ...selectedRobot,
+                                  referenceLinks: [...selectedRobot.referenceLinks, newLink],
+                                });
+                              }}
+                            >
+                              <Link2 className="w-4 h-4 mr-2" />
+                              Adicionar link
+                            </Button>
+                            <Button
+                              variant="outline"
+                              className="flex-1 border-dashed border-primary text-primary hover:bg-primary/10 hover:text-primary"
+                              onClick={() => {
+                                const fileInput = document.createElement('input');
+                                fileInput.type = 'file';
+                                fileInput.accept = '.txt,.pdf,.md,.csv';
+                                fileInput.onchange = async (e) => {
+                                  const file = (e.target as HTMLInputElement).files?.[0];
+                                  if (!file) return;
+                                  if (file.size > 10 * 1024 * 1024) {
+                                    toast.error('Arquivo muito grande. Máximo de 10MB.');
+                                    return;
+                                  }
+                                  const result = await uploadFile(file, `robot-knowledge/${selectedRobot.id}`);
+                                  if (!result) return;
+                                  
+                                  // Extract content via edge function
+                                  let fileContent = '';
+                                  try {
+                                    const resp = await supabase.functions.invoke('extract-file-content', {
+                                      body: { fileUrl: result.url, fileName: file.name },
+                                    });
+                                    if (resp.data?.content) {
+                                      fileContent = resp.data.content;
+                                    }
+                                  } catch (err) {
+                                    console.error('Error extracting file content:', err);
+                                    toast.error('Erro ao extrair conteúdo do arquivo');
+                                  }
+                                  
+                                  const newLink: ReferenceLink = {
+                                    id: Date.now().toString(),
+                                    url: result.url,
+                                    title: file.name,
+                                    type: 'file',
+                                    fileUrl: result.url,
+                                    fileName: file.name,
+                                    fileContent,
+                                  };
+                                  setSelectedRobot(prev => prev ? {
+                                    ...prev,
+                                    referenceLinks: [...prev.referenceLinks, newLink],
+                                  } : prev);
+                                  toast.success(`Arquivo "${file.name}" adicionado com sucesso!`);
+                                };
+                                fileInput.click();
+                              }}
+                              disabled={uploading}
+                            >
+                              {uploading ? (
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              ) : (
+                                <FileText className="w-4 h-4 mr-2" />
+                              )}
+                              Adicionar arquivo
+                            </Button>
+                          </div>
                         )}
 
                         {selectedRobot.referenceLinks.length === 0 && (
                           <div className="text-center py-8 text-muted-foreground text-sm">
-                            Nenhum link adicionado ainda
+                            Nenhum link ou arquivo adicionado ainda
                           </div>
                         )}
                       </div>

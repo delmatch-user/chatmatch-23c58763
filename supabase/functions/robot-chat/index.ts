@@ -109,9 +109,12 @@ function buildSystemPrompt(config: RobotConfig, availableDepartments?: { id: str
   }
 
   // Reference Links - Base de conhecimento adicional
-  if (referenceLinks && referenceLinks.length > 0) {
+  const linkRefs = (referenceLinks || []).filter((link: any) => !link.type || link.type === 'link');
+  const fileRefs = (referenceLinks || []).filter((link: any) => link.type === 'file');
+
+  if (linkRefs.length > 0) {
     prompt += `## Links de Referência\nUse estes links como fonte adicional de informação ao responder perguntas:\n\n`;
-    referenceLinks.forEach((link, index) => {
+    linkRefs.forEach((link: any) => {
       if (link.title && link.url) {
         prompt += `- **${link.title}**: ${link.url}\n`;
         if (link.content) {
@@ -120,6 +123,15 @@ function buildSystemPrompt(config: RobotConfig, availableDepartments?: { id: str
       }
     });
     prompt += `\n`;
+  }
+
+  if (fileRefs.length > 0) {
+    prompt += `## Base de Consulta - Documentos\nUse o conteúdo destes documentos como base de conhecimento para suas respostas:\n\n`;
+    fileRefs.forEach((link: any) => {
+      if (link.fileContent) {
+        prompt += `### Documento: ${link.fileName || link.title}\n${link.fileContent}\n\n`;
+      }
+    });
   }
   
   prompt += `## Ferramentas Disponíveis\n`;

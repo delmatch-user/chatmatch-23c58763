@@ -13,6 +13,10 @@ export interface ReferenceLink {
   id: string;
   url: string;
   title: string;
+  type: 'link' | 'file';
+  fileUrl?: string;
+  fileName?: string;
+  fileContent?: string;
 }
 
 export interface RobotTools {
