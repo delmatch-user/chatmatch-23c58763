@@ -446,6 +446,7 @@ Deno.serve(async (req) => {
               }
             } else {
               console.error('[webhook-machine] Erro ao criar deal SDR:', dealErr);
+              throw dealErr;
             }
           }
         }

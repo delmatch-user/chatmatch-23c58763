@@ -493,7 +493,7 @@ Deno.serve(async (req) => {
             for (const r of (robots || [])) {
               if (!(r.channels || ['whatsapp', 'instagram', 'machine']).includes('instagram')) continue;
               const { data: ok } = await supabase.rpc('is_robot_within_schedule', { robot_uuid: r.id });
-              if (ok !== false) { robot = r; break; }
+              if (ok === true) { robot = r; break; }
             }
 
             if (robot) {
@@ -510,12 +510,10 @@ Deno.serve(async (req) => {
                 const rd = await resp.json();
                 if (rd.response && tokenCandidates.length > 0) {
                   const { sent, messageId } = await sendInstagramMessage(connection.waba_id, senderId, rd.response, tokenCandidates);
-                  if (sent && messageId) {
-                    await supabase.from('messages').insert({
-                      conversation_id: conv.id, sender_name: robot.name, content: rd.response,
-                      message_type: 'text', external_id: messageId, status: 'sent'
-                    });
-                  }
+                  await supabase.from('messages').insert({
+                    conversation_id: conv.id, sender_name: robot.name, content: rd.response,
+                    message_type: 'text', external_id: messageId || null, status: sent ? 'sent' : 'error'
+                  });
                 }
               } catch (e) { console.error('[IG] Erro robô:', e); }
             }
