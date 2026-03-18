@@ -8,7 +8,16 @@ const corsHeaders = {
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const BAILEYS_SERVER_URL = Deno.env.get('BAILEYS_SERVER_URL');
+// Normalize: ensure protocol exists and remove trailing slash
+const _rawBaileysUrl = Deno.env.get('BAILEYS_SERVER_URL');
+const BAILEYS_SERVER_URL = (() => {
+  if (!_rawBaileysUrl) return undefined;
+  let url = _rawBaileysUrl.trim().replace(/\/+$/, '');
+  if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+    url = 'http://' + url;
+  }
+  return url;
+})();
 
 // Secret for validating requests from Baileys server
 const BAILEYS_WEBHOOK_SECRET = Deno.env.get('BAILEYS_WEBHOOK_SECRET') || '';
