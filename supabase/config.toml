@@ -65,3 +65,6 @@ verify_jwt = false
 
 [functions.ai-report-analysis]
 verify_jwt = false
+
+[functions.extract-file-content]
+verify_jwt = false
