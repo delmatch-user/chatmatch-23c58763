@@ -750,6 +750,10 @@ export function ConversationList({
                         const label = match ? `📍 ${match[1]}` : 'Machine';
                         return <p className="text-xs text-muted-foreground mb-1">{label}</p>;
                       }
+                      if ((conversation.channel || conversation.contact.channel) === 'instagram') {
+                        const handle = getInstagramDisplayHandle(conversation.contact.phone, conversation.contact.notes);
+                        return handle ? <p className="text-xs text-muted-foreground mb-1">{handle}</p> : null;
+                      }
                       const realPhone = extractRealPhone(conversation.contact.phone, conversation.contact.notes);
                       const formatted = realPhone ? formatPhoneForDisplay(realPhone) : null;
                       if (!formatted) return null;

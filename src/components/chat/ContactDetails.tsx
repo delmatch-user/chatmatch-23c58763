@@ -174,8 +174,8 @@ export function ContactDetails({ conversation }: ContactDetailsProps) {
             return <p className="text-sm text-muted-foreground">{cidade ? `📍 ${cidade}` : 'Machine'}</p>;
           }
           if (channel === 'instagram') {
-            const igId = extractInstagramId(conversation.contact.phone);
-            return <p className="text-sm text-muted-foreground">{igId ? `@${igId}` : 'Instagram'}</p>;
+            const username = extractInstagramUsername(conversation.contact.notes);
+            return <p className="text-sm text-muted-foreground">{username ? `@${username}` : 'Instagram'}</p>;
           }
           return (
             <p className="text-sm text-muted-foreground">

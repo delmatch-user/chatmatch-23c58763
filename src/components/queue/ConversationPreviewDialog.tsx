@@ -253,6 +253,13 @@ export function ConversationPreviewDialog({
               </DialogTitle>
               <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
                 {(() => {
+                  const channel = conversation.channel || conversation.contact.channel;
+                  if (channel === 'instagram') {
+                    const handle = getInstagramDisplayHandle(conversation.contact.phone, conversation.contact.notes);
+                    return handle ? (
+                      <span className="flex items-center gap-1">{handle}</span>
+                    ) : null;
+                  }
                   const realPhone = extractRealPhone(conversation.contact.phone, conversation.contact.notes);
                   const formatted = realPhone ? formatPhoneForDisplay(realPhone) : null;
                   return formatted ? (
