@@ -1019,14 +1019,16 @@ export function ChatPanel({ conversation, showContactDetails, onToggleContactDet
       image: 'image/jpeg',
       video: 'video/mp4',
       document: 'application/octet-stream',
-      file: 'application/octet-stream'
+      file: 'application/octet-stream',
+      story_mention: 'image/jpeg'
     };
     const typeToName: Record<string, string> = {
       audio: 'Mensagem de voz',
       image: 'Imagem',
       video: 'Vídeo',
       document: 'Documento',
-      file: 'Documento'
+      file: 'Documento',
+      story_mention: 'Menção no Story'
     };
     
     // 1. Tentar parsear JSON - array ou objeto único

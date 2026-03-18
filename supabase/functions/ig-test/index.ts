@@ -389,12 +389,15 @@ Deno.serve(async (req) => {
               const mapped = mapAttachmentType(attType);
               messageType = mapped.messageType;
               previewLabel = mapped.label;
+              const isStoryMention = attType === 'story_mention';
               if (mediaUrl) {
-                const persisted = await persistMedia(mediaUrl, mapped.mimePrefix, primaryToken, supabase);
+                // Story mention URLs are CDN temporary - try to persist
+                const mimeToUse = isStoryMention ? (mediaUrl.includes('.mp4') ? 'video/mp4' : 'image/jpeg') : mapped.mimePrefix;
+                const persisted = await persistMedia(mediaUrl, mimeToUse, primaryToken, supabase);
                 if (persisted) {
-                  attachments.push({ name: `instagram_${attType}_${Date.now()}`, url: persisted.publicUrl, type: mapped.mimePrefix, size: persisted.size });
+                  attachments.push({ name: `instagram_${attType}_${Date.now()}`, url: persisted.publicUrl, type: mimeToUse, size: persisted.size, ...(isStoryMention && { isStoryMention: true }) });
                 } else {
-                  attachments.push({ name: `instagram_${attType}`, url: mediaUrl, type: mapped.mimePrefix });
+                  attachments.push({ name: `instagram_${attType}`, url: mediaUrl, type: mimeToUse, ...(isStoryMention && { isStoryMention: true }) });
                 }
               }
             }
