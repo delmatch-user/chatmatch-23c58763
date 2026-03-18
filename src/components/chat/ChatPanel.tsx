@@ -1436,7 +1436,11 @@ export function ChatPanel({ conversation, showContactDetails, onToggleContactDet
           let senderName: string;
           if (!isOwn) {
             // Mensagem do contato
-            senderName = conversation.contact.name || cleanSenderName;
+            senderName = getContactDisplayName(
+              conversation.contact.name,
+              conversation.contact.phone,
+              conversation.contact.notes
+            );
           } else if (isRobotMessage) {
             // Mensagem do robô - usar nome limpo
             senderName = cleanSenderName || 'Robô';
