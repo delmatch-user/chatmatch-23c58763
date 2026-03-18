@@ -1758,6 +1758,47 @@ serve(async (req) => {
 
         if (updated && updated.length > 0) {
           console.log(`[WhatsApp] Status atualizado para msg ${updated[0].id}`);
+          
+          // ====== PERSISTIR LID MAP VIA STATUS (match direto) ======
+          if (recipient) {
+            const recipDigits = recipient.replace(/\D/g, '');
+            const isRecipientLid = recipDigits.length > 13;
+            if (isRecipientLid) {
+              // Recipient é pseudo-LID: buscar phone do contato da conversa
+              const { data: statusMsg } = await supabase
+                .from('messages')
+                .select('conversation_id')
+                .eq('id', updated[0].id)
+                .single();
+              if (statusMsg) {
+                const { data: statusConv } = await supabase
+                  .from('conversations')
+                  .select('contact_id')
+                  .eq('id', statusMsg.conversation_id)
+                  .single();
+                if (statusConv) {
+                  const { data: statusCt } = await supabase
+                    .from('contacts')
+                    .select('phone')
+                    .eq('id', statusConv.contact_id)
+                    .single();
+                  if (statusCt?.phone) {
+                    const ctDigits = statusCt.phone.replace(/\D/g, '');
+                    if (ctDigits.length >= 10 && ctDigits.length <= 13) {
+                      const lidJidFromRecip = `${recipDigits}@lid`;
+                      await supabase.from('whatsapp_lid_map').upsert({
+                        lid_jid: lidJidFromRecip,
+                        phone_digits: ctDigits,
+                        instance_id: effectiveInstanceId,
+                        updated_at: new Date().toISOString()
+                      }, { onConflict: 'lid_jid,instance_id' });
+                      console.log(`[WhatsApp] LID map criado via status (direct match): ${lidJidFromRecip} → ${ctDigits}`);
+                    }
+                  }
+                }
+              }
+            }
+          }
         } else {
           // 2. Fallback RESTRITO: buscar mensagem recente do agente sem external_id
           // REGRA: Só aplicar fallback se recipient é telefone real (≤13 dígitos)
