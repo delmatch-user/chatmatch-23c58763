@@ -73,6 +73,11 @@ export function extractRealPhone(phone?: string, notes?: string): string | undef
  */
 export function getContactDisplayName(name?: string, phone?: string, notes?: string): string {
   if (!name || name === 'Desconhecido') {
+    // For Instagram contacts, try to show @username
+    if (phone && phone.startsWith('ig:')) {
+      const username = extractInstagramUsername(notes);
+      if (username) return `@${username}`;
+    }
     const realPhone = extractRealPhone(phone, notes);
     const formatted = formatPhoneForDisplay(realPhone);
     return formatted || 'Desconhecido';
@@ -98,6 +103,15 @@ export function extractInstagramId(phone?: string): string | null {
     return phone.slice(3);
   }
   return null;
+}
+
+/**
+ * Extrai o @username do Instagram do campo notes (formato ig_username:HANDLE)
+ */
+export function extractInstagramUsername(notes?: string): string | null {
+  if (!notes) return null;
+  const match = notes.match(/ig_username:([^\s|]+)/);
+  return match ? match[1] : null;
 }
 
 /**
