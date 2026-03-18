@@ -1,66 +1,53 @@
 
 
-## Diagnóstico
+## Problemas Identificados
 
-Existem dois contatos para a mesma pessoa (Erika Fischi):
-- `cbe8b551` — "Erika Fischi IZA", phone `5511910887572`, notes `jid:5511910887572@s.whatsapp.net`
-- `fd79ffd9` — "Erika Fischi", phone NULL, notes `jid:24632258240556@lid`
+### 1. Auto-online fica brigando com status manual
+Quando o atendente está **dentro do horário** e muda manualmente para offline (ex: foi ao banheiro), o monitor detecta `status === 'offline'` e reseta `autoOnlineDoneRef` (linha 115-117), forçando-o de volta para online no próximo tick. Isso cria um loop conflitante.
 
-**Sequência que causou o bug:**
-1. Mayara enviou mensagem para Erika via phone (`5511910887572@s.whatsapp.net`) → criou conversa `d7c4a1c4` para contato `cbe8b551`
-2. Erika respondeu com LID `24632258240556@lid`
-3. Webhook encontrou contato `fd79ffd9` pelo JID LID nas notes (step 5 do contact search)
-4. Como `fd79ffd9` é um contact_id diferente, a unique constraint não bloqueou → **criou nova conversa** `9f37bbc7`
+### 2. Guard de auto-online está quebrado
+O `autoOnlineDoneRef` é resetado quando `profile?.status !== 'offline'` (linha 115), ou seja: online → manual offline → auto-online novamente. O guard não protege nada.
 
-**Causa raiz:** O `whatsapp_lid_map` está vazio para este LID/phone. A resolução proativa (pós-envio) e o `contacts.sync` não capturaram o mapeamento `24632258240556@lid → 5511910887572`. Sem esse mapeamento, o webhook não tem como saber que os dois contatos são a mesma pessoa.
+### 3. Escala cross-midnight não busca dia anterior
+Se a escala é Sábado 22:00-02:00, no Domingo às 01:00 o código busca `day_of_week = 0` (Domingo). Mas a escala está em `day_of_week = 6` (Sábado). O atendente fica "sem escala" e é posto offline.
 
----
-
-## Plano de Correção
-
-### 1. Cross-contact dedup no webhook (whatsapp-webhook)
-Após encontrar um contato por LID (step 5) e antes de criar uma nova conversa, adicionar lógica de deduplicação cruzada:
-
-**Localização:** `supabase/functions/whatsapp-webhook/index.ts`, entre as linhas ~1166 e ~1177 (após o lookup de `existingConv`, antes do `if (!existingConv)`)
-
-**Lógica:**
-- Se `existingConv` é null E o contato foi encontrado por LID E NÃO tem phone:
-  1. Buscar conversas ativas na mesma instância (`whatsapp_instance_id = effectiveInstanceId`) para OUTROS contacts
-  2. Para cada uma dessas conversas, buscar o contato associado e verificar se tem phone
-  3. Chamar `/check/{phone}` no Baileys para ver se o phone retorna o mesmo LID do sender
-  4. Se confirmar match: chamar `merge_duplicate_contacts` (phone-based é primário) e reusar a conversa existente
-
-### 2. Persistir LID no lid_map durante o match
-Quando o cross-dedup confirmar o match via `onWhatsApp`, persistir no `whatsapp_lid_map` para que futuras mensagens não precisem dessa verificação.
-
-### 3. Limpeza dos dados atuais
-- Executar merge dos dois contatos Erika (`cbe8b551` primário, `fd79ffd9` duplicado)
-- Mover mensagens da conversa duplicada para a original
-- Finalizar a conversa duplicada
+### 4. Auto-offline dispara mesmo com extensão ativa
+Quando `remaining <= 0` e o atendente estendeu o turno, o cálculo pode oscilar dependendo de como `extensionMinutes` é somado no `endMinutes`, causando disparo prematuro.
 
 ---
 
-## Resumo técnico
+## Solução
 
-```text
-Mensagem LID recebida
-  ↓
-Contact search step 5: encontra contato LID (sem phone)
-  ↓
-Conversation lookup: nenhuma ativa para esse contact
-  ↓
-[NOVO] Cross-contact dedup:
-  → Buscar conversas ativas na mesma instância (outros contacts)
-  → Para cada: check(phone) → retorna LID?
-  → Se LID do check == senderLID → MERGE + reusar conversa
-  ↓
-Se não fez match → cria conversa normalmente
-```
+### Arquivo: `src/hooks/useWorkScheduleMonitor.tsx`
 
-**Arquivos a editar:**
-- `supabase/functions/whatsapp-webhook/index.ts` — adicionar cross-contact dedup (~40 linhas)
+**A. Corrigir fetch para incluir dia anterior (cross-midnight)**
+- Buscar escala do dia atual E do dia anterior
+- Se a escala do dia anterior tem `end_time < start_time` (cross-midnight), verificar se ainda estamos dentro dela
 
-**Migrations:** Nenhuma (usa RPC `merge_duplicate_contacts` já existente)
+**B. Auto-online apenas no início do turno (janela de 2 min)**
+- Só disparar auto-online se estamos nos primeiros 2 minutos do turno
+- Usar `autoOnlineDoneRef` sem reset por mudança de status — só resetar quando muda de dia/escala
+- Remover o reset em linha 115-117 que causa o conflito
 
-**Data fix:** Merge manual dos contatos Erika via insert tool
+**C. Auto-offline robusto**
+- Quando `remaining <= 0`, verificar se realmente saiu do horário (double-check `isWithinSchedule` ficou false)
+- Usar `autoOfflineDoneRef` corretamente sem resetar dentro do horário
+
+**D. Não interferir com mudanças manuais durante o turno**
+- Adicionar flag `manualOverrideRef` que é setada quando o atendente muda status manualmente via Topbar
+- O monitor respeita essa flag e não força auto-online durante o turno ativo
+
+### Arquivo: `src/components/layout/Topbar.tsx`
+
+**E. Sinalizar mudança manual**
+- Quando `handleStatusChange` é chamado pelo usuário, emitir um evento ou setar uma flag no localStorage para que o monitor saiba que foi manual e não force auto-online
+
+---
+
+## Resumo das mudanças
+
+| Arquivo | Mudança |
+|---|---|
+| `useWorkScheduleMonitor.tsx` | Fetch dia anterior para cross-midnight; auto-online só nos primeiros 2min; remover reset de ref que causa loop; respeitar override manual |
+| `Topbar.tsx` | Marcar mudanças manuais de status para evitar conflito com auto-online |
 
