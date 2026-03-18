@@ -285,6 +285,7 @@ function mapAttachmentType(attType: string): { mimePrefix: string; messageType: 
     case 'image': return { mimePrefix: 'image/jpeg', messageType: 'image', label: '📷 Imagem' };
     case 'video': return { mimePrefix: 'video/mp4', messageType: 'video', label: '🎬 Vídeo' };
     case 'audio': return { mimePrefix: 'audio/mpeg', messageType: 'audio', label: '🎤 Áudio' };
+    case 'story_mention': return { mimePrefix: 'image/jpeg', messageType: 'story_mention', label: '📸 Menção no Story' };
     default: return { mimePrefix: 'application/octet-stream', messageType: 'file', label: '📎 Arquivo' };
   }
 }
@@ -388,12 +389,15 @@ Deno.serve(async (req) => {
               const mapped = mapAttachmentType(attType);
               messageType = mapped.messageType;
               previewLabel = mapped.label;
+              const isStoryMention = attType === 'story_mention';
               if (mediaUrl) {
-                const persisted = await persistMedia(mediaUrl, mapped.mimePrefix, primaryToken, supabase);
+                // Story mention URLs are CDN temporary - try to persist
+                const mimeToUse = isStoryMention ? (mediaUrl.includes('.mp4') ? 'video/mp4' : 'image/jpeg') : mapped.mimePrefix;
+                const persisted = await persistMedia(mediaUrl, mimeToUse, primaryToken, supabase);
                 if (persisted) {
-                  attachments.push({ name: `instagram_${attType}_${Date.now()}`, url: persisted.publicUrl, type: mapped.mimePrefix, size: persisted.size });
+                  attachments.push({ name: `instagram_${attType}_${Date.now()}`, url: persisted.publicUrl, type: mimeToUse, size: persisted.size, ...(isStoryMention && { isStoryMention: true }) });
                 } else {
-                  attachments.push({ name: `instagram_${attType}`, url: mediaUrl, type: mapped.mimePrefix });
+                  attachments.push({ name: `instagram_${attType}`, url: mediaUrl, type: mimeToUse, ...(isStoryMention && { isStoryMention: true }) });
                 }
               }
             }
