@@ -7,8 +7,11 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
 };
 
-const BAILEYS_SERVER_URL = Deno.env.get('BAILEYS_SERVER_URL');
-if (!BAILEYS_SERVER_URL) console.error('[Baileys Proxy] BAILEYS_SERVER_URL não configurado!');
+const RAW_BAILEYS_URL = Deno.env.get('BAILEYS_SERVER_URL');
+if (!RAW_BAILEYS_URL) console.error('[Baileys Proxy] BAILEYS_SERVER_URL não configurado!');
+// Remove trailing slash to prevent double-slash in URL construction
+const BAILEYS_SERVER_URL = RAW_BAILEYS_URL?.replace(/\/+$/, '') || undefined;
+console.log(`[Baileys Proxy] Server URL configured: ${BAILEYS_SERVER_URL ? BAILEYS_SERVER_URL.substring(0, 30) + '...' : 'NOT SET'}`);
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
 
