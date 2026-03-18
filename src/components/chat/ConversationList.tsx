@@ -8,7 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Badge } from '@/components/ui/badge';
 import { Conversation, ConversationStatus } from '@/types';
 import { cn } from '@/lib/utils';
-import { extractRealPhone, formatPhoneForDisplay, getContactDisplayName, phoneMatchesBr } from '@/lib/phoneUtils';
+import { extractRealPhone, formatPhoneForDisplay, getContactDisplayName, phoneMatchesBr, getInstagramDisplayHandle } from '@/lib/phoneUtils';
 import { useApp } from '@/contexts/AppContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -749,6 +749,10 @@ export function ConversationList({
                         const match = conversation.contact.notes?.match(/franqueado:(.+?)(\||$)/);
                         const label = match ? `📍 ${match[1]}` : 'Machine';
                         return <p className="text-xs text-muted-foreground mb-1">{label}</p>;
+                      }
+                      if ((conversation.channel || conversation.contact.channel) === 'instagram') {
+                        const handle = getInstagramDisplayHandle(conversation.contact.phone, conversation.contact.notes);
+                        return handle ? <p className="text-xs text-muted-foreground mb-1">{handle}</p> : null;
                       }
                       const realPhone = extractRealPhone(conversation.contact.phone, conversation.contact.notes);
                       const formatted = realPhone ? formatPhoneForDisplay(realPhone) : null;

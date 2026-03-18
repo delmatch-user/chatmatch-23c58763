@@ -21,7 +21,7 @@ import { useConversations } from '@/hooks/useConversations';
 import { useContacts } from '@/hooks/useContacts';
 import { EditableName } from '@/components/chat/EditableName';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { extractRealPhone, formatPhoneForDisplay, getContactDisplayName, extractCidade, extractInstagramId } from '@/lib/phoneUtils';
+import { extractRealPhone, formatPhoneForDisplay, getContactDisplayName, extractCidade, extractInstagramUsername } from '@/lib/phoneUtils';
 import { getTagColorClasses } from '@/lib/tagColors';
 
 interface ContactDetailsProps {
@@ -174,8 +174,8 @@ export function ContactDetails({ conversation }: ContactDetailsProps) {
             return <p className="text-sm text-muted-foreground">{cidade ? `📍 ${cidade}` : 'Machine'}</p>;
           }
           if (channel === 'instagram') {
-            const igId = extractInstagramId(conversation.contact.phone);
-            return <p className="text-sm text-muted-foreground">{igId ? `@${igId}` : 'Instagram'}</p>;
+            const username = extractInstagramUsername(conversation.contact.notes);
+            return <p className="text-sm text-muted-foreground">{username ? `@${username}` : 'Instagram'}</p>;
           }
           return (
             <p className="text-sm text-muted-foreground">
@@ -278,7 +278,7 @@ export function ContactDetails({ conversation }: ContactDetailsProps) {
                   );
                 }
                 if (channel === 'instagram') {
-                  const igId = extractInstagramId(conversation.contact.phone);
+                  const username = extractInstagramUsername(conversation.contact.notes);
                   return (
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center">
@@ -291,7 +291,7 @@ export function ContactDetails({ conversation }: ContactDetailsProps) {
                       <div>
                         <p className="text-xs text-muted-foreground">Instagram</p>
                         <p className="text-sm text-foreground">
-                          {igId ? `@${igId}` : 'Não disponível'}
+                          {username ? `@${username}` : 'Não disponível'}
                         </p>
                       </div>
                     </div>

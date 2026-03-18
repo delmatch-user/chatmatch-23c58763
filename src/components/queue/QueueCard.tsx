@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Conversation, Message } from '@/types';
 import { cn } from '@/lib/utils';
-import { extractRealPhone, formatPhoneForDisplay, getContactDisplayName } from '@/lib/phoneUtils';
+import { extractRealPhone, formatPhoneForDisplay, getContactDisplayName, extractInstagramUsername } from '@/lib/phoneUtils';
 import { ConversationPreviewDialog } from './ConversationPreviewDialog';
 
 interface QueueCardProps {
@@ -154,9 +154,16 @@ export function QueueCard({ conversation, onAssume, canPreview = false }: QueueC
             </span>
           </div>
 
-          {/* Só exibe telefone se NÃO for machine e se houver número real */}
+          {/* Subtítulo: telefone para WhatsApp, @handle para Instagram, nada para machine */}
           {(() => {
-            if ((conversation.channel || conversation.contact.channel) === 'machine') return null;
+            const channel = conversation.channel || conversation.contact.channel;
+            if (channel === 'machine') return null;
+            if (channel === 'instagram') {
+              const username = extractInstagramUsername(conversation.contact.notes);
+              return username ? (
+                <p className="text-sm text-muted-foreground mb-2">@{username}</p>
+              ) : null;
+            }
             const realPhone = extractRealPhone(conversation.contact.phone, conversation.contact.notes);
             const formatted = realPhone ? formatPhoneForDisplay(realPhone) : null;
             return formatted ? (

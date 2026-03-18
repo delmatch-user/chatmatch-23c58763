@@ -11,7 +11,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Conversation, Message } from '@/types';
 import { cn } from '@/lib/utils';
-import { extractRealPhone, formatPhoneForDisplay } from '@/lib/phoneUtils';
+import { extractRealPhone, formatPhoneForDisplay, getContactDisplayName, getInstagramDisplayHandle } from '@/lib/phoneUtils';
 import { getTagColorClasses } from '@/lib/tagColors';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -249,10 +249,17 @@ export function ConversationPreviewDialog({
 
             <div className="flex-1">
               <DialogTitle className="text-lg font-semibold">
-                {conversation.contact.name}
+                {getContactDisplayName(conversation.contact.name, conversation.contact.phone, conversation.contact.notes)}
               </DialogTitle>
               <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
                 {(() => {
+                  const channel = conversation.channel || conversation.contact.channel;
+                  if (channel === 'instagram') {
+                    const handle = getInstagramDisplayHandle(conversation.contact.phone, conversation.contact.notes);
+                    return handle ? (
+                      <span className="flex items-center gap-1">{handle}</span>
+                    ) : null;
+                  }
                   const realPhone = extractRealPhone(conversation.contact.phone, conversation.contact.notes);
                   const formatted = realPhone ? formatPhoneForDisplay(realPhone) : null;
                   return formatted ? (

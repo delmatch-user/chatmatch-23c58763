@@ -49,7 +49,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Conversation, Message, MessageReaction } from '@/types';
 import { cn } from '@/lib/utils';
-import { extractRealPhone, formatPhoneForDisplay, extractJid, getContactDisplayName } from '@/lib/phoneUtils';
+import { extractRealPhone, formatPhoneForDisplay, extractJid, getContactDisplayName, getInstagramDisplayHandle } from '@/lib/phoneUtils';
 import { useApp } from '@/contexts/AppContext';
 import { TransferDialog } from '@/components/chat/TransferDialog';
 import { useConversations } from '@/hooks/useConversations';
@@ -1233,7 +1233,13 @@ export function ChatPanel({ conversation, showContactDetails, onToggleContactDet
               ) : (
                 <div className="flex items-center gap-2">
                   <p className="text-xs text-muted-foreground">
-                    {formatPhoneForDisplay(extractRealPhone(conversation.contact.phone, conversation.contact.notes))}
+                    {(() => {
+                      const channel = conversation.channel || conversation.contact.channel;
+                      if (channel === 'instagram') {
+                        return getInstagramDisplayHandle(conversation.contact.phone, conversation.contact.notes) || 'Instagram';
+                      }
+                      return formatPhoneForDisplay(extractRealPhone(conversation.contact.phone, conversation.contact.notes));
+                    })()}
                   </p>
                   {(conversation as any).protocol && (
                     <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted text-muted-foreground">

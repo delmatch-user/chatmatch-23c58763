@@ -35,6 +35,13 @@ function getAccessTokens(connectionAccessToken?: string): { token: string; sourc
   return candidates;
 }
 
+function parseGraphError(result: any): { code: number | null; message: string } {
+  return {
+    code: typeof result?.error?.code === 'number' ? result.error.code : null,
+    message: result?.error?.message || 'Erro desconhecido',
+  };
+}
+
 /** Generic fetch with appsecret_proof fallback on code 100 */
 async function fetchWithProofFallback(
   baseUrl: string,
@@ -78,28 +85,128 @@ async function fetchWithProofFallback(
   return await fetch(baseUrl, fetchOpts);
 }
 
-// ===== Fetch IG profile =====
+// ===== Derive Page Access Token (same strategy as instagram-send) =====
 
-async function fetchIGProfile(senderId: string, tokenCandidates: { token: string; source: string }[]): Promise<{ name?: string; username?: string; profilePic?: string }> {
+async function derivePageAccessToken(
+  pageId: string,
+  token: string,
+  appSecret: string | null
+): Promise<{ token: string; strategy: string } | null> {
+  // Strategy 1: read page access_token directly
+  try {
+    const pageUrl = `https://graph.facebook.com/v25.0/${pageId}?fields=access_token`;
+    const pageRes = await fetchWithProofFallback(pageUrl, token, appSecret, 'GET');
+    const pageData = await pageRes.json().catch(() => ({}));
+    if (pageRes.ok && typeof pageData?.access_token === 'string' && pageData.access_token.trim()) {
+      console.log('[IG] Page token derivado via page_fields');
+      return { token: pageData.access_token.trim(), strategy: 'page_fields' };
+    }
+  } catch (e) {
+    console.warn('[IG] Erro derivando page token (strategy 1):', e);
+  }
+
+  // Strategy 2: list accounts
+  try {
+    const accountsUrl = 'https://graph.facebook.com/v25.0/me/accounts?fields=id,access_token';
+    const accountsRes = await fetchWithProofFallback(accountsUrl, token, appSecret, 'GET');
+    const accountsData = await accountsRes.json().catch(() => ({}));
+    if (accountsRes.ok && Array.isArray(accountsData?.data)) {
+      const match = accountsData.data.find((item: any) => String(item?.id) === String(pageId));
+      const derivedToken = (match?.access_token || '').trim();
+      if (derivedToken) {
+        console.log('[IG] Page token derivado via me_accounts');
+        return { token: derivedToken, strategy: 'me_accounts' };
+      }
+    }
+  } catch (e) {
+    console.warn('[IG] Erro derivando page token (strategy 2):', e);
+  }
+
+  return null;
+}
+
+async function persistDerivedToken(igAccountId: string, oldToken: string, newToken: string): Promise<void> {
+  if (!oldToken || !newToken || oldToken === newToken) return;
+  const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+  const { error } = await supabase
+    .from('whatsapp_connections')
+    .update({ access_token: newToken, updated_at: new Date().toISOString() })
+    .eq('connection_type', 'instagram')
+    .eq('phone_number_id', igAccountId)
+    .eq('access_token', oldToken);
+  if (error) {
+    console.warn('[IG] Não foi possível persistir token derivado:', error.message);
+  } else {
+    console.log('[IG] Token de página persistido no banco');
+  }
+}
+
+// ===== Fetch IG profile (with token derivation fallback) =====
+
+async function fetchIGProfile(
+  senderId: string,
+  tokenCandidates: { token: string; source: string }[],
+  igAccountId: string
+): Promise<{ name?: string; username?: string; profilePic?: string }> {
   const appSecret = getAppSecret();
 
   for (const { token, source } of tokenCandidates) {
-    try {
-      const baseUrl = `https://graph.facebook.com/v25.0/${senderId}?fields=name,username,profile_pic&access_token=${token}`;
-      const res = await fetchWithProofFallback(baseUrl, token, appSecret, 'GET');
+    let activeToken = token;
+    let triedDerive = false;
 
-      if (res.ok) {
-        const data = await res.json();
-        console.log(`[IG] Perfil obtido via ${source}:`, data.name, data.username);
-        return { name: data.name || undefined, username: data.username || undefined, profilePic: data.profile_pic || undefined };
+    while (true) {
+      try {
+        const baseUrl = `https://graph.facebook.com/v25.0/${senderId}?fields=name,username,profile_pic&access_token=${activeToken}`;
+        const res = await fetchWithProofFallback(baseUrl, activeToken, appSecret, 'GET');
+
+        if (res.ok) {
+          const data = await res.json();
+          console.log(`[IG] Perfil obtido via ${source}${triedDerive ? ' (derived)' : ''}:`, data.name, data.username);
+          
+          // Persist derived token if it worked
+          if (triedDerive && activeToken !== token) {
+            await persistDerivedToken(igAccountId, token, activeToken);
+          }
+          
+          return { name: data.name || undefined, username: data.username || undefined, profilePic: data.profile_pic || undefined };
+        }
+
+        const errText = await res.text();
+        let errCode: number | null = null;
+        let errMsg = '';
+        try {
+          const errJson = JSON.parse(errText);
+          const parsed = parseGraphError(errJson);
+          errCode = parsed.code;
+          errMsg = parsed.message;
+        } catch { errMsg = errText.substring(0, 200); }
+
+        const isExpired = errMsg.includes('Session has expired') || errCode === 190;
+        const isPermissionError = res.status === 403 || errCode === 10 || errCode === 200 || errCode === 100;
+        const needsPageToken = errCode === 190 && errMsg.includes('Page Access Token');
+
+        console.warn(`[IG] Perfil falhou (${source}${triedDerive ? '/derived' : ''}): status=${res.status}, code=${errCode}, msg=${errMsg.substring(0, 100)}`);
+
+        // Try deriving page token if we haven't yet
+        if (!triedDerive && (needsPageToken || isPermissionError || res.status === 403)) {
+          triedDerive = true;
+          console.log(`[IG] Tentando derivar Page Access Token para ${igAccountId}...`);
+          const derived = await derivePageAccessToken(igAccountId, token, appSecret);
+          if (derived) {
+            activeToken = derived.token;
+            continue; // retry with derived token
+          }
+          console.warn('[IG] Não foi possível derivar Page Access Token');
+        }
+
+        // If expired, try next candidate
+        if (isExpired) break;
+        // Other error, stop trying this candidate
+        break;
+      } catch (e) {
+        console.warn(`[IG] Erro fetch perfil (${source}):`, e);
+        break;
       }
-
-      const errText = await res.text();
-      const isExpired = errText.includes('Session has expired') || errText.includes('"code":190');
-      console.warn(`[IG] Perfil falhou (${source}): ${res.status}, expired=${isExpired}`);
-      if (!isExpired) break;
-    } catch (e) {
-      console.warn(`[IG] Erro fetch perfil (${source}):`, e);
     }
   }
 
@@ -251,8 +358,8 @@ Deno.serve(async (req) => {
 
           if (!message || !senderId || message.is_echo) continue;
 
-          // Fetch IG profile
-          const profile = await fetchIGProfile(senderId, tokenCandidates);
+          // Fetch IG profile (now with token derivation fallback)
+          const profile = await fetchIGProfile(senderId, tokenCandidates, igAccountId);
 
           // Process message content
           let messageType = 'text';
@@ -310,13 +417,22 @@ Deno.serve(async (req) => {
             contact = nc;
           } else {
             const updates: any = {};
-            if (!contact.name_edited && (contact.name.startsWith('Instagram ') || contact.name.startsWith('@')) && profile.name) updates.name = profile.name;
+            // Update name if current name is a placeholder (Instagram XXXX or @handle) and we have a real name
+            const isPlaceholderName = contact.name.startsWith('Instagram ') || contact.name.startsWith('@') || contact.name === 'Desconhecido';
+            if (!contact.name_edited && isPlaceholderName && profile.name) {
+              updates.name = profile.name;
+            } else if (!contact.name_edited && isPlaceholderName && !profile.name && profile.username) {
+              updates.name = `@${profile.username}`;
+            }
             if (profile.profilePic && !contact.avatar_url) updates.avatar_url = profile.profilePic;
             // Update username in notes if changed or missing
             const newNotes = buildNotes(contact.notes);
             if (newNotes && newNotes !== contact.notes) updates.notes = newNotes;
             if (Object.keys(updates).length > 0) {
               await supabase.from('contacts').update(updates).eq('id', contact.id);
+              // Update local reference
+              if (updates.name) contact.name = updates.name;
+              if (updates.notes) contact.notes = updates.notes;
             }
           }
 

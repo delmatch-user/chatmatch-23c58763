@@ -1,51 +1,53 @@
 
-Diagnóstico rápido (com base no código + logs + banco):
-- O webhook `ig-test` ainda falha ao buscar perfil do Instagram: log atual mostra `"[IG] Perfil falhou (db): 403, expired=false"`.
-- Isso explica o comportamento da tela: os contatos ficam com fallback `Instagram 172275`, sem `notes` (`ig_username`) e sem `avatar_url`.
-- Além disso, a UI ainda exibe `ig:...` em vários pontos porque usa `extractRealPhone` para renderização (isso é correto para envio, mas ruim para exibição).
 
-Plano de correção (implementação):
-1) Corrigir resolução de token no `ig-test` (backend)
-- Arquivo: `supabase/functions/ig-test/index.ts`
-- Ajustar `fetchIGProfile` para:
-  - parsear erro Graph (`code` + `message`) ao invés de tratar só “expired”.
-  - tentar próximo token candidato também em 403/erros de permissão/autorização (não só 190).
-  - adicionar fallback de derivação de Page Access Token (mesma estratégia do `instagram-send`: `/{pageId}?fields=access_token` e `/me/accounts`), com persistência do token derivado no `whatsapp_connections`.
-  - melhorar log técnico do erro (`status`, `code`, trecho da mensagem) sem expor token.
-- Resultado esperado: a busca de perfil deixa de cair no primeiro 403 e passa a obter `name/username/profile_pic` com token válido.
+## Problemas Identificados
 
-2) Garantir atualização de contato mesmo quando só vier `username`
-- Arquivo: `supabase/functions/ig-test/index.ts`
-- Ajustar regra de update do contato existente:
-  - se nome atual é placeholder (`Instagram ...` ou `@...`) e vier `profile.name`, usar `profile.name`.
-  - se não vier `profile.name`, mas vier `profile.username`, usar `@username`.
-  - continuar persistindo `notes` com `ig_username:...` e `avatar_url` quando disponível.
-- Resultado esperado: mesmo sem “nome real”, o contato passa a mostrar @ correto.
+### 1. Auto-online fica brigando com status manual
+Quando o atendente está **dentro do horário** e muda manualmente para offline (ex: foi ao banheiro), o monitor detecta `status === 'offline'` e reseta `autoOnlineDoneRef` (linha 115-117), forçando-o de volta para online no próximo tick. Isso cria um loop conflitante.
 
-3) Corrigir exibição no frontend (não mostrar mais `ig:123...` como “telefone”)
-- Arquivo base: `src/lib/phoneUtils.ts`
-  - ampliar `getContactDisplayName` para tratar `Instagram <números>` como nome placeholder.
-  - quando for Instagram e existir `ig_username` em notes, priorizar `@username` para exibição.
-  - criar helper de label secundária do Instagram (ex.: `getInstagramDisplayHandle`) para usar nas linhas de subtítulo.
-- Ajustar componentes que hoje imprimem `extractRealPhone` em Instagram:
-  - `src/components/queue/QueueCard.tsx`
-  - `src/components/chat/ConversationList.tsx`
-  - `src/components/chat/ChatPanel.tsx`
-  - `src/components/queue/ConversationPreviewDialog.tsx`
-  - `src/components/chat/ContactDetails.tsx`
-- Resultado esperado: fila e chat passam a mostrar Nome/@ corretamente em vez de `ig:...`.
+### 2. Guard de auto-online está quebrado
+O `autoOnlineDoneRef` é resetado quando `profile?.status !== 'offline'` (linha 115), ou seja: online → manual offline → auto-online novamente. O guard não protege nada.
 
-4) Sincronização dos contatos já existentes
-- Após deploy da correção, fazer reprocessamento para contatos Instagram já criados:
-  - estratégia mínima: atualizar na próxima mensagem recebida (já acontece automaticamente).
-  - estratégia imediata (recomendada): executar rotina de refresh de perfis para contatos Instagram existentes, para não depender de nova mensagem.
-- Resultado esperado: limpar backlog de contatos antigos com nome fallback.
+### 3. Escala cross-midnight não busca dia anterior
+Se a escala é Sábado 22:00-02:00, no Domingo às 01:00 o código busca `day_of_week = 0` (Domingo). Mas a escala está em `day_of_week = 6` (Sábado). O atendente fica "sem escala" e é posto offline.
 
-Validação (fim-a-fim):
-- Enviar uma nova DM no Instagram para um contato de teste.
-- Confirmar no log do `ig-test` que não há mais `Perfil falhou ... 403` para esse fluxo.
-- Confirmar no banco (`contacts`) que o contato recebeu `notes` com `ig_username:...` e (quando disponível) `avatar_url`.
-- Validar na rota `/fila` e no chat que:
-  - título mostra nome real ou `@username`,
-  - subtítulo mostra `@username` (não `ig:...`),
-  - card antigo com “Instagram 172275” é corrigido após refresh/reprocessamento.
+### 4. Auto-offline dispara mesmo com extensão ativa
+Quando `remaining <= 0` e o atendente estendeu o turno, o cálculo pode oscilar dependendo de como `extensionMinutes` é somado no `endMinutes`, causando disparo prematuro.
+
+---
+
+## Solução
+
+### Arquivo: `src/hooks/useWorkScheduleMonitor.tsx`
+
+**A. Corrigir fetch para incluir dia anterior (cross-midnight)**
+- Buscar escala do dia atual E do dia anterior
+- Se a escala do dia anterior tem `end_time < start_time` (cross-midnight), verificar se ainda estamos dentro dela
+
+**B. Auto-online apenas no início do turno (janela de 2 min)**
+- Só disparar auto-online se estamos nos primeiros 2 minutos do turno
+- Usar `autoOnlineDoneRef` sem reset por mudança de status — só resetar quando muda de dia/escala
+- Remover o reset em linha 115-117 que causa o conflito
+
+**C. Auto-offline robusto**
+- Quando `remaining <= 0`, verificar se realmente saiu do horário (double-check `isWithinSchedule` ficou false)
+- Usar `autoOfflineDoneRef` corretamente sem resetar dentro do horário
+
+**D. Não interferir com mudanças manuais durante o turno**
+- Adicionar flag `manualOverrideRef` que é setada quando o atendente muda status manualmente via Topbar
+- O monitor respeita essa flag e não força auto-online durante o turno ativo
+
+### Arquivo: `src/components/layout/Topbar.tsx`
+
+**E. Sinalizar mudança manual**
+- Quando `handleStatusChange` é chamado pelo usuário, emitir um evento ou setar uma flag no localStorage para que o monitor saiba que foi manual e não force auto-online
+
+---
+
+## Resumo das mudanças
+
+| Arquivo | Mudança |
+|---|---|
+| `useWorkScheduleMonitor.tsx` | Fetch dia anterior para cross-midnight; auto-online só nos primeiros 2min; remover reset de ref que causa loop; respeitar override manual |
+| `Topbar.tsx` | Marcar mudanças manuais de status para evitar conflito com auto-online |
+
