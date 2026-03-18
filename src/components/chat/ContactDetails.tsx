@@ -21,7 +21,7 @@ import { useConversations } from '@/hooks/useConversations';
 import { useContacts } from '@/hooks/useContacts';
 import { EditableName } from '@/components/chat/EditableName';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { extractRealPhone, formatPhoneForDisplay, getContactDisplayName, extractCidade, extractInstagramId } from '@/lib/phoneUtils';
+import { extractRealPhone, formatPhoneForDisplay, getContactDisplayName, extractCidade, extractInstagramUsername } from '@/lib/phoneUtils';
 import { getTagColorClasses } from '@/lib/tagColors';
 
 interface ContactDetailsProps {
