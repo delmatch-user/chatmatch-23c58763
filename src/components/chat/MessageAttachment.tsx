@@ -74,13 +74,24 @@ export function MessageAttachment({ attachments, messageId }: MessageAttachmentP
   };
 
   const renderAttachment = (attachment: AttachmentData, url: string | null) => {
+    const isStory = attachment.isStoryMention;
+
     if (isImage(attachment.type)) {
       return url ? (
-        <ImagePreview url={url} alt={attachment.name} />
+        <div className="relative">
+          {isStory && (
+            <div className="absolute top-2 left-2 z-10 flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold text-white bg-gradient-to-r from-pink-500 via-purple-500 to-orange-400 shadow">
+              📸 Menção no Story
+            </div>
+          )}
+          <div className={isStory ? 'rounded-lg p-[2px] bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600' : ''}>
+            <ImagePreview url={url} alt={attachment.name} />
+          </div>
+        </div>
       ) : (
         <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 text-muted-foreground min-w-[150px]">
           <ImageIcon className="w-5 h-5" />
-          <span className="text-sm">Imagem não disponível</span>
+          <span className="text-sm">{isStory ? 'Story não disponível' : 'Imagem não disponível'}</span>
         </div>
       );
     }
