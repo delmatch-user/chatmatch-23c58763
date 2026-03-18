@@ -10,6 +10,7 @@ const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 interface SendRequest {
   page_id: string;
+  ig_account_id?: string; // Instagram Business Account ID (phone_number_id) — endpoint primário
   recipient_id: string;
   message: string;
   type?: 'text' | 'image' | 'video' | 'file';
@@ -28,21 +29,40 @@ function getAppSecret(): string | null {
   return null;
 }
 
-async function getAccessTokenCandidates(pageId: string): Promise<{ token: string; source: string }[]> {
+async function getAccessTokenCandidates(pageId: string, igAccountId?: string): Promise<{ token: string; source: string }[]> {
   const candidates: { token: string; source: string }[] = [];
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-  const { data: connection } = await supabase
-    .from('whatsapp_connections')
-    .select('access_token')
-    .eq('connection_type', 'instagram')
-    .eq('waba_id', pageId)
-    .maybeSingle();
 
-  const dbToken = (connection?.access_token || '').trim();
-  if (dbToken) candidates.push({ token: dbToken, source: 'db' });
+  // Buscar token prioritariamente pelo Instagram Business Account ID (phone_number_id)
+  if (igAccountId) {
+    const { data: connByAccount } = await supabase
+      .from('whatsapp_connections')
+      .select('access_token')
+      .eq('connection_type', 'instagram')
+      .eq('phone_number_id', igAccountId)
+      .maybeSingle();
+    const dbTokenByAccount = (connByAccount?.access_token || '').trim();
+    if (dbTokenByAccount) candidates.push({ token: dbTokenByAccount, source: 'db_account' });
+  }
+
+  // Fallback: buscar pelo Facebook Page ID (waba_id)
+  if (pageId) {
+    const { data: connByPage } = await supabase
+      .from('whatsapp_connections')
+      .select('access_token')
+      .eq('connection_type', 'instagram')
+      .eq('waba_id', pageId)
+      .maybeSingle();
+    const dbTokenByPage = (connByPage?.access_token || '').trim();
+    if (dbTokenByPage && !candidates.some(c => c.token === dbTokenByPage)) {
+      candidates.push({ token: dbTokenByPage, source: 'db_page' });
+    }
+  }
 
   const envToken = (Deno.env.get('META_INSTAGRAM_ACCESS_TOKEN') || '').trim();
-  if (envToken && envToken !== dbToken) candidates.push({ token: envToken, source: 'env' });
+  if (envToken && !candidates.some(c => c.token === envToken)) {
+    candidates.push({ token: envToken, source: 'env' });
+  }
 
   return candidates;
 }
@@ -165,13 +185,17 @@ async function callGraphAPI(
   pageId: string,
   payload: any,
   tokenCandidates: { token: string; source: string }[],
-  appSecret: string | null
+  appSecret: string | null,
+  igAccountId?: string
 ): Promise<{ ok: boolean; result: any; status: number; error: string }> {
   let lastError = 'Nenhum token disponível';
   let lastStatus = 500;
 
   for (const candidate of tokenCandidates) {
-    const url = `https://graph.facebook.com/v25.0/${pageId}/messages`;
+    // Endpoint primário: Instagram Business Account ID (ig-user-id/messages)
+    // Endpoint fallback: Facebook Page ID (page-id/messages)
+    const primaryEndpointId = igAccountId || pageId;
+    const url = `https://graph.facebook.com/v25.0/${primaryEndpointId}/messages`;
     const originalToken = candidate.token;
     let activeToken = candidate.token;
     let triedDerive = false;
@@ -222,6 +246,22 @@ async function callGraphAPI(
         break;
       }
 
+      // Se o endpoint primário falhou com erro não-auth e existe um endpoint alternativo, tentar ele
+      if (igAccountId && primaryEndpointId === igAccountId && pageId && pageId !== igAccountId) {
+        console.warn(`[Instagram Send] Endpoint ig_account_id falhou (code=${code}). Tentando page_id...`);
+        const fallbackUrl = `https://graph.facebook.com/v25.0/${pageId}/messages`;
+        const { response: fbRes } = await fetchWithProofFallback(fallbackUrl, activeToken, appSecret, 'POST', JSON.stringify(payload));
+        const fbResult = await fbRes.json().catch(() => ({}));
+        if (fbRes.ok) {
+          console.log('[Instagram Send] Sucesso via page_id fallback:', { source: candidate.source, messageId: fbResult.message_id });
+          return { ok: true, result: fbResult, status: 200, error: '' };
+        }
+        const fallbackErr = parseGraphError(fbResult);
+        lastStatus = fbRes.status;
+        lastError = fallbackErr.message;
+        console.warn(`[Instagram Send] Fallback page_id também falhou: code=${fallbackErr.code}, msg=${fallbackErr.message}`);
+      }
+
       // non-auth error: stop trying this and next candidates
       return { ok: false, result: null, status: lastStatus, error: lastError };
     }
@@ -240,10 +280,10 @@ Deno.serve(async (req) => {
 
   try {
     const body: SendRequest = await req.json();
-    const { page_id, recipient_id, message, type = 'text', media_url } = body;
-    console.log('[Instagram Send] Enviando mensagem:', { page_id, recipient_id, type });
+    const { page_id, ig_account_id, recipient_id, message, type = 'text', media_url } = body;
+    console.log('[Instagram Send] Enviando mensagem:', { page_id, ig_account_id, recipient_id, type });
 
-    const tokenCandidates = await getAccessTokenCandidates(page_id);
+    const tokenCandidates = await getAccessTokenCandidates(page_id, ig_account_id);
     if (tokenCandidates.length === 0) {
       return new Response(
         JSON.stringify({ success: false, error: 'Access token não configurado' }),
@@ -265,7 +305,7 @@ Deno.serve(async (req) => {
       };
     }
 
-    const { ok, result, status, error } = await callGraphAPI(page_id, messagePayload, tokenCandidates, appSecret);
+    const { ok, result, status, error } = await callGraphAPI(page_id, messagePayload, tokenCandidates, appSecret, ig_account_id);
 
     if (!ok) {
       return new Response(

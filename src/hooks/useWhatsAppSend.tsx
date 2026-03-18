@@ -306,26 +306,29 @@ export function useWhatsAppSend() {
     
     // O phone para Instagram vem como "ig:123456" - extrair o ID
     const cleanRecipientId = recipientId.replace('ig:', '');
-    
-    // Buscar page_id (armazenado em waba_id para Instagram)
+
+    // Buscar page_id (waba_id) e ig_account_id (phone_number_id) da conexão
     const { data: fullConnection } = await supabase
       .from('whatsapp_connections')
-      .select('waba_id')
+      .select('waba_id, phone_number_id')
       .eq('id', connection.id)
       .single();
-    
+
     const pageId = fullConnection?.waba_id;
-    
-    if (!pageId) {
-      return { data: null, error: new Error('Page ID não configurado') };
+    // Instagram Business Account ID — endpoint primário para a Instagram Messaging API
+    const igAccountId = fullConnection?.phone_number_id || connection.phone_number_id;
+
+    if (!igAccountId && !pageId) {
+      return { data: null, error: new Error('Page ID e Instagram Account ID não configurados') };
     }
-    
+
     // Para mídias, a "message" contém a URL do arquivo
     const isMedia = ['image', 'video', 'file'].includes(type);
-    
+
     const { data, error } = await supabase.functions.invoke('instagram-send', {
-      body: { 
+      body: {
         page_id: pageId,
+        ig_account_id: igAccountId,
         recipient_id: cleanRecipientId,
         message: isMedia ? '' : message,
         type: type,
