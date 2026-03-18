@@ -1,53 +1,59 @@
 
 
-## Problemas Identificados
+## Adicionar upload de arquivos (TXT/PDF) na "Base de Consulta" dos robôs
 
-### 1. Auto-online fica brigando com status manual
-Quando o atendente está **dentro do horário** e muda manualmente para offline (ex: foi ao banheiro), o monitor detecta `status === 'offline'` e reseta `autoOnlineDoneRef` (linha 115-117), forçando-o de volta para online no próximo tick. Isso cria um loop conflitante.
+### Problema
+Atualmente, a seção "Links de consulta" só suporta URLs. O usuário quer poder também enviar arquivos TXT/PDF como base de conhecimento para os robôs consultarem. A seção deve ser renomeada para "Base de Consulta".
 
-### 2. Guard de auto-online está quebrado
-O `autoOnlineDoneRef` é resetado quando `profile?.status !== 'offline'` (linha 115), ou seja: online → manual offline → auto-online novamente. O guard não protege nada.
+### Solução
 
-### 3. Escala cross-midnight não busca dia anterior
-Se a escala é Sábado 22:00-02:00, no Domingo às 01:00 o código busca `day_of_week = 0` (Domingo). Mas a escala está em `day_of_week = 6` (Sábado). O atendente fica "sem escala" e é posto offline.
+**1. Atualizar interface `ReferenceLink` em `src/hooks/useRobots.tsx`**
 
-### 4. Auto-offline dispara mesmo com extensão ativa
-Quando `remaining <= 0` e o atendente estendeu o turno, o cálculo pode oscilar dependendo de como `extensionMinutes` é somado no `endMinutes`, causando disparo prematuro.
+Adicionar campos opcionais para arquivo:
+```typescript
+export interface ReferenceLink {
+  id: string;
+  url: string;
+  title: string;
+  type: 'link' | 'file';        // novo
+  fileUrl?: string;              // novo - URL do storage
+  fileName?: string;             // novo - nome original
+  fileContent?: string;          // novo - conteúdo extraído do TXT/PDF
+}
+```
 
----
+**2. Criar edge function `extract-file-content` para extrair texto de PDF/TXT**
 
-## Solução
+- Recebe o arquivo via upload ou URL do storage
+- Para TXT: lê diretamente o conteúdo
+- Para PDF: usa parsing básico para extrair texto
+- Retorna o conteúdo textual para armazenar no `fileContent`
 
-### Arquivo: `src/hooks/useWorkScheduleMonitor.tsx`
+**3. Atualizar UI em `src/pages/admin/AdminRobos.tsx`**
 
-**A. Corrigir fetch para incluir dia anterior (cross-midnight)**
-- Buscar escala do dia atual E do dia anterior
-- Se a escala do dia anterior tem `end_time < start_time` (cross-midnight), verificar se ainda estamos dentro dela
+Na aba "links" (renomeada para "Base de Consulta"):
+- Renomear botão de "Links de consulta" para "Base de Consulta"
+- Adicionar dois botões para adicionar itens: "Adicionar link" e "Adicionar arquivo"
+- Para arquivos: input de upload que aceita `.txt,.pdf`, faz upload para o bucket `chat-attachments`, extrai conteúdo via edge function, e salva no `referenceLinks`
+- Renderizar itens de forma diferenciada (ícone de link vs ícone de arquivo)
+- Aumentar limite de 5 para 10 itens (mix de links + arquivos)
 
-**B. Auto-online apenas no início do turno (janela de 2 min)**
-- Só disparar auto-online se estamos nos primeiros 2 minutos do turno
-- Usar `autoOnlineDoneRef` sem reset por mudança de status — só resetar quando muda de dia/escala
-- Remover o reset em linha 115-117 que causa o conflito
+**4. Atualizar `buildSystemPrompt` em `robot-chat/index.ts` e `sdr-robot-chat/index.ts`**
 
-**C. Auto-offline robusto**
-- Quando `remaining <= 0`, verificar se realmente saiu do horário (double-check `isWithinSchedule` ficou false)
-- Usar `autoOfflineDoneRef` corretamente sem resetar dentro do horário
+- Quando `referenceLink.type === 'file'` e `fileContent` existe, injetar o conteúdo diretamente no prompt:
+```
+## Base de Consulta - Documentos
+### Documento: nome_do_arquivo.pdf
+[conteúdo extraído do arquivo]
+```
 
-**D. Não interferir com mudanças manuais durante o turno**
-- Adicionar flag `manualOverrideRef` que é setada quando o atendente muda status manualmente via Topbar
-- O monitor respeita essa flag e não força auto-online durante o turno ativo
-
-### Arquivo: `src/components/layout/Topbar.tsx`
-
-**E. Sinalizar mudança manual**
-- Quando `handleStatusChange` é chamado pelo usuário, emitir um evento ou setar uma flag no localStorage para que o monitor saiba que foi manual e não force auto-online
-
----
-
-## Resumo das mudanças
+### Arquivos alterados
 
 | Arquivo | Mudança |
 |---|---|
-| `useWorkScheduleMonitor.tsx` | Fetch dia anterior para cross-midnight; auto-online só nos primeiros 2min; remover reset de ref que causa loop; respeitar override manual |
-| `Topbar.tsx` | Marcar mudanças manuais de status para evitar conflito com auto-online |
+| `src/hooks/useRobots.tsx` | Expandir `ReferenceLink` com campos de arquivo |
+| `src/pages/admin/AdminRobos.tsx` | Renomear para "Base de Consulta", adicionar upload de TXT/PDF, UI diferenciada |
+| `supabase/functions/robot-chat/index.ts` | Injetar conteúdo de arquivos no prompt do sistema |
+| `supabase/functions/sdr-robot-chat/index.ts` | Injetar conteúdo de arquivos no prompt do sistema |
+| `supabase/functions/extract-file-content/index.ts` | Nova edge function para extrair texto de PDF/TXT |
 
