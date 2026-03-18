@@ -1013,7 +1013,7 @@ export function ChatPanel({ conversation, showContactDetails, onToggleContactDet
     }
     
     // Mapeamentos de tipos
-    const mediaTypes = ['audio', 'image', 'video', 'document', 'file'];
+    const mediaTypes = ['audio', 'image', 'video', 'document', 'file', 'story_mention'];
     const typeToMime: Record<string, string> = {
       audio: 'audio/ogg',
       image: 'image/jpeg',
