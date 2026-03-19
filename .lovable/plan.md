@@ -1,34 +1,29 @@
 
 
-## Corrigir robôs que não conseguem ver imagens
+## Impedir Delma de reassumir conversas de Júlia/Sebastião
 
-### Problema raiz
-O código atual envia a URL da imagem diretamente ao modelo de IA via `image_url: { url: "https://..." }`. Existem dois cenários de falha:
+### Causa raiz
 
-1. **URLs `meta_media:xxx`**: Quando o upload da Meta falha, a URL armazenada é `meta_media:MEDIA_ID` — não é uma URL HTTP válida, e o modelo IA não consegue acessar.
-2. **URLs de Storage externas**: Mesmo URLs válidas do Supabase Storage podem falhar porque os modelos Gemini/OpenAI precisam baixar a imagem externamente, o que pode falhar por timeout ou restrições.
+Quando Delma transfere para Júlia via `transfer_to_robot`, o código de Delma continua executando após a transferência e **limpa o `robot_lock_until`** (linha 1538 do robot-chat). Isso cria uma janela onde:
 
-### Solução
-Converter todas as imagens para **base64 data URL** (`data:image/jpeg;base64,...`) antes de enviar ao modelo. Isso garante compatibilidade com todos os provedores (Gemini e OpenAI) sem depender do modelo conseguir acessar URLs externas.
+1. O lock que Júlia definiu é sobrescrito
+2. `sync-robot-schedules` pode re-disparar robot-chat prematuramente
+3. Se o robot-chat de Júlia falhar no retry, a conversa pode voltar para `em_fila` e Delma reassume
 
-### Mudanças
+### Correções
 
 **Arquivo: `supabase/functions/robot-chat/index.ts`**
 
-1. Criar helper `resolveImageToDataUrl(url: string): Promise<string | null>` que:
-   - Se URL começa com `meta_media:` → chama `meta-media-proxy` internamente para obter o mediaId, baixa a imagem via Meta API, converte para base64
-   - Se URL começa com `http` → faz fetch direto, converte o buffer para base64 data URL
-   - Retorna `data:image/jpeg;base64,...` ou null em caso de falha
+1. **Pular cleanup pós-transferência**: Quando uma ação de transferência (`transfer_to_robot`, `transfer_to_department`, `transfer_to_human`) foi executada, NÃO executar o bloco final que atualiza `robot_lock_until = null` e `last_message_preview`. Adicionar flag `skipPostProcessing = true` nesses handlers e usar no bloco final.
 
-2. Em `buildMessageHistory`, ao processar imagem: chamar `resolveImageToDataUrl(imageUrl)` e usar o resultado como `image_url.url`
+2. **Proteger contra race condition**: Na cleanup final (linhas 1532-1540), adicionar condição `if (!skipPostProcessing)` para que o robô originador não interfira no estado definido pelo robô destino.
 
-3. Se resolução falhar, inserir texto descritivo em vez de silenciosamente enviar URL inválida
+**Arquivo: `supabase/functions/sync-robot-schedules/index.ts`**
 
-**Arquivo: `supabase/functions/sdr-robot-chat/index.ts`**
-- Mesmas alterações para paridade
+3. **Ignorar conversas com transferência recente no segundo pass**: Antes de retry de "conversa travada", verificar `transfer_logs` para ver se houve transferência nos últimos 3 minutos. Se sim, pular — o robô destino pode estar processando a resposta.
 
 ### Impacto
-- Robôs passarão a ver todas as imagens corretamente (Baileys e Meta API)
-- Funciona com todos os modelos (Gemini, GPT-4o, fallback Lovable AI)
-- Sem alteração no fluxo do usuário
+- Júlia e Sebastião não terão seus locks limpos por Delma após transferência
+- sync-robot-schedules dará mais tempo para especialistas processarem após transferência
+- Sem impacto no fluxo normal de atendimento
 
