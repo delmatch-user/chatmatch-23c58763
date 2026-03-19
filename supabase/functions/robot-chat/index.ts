@@ -1184,13 +1184,14 @@ async function handleAutomaticMode(body: {
   let aiResponse = choice?.message?.content || '';
   let actionTaken = false;
   let skipSending = false; // Quando true, salva no DB mas não envia via WhatsApp
+  let hasTransferTool = false; // Quando true, pula cleanup pós-processamento
   
   // Processar tool calls (transferências, fechamento, etc.)
   if (toolCalls && toolCalls.length > 0) {
     console.log(`[Robot-Chat Auto] ${toolCalls.length} tool calls recebidas`);
     
     // Limpar content da IA quando há tool calls de transferência para evitar duplicação
-    const hasTransferTool = toolCalls.some((tc: any) => 
+    hasTransferTool = toolCalls.some((tc: any) => 
       ['transfer_to_department', 'transfer_to_human', 'transfer_to_robot'].includes(tc.function.name)
     );
     if (hasTransferTool) {
