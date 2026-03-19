@@ -1,38 +1,41 @@
 
 
-## Testes de API do Instagram para App Review da Meta
+## Re-executar Testes de API do Instagram para Meta App Review
 
-A Meta exige chamadas reais de API para cada permissão durante o processo de revisão. Vou criar uma edge function temporária que executa as chamadas necessárias para cada permissão pendente.
+A screenshot mostra que as permissões ainda estão com 0 chamadas de API. Os testes anteriores provavelmente não foram registrados pela Meta (pode ter havido cache ou o token usado não estava associado ao app correto). Vamos recriar a edge function e executar todos os testes novamente.
 
-### Permissões a testar (8 pendentes)
+### Permissões pendentes (8 com 0 chamadas + 2 com chamadas obrigatórias)
 
-| Permissão | Endpoint de teste |
-|---|---|
-| `instagram_business_manage_messages` | `POST /{ig-id}/messages` (echo para si mesmo ou read conversations) |
-| `instagram_business_basic` | `GET /{ig-id}?fields=id,name,username` |
-| `public_profile` | `GET /me?fields=id,name` |
-| `instagram_manage_comments` | `GET /{ig-id}/media` → `GET /{media-id}/comments` |
-| `instagram_manage_messages` | `GET /{page-id}/conversations?platform=instagram` |
-| `instagram_content_publish` | `POST /{ig-id}/media` (container creation, sem publicar de fato) |
-| `instagram_basic` | `GET /{ig-id}?fields=id,ig_id,username,media_count` |
-| `business_management` | `GET /me/businesses` |
+| Permissão | Endpoint | Método |
+|---|---|---|
+| `instagram_business_manage_messages` | `GET /{page-id}/conversations?platform=instagram` | GET |
+| `instagram_business_basic` | `GET /{ig-id}?fields=id,name,username,followers_count` | GET |
+| `public_profile` | `GET /me?fields=id,name` | GET |
+| `instagram_manage_comments` | `GET /{ig-id}/media` → `GET /{media-id}/comments` | GET |
+| `instagram_manage_messages` | `GET /{page-id}/conversations?platform=instagram` | GET |
+| `instagram_content_publish` | `POST /{ig-id}/media` (container only) | POST |
+| `instagram_basic` | `GET /{ig-id}?fields=id,ig_id,username,media_count` | GET |
+| `business_management` | `GET /me/businesses` | GET |
 
 ### Implementação
 
-1. **Criar edge function `ig-permission-test`** que recebe o nome da permissão e executa a chamada Graph API correspondente usando o token já salvo no banco
-2. **Executar cada teste** via `curl_edge_functions`, registrando sucesso/falha
-3. **Remover a edge function** após os testes (é temporária)
+1. **Criar `supabase/functions/ig-permission-test/index.ts`** — edge function temporária que:
+   - Recebe `{ permission: "all" }` para testar tudo de uma vez
+   - Usa token do banco (`EAAbX...`) com `appsecret_proof`
+   - Deriva Page Access Token automaticamente para permissões de página
+   - Retorna resultado detalhado de cada chamada
 
-### Arquivo a criar
-- `supabase/functions/ig-permission-test/index.ts` — edge function temporária com switch/case para cada permissão
+2. **Deploy e executar** — chamar a function com `permission: "all"`, IG Account ID `17841447900741268`, Page ID `273187287820589`
 
-### Dados disponíveis
+3. **Verificar resultados** — confirmar quais passaram/falharam
+
+4. **Deletar a edge function** após os testes
+
+### Dados
 - **IG Account ID:** `17841447900741268`
-- **Page ID:** `273187287820589`
-- **Token:** salvo em `whatsapp_connections`
+- **Page ID:** `273187287820589`  
+- **Token:** já salvo no banco (ativo)
 
-### Notas
-- Nenhuma publicação real será feita (content_publish só cria container sem publicar)
-- Após os testes, a function será deletada
-- As chamadas serão feitas com `appsecret_proof` para consistência
+### Arquivo
+- `supabase/functions/ig-permission-test/index.ts` (temporário — será deletado após uso)
 
