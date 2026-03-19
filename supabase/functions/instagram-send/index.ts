@@ -143,6 +143,7 @@ async function derivePageAccessToken(
   const pageUrl = `https://graph.facebook.com/v25.0/${pageId}?fields=access_token`;
   const pageRes = await fetchWithProofFallback(pageUrl, token, appSecret, 'GET');
   const pageData = await pageRes.response.json().catch(() => ({}));
+  console.log(`[Instagram Send] derivePageAccessToken strategy1 (page_fields): ok=${pageRes.response.ok}, hasToken=${!!pageData?.access_token}, error=${pageData?.error?.message || 'none'}`);
   if (pageRes.response.ok && typeof pageData?.access_token === 'string' && pageData.access_token.trim()) {
     return { token: pageData.access_token.trim(), strategy: 'page_fields' };
   }
@@ -151,6 +152,8 @@ async function derivePageAccessToken(
   const accountsUrl = 'https://graph.facebook.com/v25.0/me/accounts?fields=id,access_token';
   const accountsRes = await fetchWithProofFallback(accountsUrl, token, appSecret, 'GET');
   const accountsData = await accountsRes.response.json().catch(() => ({}));
+  const accountIds = Array.isArray(accountsData?.data) ? accountsData.data.map((a: any) => a?.id) : [];
+  console.log(`[Instagram Send] derivePageAccessToken strategy2 (me_accounts): ok=${accountsRes.response.ok}, accounts=${JSON.stringify(accountIds)}, lookingFor=${pageId}`);
 
   if (accountsRes.response.ok && Array.isArray(accountsData?.data)) {
     const match = accountsData.data.find((item: any) => String(item?.id) === String(pageId));
@@ -160,6 +163,7 @@ async function derivePageAccessToken(
     }
   }
 
+  console.warn(`[Instagram Send] derivePageAccessToken: nenhuma estratégia funcionou para pageId=${pageId}`);
   return null;
 }
 
