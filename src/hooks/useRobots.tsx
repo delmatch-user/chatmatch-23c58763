@@ -64,6 +64,7 @@ export interface Robot {
   qaPairs: QAPair[];
   referenceLinks: ReferenceLink[];
   tools: RobotTools;
+  autoAssign: boolean;
 }
 
 export const defaultTools: RobotTools = {
