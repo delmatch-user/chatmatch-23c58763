@@ -842,35 +842,7 @@ async function handleAutomaticMode(body: {
   // Converter mensagens para formato OpenAI
   // Identificar robôs pelo sender_name contendo "[ROBOT]" ou "(IA)" - não pelo sender_id
   const readImages = robot.tools?.readImages ?? true;
-  const conversationHistory = (messagesData || []).map(msg => {
-    const isRobotMessage = msg.sender_name?.includes('[ROBOT]') || msg.sender_name?.includes('(IA)');
-    const isAgentMessage = msg.sender_id !== null;
-    const role = (isRobotMessage || isAgentMessage) ? 'assistant' as const : 'user' as const;
-    
-    // Handle image messages - send as vision content if readImages enabled
-    if (readImages && msg.message_type === 'image' && msg.content) {
-      // Content may be a URL to the image
-      const imageUrl = msg.content.startsWith('http') ? msg.content : null;
-      if (imageUrl) {
-        return {
-          role,
-          content: [
-            { type: "image_url" as const, image_url: { url: imageUrl } },
-            { type: "text" as const, text: "O cliente enviou esta imagem. Analise e responda." }
-          ]
-        };
-      }
-    }
-    
-    if (msg.message_type === 'audio') {
-      return { role, content: msg.content ? `[Áudio transcrito]: ${msg.content}` : '[Áudio recebido - sem transcrição]' };
-    }
-    
-    return {
-      role,
-      content: msg.message_type === 'text' || msg.message_type === 'system' ? msg.content : `[Mídia recebida: ${msg.message_type}]`
-    };
-  });
+  const conversationHistory = await buildMessageHistory(messagesData || [], readImages);
   
   // Buscar departamentos disponíveis para transferência
   const { data: allDepts } = await supabase
