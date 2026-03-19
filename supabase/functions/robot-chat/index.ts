@@ -1184,13 +1184,14 @@ async function handleAutomaticMode(body: {
   let aiResponse = choice?.message?.content || '';
   let actionTaken = false;
   let skipSending = false; // Quando true, salva no DB mas não envia via WhatsApp
+  let hasTransferTool = false; // Quando true, pula cleanup pós-processamento
   
   // Processar tool calls (transferências, fechamento, etc.)
   if (toolCalls && toolCalls.length > 0) {
     console.log(`[Robot-Chat Auto] ${toolCalls.length} tool calls recebidas`);
     
     // Limpar content da IA quando há tool calls de transferência para evitar duplicação
-    const hasTransferTool = toolCalls.some((tc: any) => 
+    hasTransferTool = toolCalls.some((tc: any) => 
       ['transfer_to_department', 'transfer_to_human', 'transfer_to_robot'].includes(tc.function.name)
     );
     if (hasTransferTool) {
@@ -1529,15 +1530,19 @@ async function handleAutomaticMode(body: {
     }
   }
 
-  // Atualizar last_message_preview e limpar lock
-  await supabase
-    .from('conversations')
-    .update({
-      last_message_preview: messageParts[messageParts.length - 1].substring(0, 80),
-      updated_at: new Date().toISOString(),
-      robot_lock_until: null
-    })
-    .eq('id', conversationId);
+  // Atualizar last_message_preview e limpar lock (pular se houve transferência)
+  if (!hasTransferTool) {
+    await supabase
+      .from('conversations')
+      .update({
+        last_message_preview: messageParts[messageParts.length - 1].substring(0, 80),
+        updated_at: new Date().toISOString(),
+        robot_lock_until: null
+      })
+      .eq('id', conversationId);
+  } else {
+    console.log(`[Robot-Chat Auto] Skipping post-processing cleanup — transfer was executed`);
+  }
   
   // Incrementar contador de mensagens do robô
   await supabase

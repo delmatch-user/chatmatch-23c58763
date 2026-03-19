@@ -262,6 +262,20 @@ Deno.serve(async (req) => {
       console.log(`[sync-robot-schedules] Conversas potencialmente travadas: ${stuckConversations.length}`);
 
       for (const conv of stuckConversations) {
+        // Verificar se houve transferência recente (últimos 3 min) — dar tempo ao robô destino
+        const threeMinAgo = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+        const { data: recentTransfer } = await supabase
+          .from("transfer_logs")
+          .select("id")
+          .eq("conversation_id", conv.id)
+          .gte("created_at", threeMinAgo)
+          .limit(1);
+
+        if (recentTransfer && recentTransfer.length > 0) {
+          console.log(`[sync-robot-schedules] Conversa ${conv.id} tem transferência recente, pulando retry`);
+          continue;
+        }
+
         // Verificar se o robô já respondeu (mensagem com [ROBOT] no sender_name)
         const { data: robotMessages, error: msgCheckError } = await supabase
           .from("messages")
