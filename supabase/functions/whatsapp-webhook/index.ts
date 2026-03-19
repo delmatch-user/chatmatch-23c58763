@@ -878,7 +878,7 @@ serve(async (req) => {
               .select('id, contact_id')
               .eq('whatsapp_instance_id', effectiveInstanceId)
               .in('status', ['em_fila', 'em_atendimento', 'pendente'])
-              .gte('created_at', new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString())
+              .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
               .order('created_at', { ascending: false })
               .limit(20);
             

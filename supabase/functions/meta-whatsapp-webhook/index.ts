@@ -291,6 +291,7 @@ serve(async (req) => {
               .from('robots')
               .select('id, name, channels')
               .eq('status', 'active')
+              .eq('auto_assign', true)
               .contains('departments', [targetDepartmentId]);
 
             // Buscar config SDR para guarda
