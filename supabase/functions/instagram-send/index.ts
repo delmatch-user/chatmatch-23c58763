@@ -143,6 +143,7 @@ async function derivePageAccessToken(
   const pageUrl = `https://graph.facebook.com/v25.0/${pageId}?fields=access_token`;
   const pageRes = await fetchWithProofFallback(pageUrl, token, appSecret, 'GET');
   const pageData = await pageRes.response.json().catch(() => ({}));
+  console.log(`[Instagram Send] derivePageAccessToken strategy1 (page_fields): ok=${pageRes.response.ok}, hasToken=${!!pageData?.access_token}, error=${pageData?.error?.message || 'none'}`);
   if (pageRes.response.ok && typeof pageData?.access_token === 'string' && pageData.access_token.trim()) {
     return { token: pageData.access_token.trim(), strategy: 'page_fields' };
   }
@@ -151,6 +152,8 @@ async function derivePageAccessToken(
   const accountsUrl = 'https://graph.facebook.com/v25.0/me/accounts?fields=id,access_token';
   const accountsRes = await fetchWithProofFallback(accountsUrl, token, appSecret, 'GET');
   const accountsData = await accountsRes.response.json().catch(() => ({}));
+  const accountIds = Array.isArray(accountsData?.data) ? accountsData.data.map((a: any) => a?.id) : [];
+  console.log(`[Instagram Send] derivePageAccessToken strategy2 (me_accounts): ok=${accountsRes.response.ok}, accounts=${JSON.stringify(accountIds)}, lookingFor=${pageId}`);
 
   if (accountsRes.response.ok && Array.isArray(accountsData?.data)) {
     const match = accountsData.data.find((item: any) => String(item?.id) === String(pageId));
@@ -160,24 +163,45 @@ async function derivePageAccessToken(
     }
   }
 
+  console.warn(`[Instagram Send] derivePageAccessToken: nenhuma estratégia funcionou para pageId=${pageId}`);
   return null;
 }
 
-async function persistDerivedDbToken(pageId: string, oldToken: string, newToken: string): Promise<void> {
+async function persistDerivedDbToken(pageId: string, igAccountId: string | undefined, oldToken: string, newToken: string): Promise<void> {
   if (!oldToken || !newToken || oldToken === newToken) return;
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-  const { error } = await supabase
-    .from('whatsapp_connections')
-    .update({ access_token: newToken, updated_at: new Date().toISOString() })
-    .eq('connection_type', 'instagram')
-    .eq('waba_id', pageId)
-    .eq('access_token', oldToken);
 
-  if (error) {
-    console.warn('[Instagram Send] Não foi possível persistir token derivado no banco:', error.message);
-  } else {
-    console.log('[Instagram Send] Token de página persistido no banco para próximos envios');
+  // Try updating by ig_account_id (phone_number_id) first, then by page_id (waba_id)
+  let updated = false;
+
+  if (igAccountId) {
+    const { error, count } = await supabase
+      .from('whatsapp_connections')
+      .update({ access_token: newToken, updated_at: new Date().toISOString() })
+      .eq('connection_type', 'instagram')
+      .eq('phone_number_id', igAccountId)
+      .eq('access_token', oldToken);
+
+    if (!error && (count ?? 0) > 0) {
+      updated = true;
+      console.log('[Instagram Send] Token de página persistido (via ig_account_id)');
+    }
+  }
+
+  if (!updated && pageId) {
+    const { error } = await supabase
+      .from('whatsapp_connections')
+      .update({ access_token: newToken, updated_at: new Date().toISOString() })
+      .eq('connection_type', 'instagram')
+      .eq('waba_id', pageId)
+      .eq('access_token', oldToken);
+
+    if (error) {
+      console.warn('[Instagram Send] Não foi possível persistir token derivado:', error.message);
+    } else {
+      console.log('[Instagram Send] Token de página persistido (via waba_id)');
+    }
   }
 }
 
@@ -222,14 +246,15 @@ async function callGraphAPI(
 
       if (needsPageToken && !triedDerive) {
         triedDerive = true;
+        console.log(`[Instagram Send] Token requer Page Access Token. Tentando derivar para pageId=${pageId}...`);
         const derived = await derivePageAccessToken(pageId, activeToken, appSecret);
 
         if (derived && derived.token !== activeToken) {
           console.log(`[Instagram Send] Token de página derivado via ${derived.strategy} para source=${candidate.source}`);
           activeToken = derived.token;
 
-          if (candidate.source === 'db') {
-            await persistDerivedDbToken(pageId, originalToken, derived.token);
+          if (candidate.source.startsWith('db')) {
+            await persistDerivedDbToken(pageId, igAccountId, originalToken, derived.token);
           }
 
           continue;
