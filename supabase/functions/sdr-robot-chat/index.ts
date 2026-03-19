@@ -665,6 +665,7 @@ serve(async (req) => {
     systemPrompt += `- Responda de forma concisa e direta.\n`;
     systemPrompt += `- FORMATAÇÃO NUMÉRICA: Sempre use o padrão brasileiro para números e valores monetários. Use ponto como separador de milhar e vírgula como separador decimal. Exemplos: 700.000 (setecentos mil), R$ 7.000,00 (sete mil reais), 1,5% (um e meio por cento). NUNCA use o formato americano (ex: 700,000 ou R$ 7,000.00).\n`;
     systemPrompt += `- REGRA CRÍTICA: Avance o lead proativamente! Não fique preso na mesma etapa. Ao perceber interesse, chame advance_lead_stage IMEDIATAMENTE junto com sua resposta.\n`;
+    systemPrompt += `- **REGRA CRÍTICA**: Responda SOMENTE com base nas informações presentes na sua Base de Conhecimento (Instruções, Perguntas e Respostas, Links de Referência e Documentos). Se a pergunta do cliente não puder ser respondida com as informações disponíveis, informe educadamente que não possui essa informação e ofereça transferir para um atendente. NUNCA invente ou alucine informações que não estejam na sua base de conhecimento.\n`;
     if (robot.tools?.sendAgentName) {
       systemPrompt += `- Identifique-se como ${robot.name}. Nunca mencione que é uma IA.\n`;
     }

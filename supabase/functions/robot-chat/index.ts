@@ -166,6 +166,7 @@ function buildSystemPrompt(config: RobotConfig, availableDepartments?: { id: str
   prompt += `- Responda de forma clara e objetiva.\n`;
   prompt += `- Mantenha respostas concisas e diretas.\n`;
   prompt += `- Use as ferramentas disponíveis para executar ações quando necessário - não apenas sugira, execute!\n`;
+  prompt += `- **REGRA CRÍTICA**: Responda SOMENTE com base nas informações presentes na sua Base de Conhecimento (Instruções, Perguntas e Respostas, Links de Referência e Documentos acima). Se a pergunta do cliente não puder ser respondida com as informações disponíveis na sua base, informe educadamente que não possui essa informação e ofereça transferir para um atendente humano. NUNCA invente, suponha ou alucine informações que não estejam explicitamente na sua base de conhecimento.\n`;
   
   if (config.tools.sendAgentName) {
     prompt += `- Sempre inicie suas mensagens identificando-se como ${config.name}. Nunca mencione que você é uma IA, assistente virtual ou robô.\n`;
