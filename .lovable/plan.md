@@ -1,28 +1,26 @@
 
 
-## Implementar Seleção de Atendentes/Agentes IA no Config do Robô
+## Injetar resumo de triagem na transferência robot-to-robot
 
 ### Problema
-Quando "Selecionar atendentes" é escolhido na configuração do robô, não aparece nenhuma lista de checkboxes para selecionar quais agentes (robôs IA como Sebastião e Júlia) o robô pode transferir. O campo `transferToAgentIds` não existe no modelo de dados nem no backend.
+Quando Delma transfere para Júlia ou Sebastião via `transfer_to_robot`, o campo `reason` pode conter apenas uma frase genérica. Os robôs especialistas precisam de um resumo detalhado da conversa/triagem para dar continuidade sem desviar o assunto.
 
-### Plano
+### Análise
+O mecanismo já funciona parcialmente:
+- O `transfer_to_robot` salva `args.reason` no `transfer_logs`
+- O robô receptor busca o último `transfer_logs` e injeta o `reason` como contexto de prioridade máxima no prompt
 
-**1. Adicionar `transferToAgentIds` ao tipo `RobotTools` (`src/hooks/useRobots.tsx`)**
-- Novo campo: `transferToAgentIds: string[]` (lista de IDs de robôs permitidos)
-- Default: `[]`
+O problema está em **dois pontos**:
+1. A instrução no prompt do robô triador não exige que o `reason` contenha um resumo completo da conversa
+2. A descrição do parâmetro `reason` na tool definition é vaga ("Motivo da transferência e contexto para o agente destino")
 
-**2. Adicionar lista de checkboxes no UI (`src/pages/admin/AdminRobos.tsx`)**
-- Quando `transferToAgentsMode === 'select'`, exibir checkboxes com todos os outros robôs (exceto o próprio)
-- Similar à lista de departamentos que já funciona
-- Cada checkbox mostra o nome do robô com ícone 🤖
+### Correção
 
-**3. Filtrar robôs no backend (`supabase/functions/robot-chat/index.ts`)**
-- Após buscar `otherRobots`, aplicar filtro similar ao de departamentos:
-  - Se `transferToAgentsMode === 'select'`, limitar `availableRobotsForTransfer` aos IDs em `transferToAgentIds`
-  - Se `transferToAgentsMode === 'all'`, manter todos
+**Arquivo: `supabase/functions/robot-chat/index.ts`**
 
-### Arquivos modificados
-- `src/hooks/useRobots.tsx` — adicionar campo `transferToAgentIds`
-- `src/pages/admin/AdminRobos.tsx` — adicionar checkboxes de robôs quando mode é "select"
-- `supabase/functions/robot-chat/index.ts` — filtrar `availableRobotsForTransfer` pela config
+1. **Melhorar instrução no prompt** (linha ~151): Adicionar instrução explícita de que ao usar `transfer_to_robot`, o campo `reason` DEVE conter um resumo completo da conversa até o momento, incluindo: o que o cliente quer, informações já coletadas, e qual a necessidade específica.
+
+2. **Melhorar descrição do parâmetro `reason`** na tool definition (linha ~258): Tornar a descrição mais prescritiva, exigindo resumo da triagem.
+
+Mudanças mínimas e cirúrgicas — sem alterar fluxo, apenas reforçar as instruções para que a IA gere um `reason` mais completo.
 
