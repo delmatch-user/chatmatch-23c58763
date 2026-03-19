@@ -13,7 +13,7 @@ export default function Conversations() {
   const { conversations, selectedConversation, setSelectedConversation } = useApp();
   const isMobile = useIsMobile();
   const hasSelection = !!selectedConversation;
-  const [showContactDetails, setShowContactDetails] = useState(true);
+  const [showContactDetails, setShowContactDetails] = useState(false);
   const location = useLocation();
 
   // Auto-select conversation by contact_id when navigating from contacts page
