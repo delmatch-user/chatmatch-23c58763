@@ -22,6 +22,7 @@ export interface ReferenceLink {
 export interface RobotTools {
   transferToAgents: boolean;
   transferToAgentsMode: 'all' | 'select';
+  transferToAgentIds: string[];
   transferToDepartments: boolean;
   transferToDepartmentsMode: 'all' | 'select';
   transferToDepartmentIds: string[];
@@ -70,6 +71,7 @@ export interface Robot {
 export const defaultTools: RobotTools = {
   transferToAgents: true,
   transferToAgentsMode: 'all',
+  transferToAgentIds: [],
   transferToDepartments: true,
   transferToDepartmentsMode: 'all',
   transferToDepartmentIds: [],

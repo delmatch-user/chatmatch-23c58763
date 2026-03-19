@@ -1040,6 +1040,33 @@ export default function AdminRobos() {
                                 <Label htmlFor="agents-select" className="text-sm font-normal">Selecionar atendentes</Label>
                               </div>
                             </RadioGroup>
+                            )}
+
+                          {selectedRobot.tools.transferToAgents && selectedRobot.tools.transferToAgentsMode === 'select' && (
+                            <div className="ml-13 mt-2 space-y-2 max-h-48 overflow-y-auto">
+                              {robots.filter(r => r.id !== selectedRobot.id).map((robot) => (
+                                <label key={robot.id} className="flex items-center gap-2 cursor-pointer">
+                                  <Checkbox
+                                    checked={(selectedRobot.tools.transferToAgentIds || []).includes(robot.id)}
+                                    onCheckedChange={(checked) => {
+                                      const current = selectedRobot.tools.transferToAgentIds || [];
+                                      const updated = checked
+                                        ? [...current, robot.id]
+                                        : current.filter((id: string) => id !== robot.id);
+                                      setSelectedRobot({
+                                        ...selectedRobot,
+                                        tools: { ...selectedRobot.tools, transferToAgentIds: updated }
+                                      });
+                                    }}
+                                  />
+                                  <Bot className="w-4 h-4 text-muted-foreground" />
+                                  <span className="text-sm">{robot.name}</span>
+                                </label>
+                              ))}
+                              {robots.filter(r => r.id !== selectedRobot.id).length === 0 && (
+                                <p className="text-sm text-muted-foreground">Nenhum outro agente disponível</p>
+                              )}
+                            </div>
                           )}
                         </div>
 
