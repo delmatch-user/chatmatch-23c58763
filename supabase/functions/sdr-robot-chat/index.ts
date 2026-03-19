@@ -9,6 +9,44 @@ const corsHeaders = {
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
+function extractMediaUrl(content: string, expectedType?: string): string | null {
+  if (!content) return null;
+  if (content.startsWith('http')) return content;
+  try {
+    const parsed = JSON.parse(content);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const item = expectedType
+        ? parsed.find((p: any) => p.url && p.type?.startsWith(expectedType))
+        : parsed[0];
+      return item?.url || null;
+    }
+  } catch { /* not JSON */ }
+  return null;
+}
+
+async function transcribeAudioUrl(audioUrl: string): Promise<string | null> {
+  try {
+    console.log('[SDR-Robot-Chat] Transcrevendo áudio:', audioUrl.substring(0, 80));
+    const response = await fetch(`${supabaseUrl}/functions/v1/transcribe-audio`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseServiceKey}`
+      },
+      body: JSON.stringify({ audioUrl })
+    });
+    if (!response.ok) {
+      console.error('[SDR-Robot-Chat] Erro na transcrição:', response.status);
+      return null;
+    }
+    const data = await response.json();
+    return data?.transcription || null;
+  } catch (err) {
+    console.error('[SDR-Robot-Chat] Erro ao transcrever:', err);
+    return null;
+  }
+}
+
 function getModelFromIntelligence(intelligence: string): string {
   switch (intelligence) {
     case 'novato': return 'gemini-2.5-flash-lite';
@@ -36,6 +74,54 @@ function getApiConfig(intelligence: string) {
     apiKey: Deno.env.get("OPENAI_API_KEY") || '',
     providerName: 'OpenAI'
   };
+}
+
+async function buildMessageHistory(messages: any[], readImages: boolean, logPrefix = '[SDR-Robot-Chat]'): Promise<any[]> {
+  const history: any[] = [];
+  for (const msg of messages) {
+    const isRobotMessage = msg.sender_name?.includes('[ROBOT]') || msg.sender_name?.includes('(IA)');
+    const isAgentMessage = msg.sender_id !== null;
+    const role = (isRobotMessage || isAgentMessage) ? 'assistant' as const : 'user' as const;
+
+    if (readImages && msg.message_type === 'image' && msg.content) {
+      const imageUrl = extractMediaUrl(msg.content, 'image');
+      if (imageUrl) {
+        history.push({
+          role,
+          content: [
+            { type: "image_url" as const, image_url: { url: imageUrl } },
+            { type: "text" as const, text: "O cliente enviou esta imagem. Analise e responda." }
+          ]
+        });
+        continue;
+      }
+    }
+
+    if (msg.message_type === 'audio') {
+      const audioUrl = extractMediaUrl(msg.content, 'audio');
+      if (audioUrl) {
+        const transcription = await transcribeAudioUrl(audioUrl);
+        history.push({ role, content: transcription ? `[Áudio transcrito]: ${transcription}` : '[Áudio recebido - não foi possível transcrever]' });
+      } else if (msg.content && !msg.content.startsWith('[') && !msg.content.startsWith('{')) {
+        history.push({ role, content: `[Áudio transcrito]: ${msg.content}` });
+      } else {
+        history.push({ role, content: '[Áudio recebido - sem transcrição]' });
+      }
+      continue;
+    }
+
+    if (msg.message_type === 'video' && msg.content) {
+      const videoUrl = extractMediaUrl(msg.content, 'video');
+      history.push({ role, content: videoUrl ? `[Vídeo recebido: ${videoUrl}]` : '[Vídeo recebido]' });
+      continue;
+    }
+
+    history.push({
+      role,
+      content: msg.message_type === 'text' || msg.message_type === 'system' ? msg.content : `[Mídia recebida: ${msg.message_type}]`
+    });
+  }
+  return history;
 }
 
 function getTemperatureFromTone(tone: string): number {
@@ -506,19 +592,7 @@ serve(async (req) => {
     }
 
     const readImages = robot.tools?.readImages ?? true;
-    const conversationHistory = (messagesData || []).map(msg => {
-      const isRobotMessage = msg.sender_name?.includes('[ROBOT]') || msg.sender_name?.includes('(IA)');
-      const isAgentMessage = msg.sender_id !== null;
-      const role = (isRobotMessage || isAgentMessage) ? 'assistant' as const : 'user' as const;
-
-      if (readImages && msg.message_type === 'image' && msg.content?.startsWith('http')) {
-        return { role, content: [{ type: "image_url" as const, image_url: { url: msg.content } }, { type: "text" as const, text: "O cliente enviou esta imagem. Analise e responda." }] };
-      }
-      if (msg.message_type === 'audio') {
-        return { role, content: msg.content ? `[Áudio transcrito]: ${msg.content}` : '[Áudio recebido - sem transcrição]' };
-      }
-      return { role, content: msg.message_type === 'text' || msg.message_type === 'system' ? msg.content : `[Mídia recebida: ${msg.message_type}]` };
-    });
+    const conversationHistory = await buildMessageHistory(messagesData || [], readImages, '[SDR-Robot-Chat]');
 
     // Re-fetch messages after grouping if needed
     if (groupMessages) {
@@ -529,19 +603,9 @@ serve(async (req) => {
         .order('created_at', { ascending: true })
         .limit(30);
       
+      const freshHistory = await buildMessageHistory(freshMessages || [], readImages, '[SDR-Robot-Chat]');
       conversationHistory.length = 0;
-      (freshMessages || []).forEach(msg => {
-        const isRobot = msg.sender_name?.includes('[ROBOT]') || msg.sender_name?.includes('(IA)');
-        const isAgent = msg.sender_id !== null;
-        const role = (isRobot || isAgent) ? 'assistant' as const : 'user' as const;
-        if (readImages && msg.message_type === 'image' && msg.content?.startsWith('http')) {
-          conversationHistory.push({ role, content: [{ type: "image_url" as const, image_url: { url: msg.content } }, { type: "text" as const, text: "O cliente enviou esta imagem. Analise e responda." }] });
-        } else if (msg.message_type === 'audio') {
-          conversationHistory.push({ role, content: msg.content ? `[Áudio transcrito]: ${msg.content}` : '[Áudio recebido - sem transcrição]' });
-        } else {
-          conversationHistory.push({ role, content: msg.message_type === 'text' || msg.message_type === 'system' ? msg.content : `[Mídia recebida: ${msg.message_type}]` });
-        }
-      });
+      freshHistory.forEach(h => conversationHistory.push(h));
       console.log(`[SDR-Robot-Chat] Histórico re-carregado com ${conversationHistory.length} mensagens`);
     }
 

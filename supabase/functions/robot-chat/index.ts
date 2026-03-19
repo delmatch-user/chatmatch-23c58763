@@ -39,6 +39,44 @@ interface RobotConfig {
   };
 }
 
+function extractMediaUrl(content: string, expectedType?: string): string | null {
+  if (!content) return null;
+  if (content.startsWith('http')) return content;
+  try {
+    const parsed = JSON.parse(content);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const item = expectedType
+        ? parsed.find((p: any) => p.url && p.type?.startsWith(expectedType))
+        : parsed[0];
+      return item?.url || null;
+    }
+  } catch { /* not JSON */ }
+  return null;
+}
+
+async function transcribeAudioUrl(audioUrl: string): Promise<string | null> {
+  try {
+    console.log('[Robot-Chat] Transcrevendo áudio:', audioUrl.substring(0, 80));
+    const response = await fetch(`${supabaseUrl}/functions/v1/transcribe-audio`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseServiceKey}`
+      },
+      body: JSON.stringify({ audioUrl })
+    });
+    if (!response.ok) {
+      console.error('[Robot-Chat] Erro na transcrição:', response.status);
+      return null;
+    }
+    const data = await response.json();
+    return data?.transcription || null;
+  } catch (err) {
+    console.error('[Robot-Chat] Erro ao transcrever:', err);
+    return null;
+  }
+}
+
 function getModelFromIntelligence(intelligence: string): string {
   switch (intelligence) {
     case 'novato':
@@ -74,6 +112,59 @@ function getApiConfig(intelligence: string): { apiUrl: string; apiKey: string; p
       providerName: 'OpenAI'
     };
   }
+}
+
+async function buildMessageHistory(messages: any[], readImages: boolean, logPrefix = '[Robot-Chat]'): Promise<any[]> {
+  const history: any[] = [];
+  for (const msg of messages) {
+    const isRobotMessage = msg.sender_name?.includes('[ROBOT]') || msg.sender_name?.includes('(IA)');
+    const isAgentMessage = msg.sender_id !== null;
+    const role = (isRobotMessage || isAgentMessage) ? 'assistant' as const : 'user' as const;
+
+    // Handle image messages
+    if (readImages && msg.message_type === 'image' && msg.content) {
+      const imageUrl = extractMediaUrl(msg.content, 'image');
+      if (imageUrl) {
+        history.push({
+          role,
+          content: [
+            { type: "image_url" as const, image_url: { url: imageUrl } },
+            { type: "text" as const, text: "O cliente enviou esta imagem. Analise e responda." }
+          ]
+        });
+        continue;
+      }
+    }
+
+    // Handle audio messages
+    if (msg.message_type === 'audio') {
+      const audioUrl = extractMediaUrl(msg.content, 'audio');
+      if (audioUrl) {
+        // Content is a URL (or JSON with URL) — needs transcription
+        const transcription = await transcribeAudioUrl(audioUrl);
+        history.push({ role, content: transcription ? `[Áudio transcrito]: ${transcription}` : '[Áudio recebido - não foi possível transcrever]' });
+      } else if (msg.content && !msg.content.startsWith('[') && !msg.content.startsWith('{')) {
+        // Content is already transcribed text
+        history.push({ role, content: `[Áudio transcrito]: ${msg.content}` });
+      } else {
+        history.push({ role, content: '[Áudio recebido - sem transcrição]' });
+      }
+      continue;
+    }
+
+    // Handle video messages
+    if (msg.message_type === 'video' && msg.content) {
+      const videoUrl = extractMediaUrl(msg.content, 'video');
+      history.push({ role, content: videoUrl ? `[Vídeo recebido: ${videoUrl}]` : '[Vídeo recebido]' });
+      continue;
+    }
+
+    history.push({
+      role,
+      content: msg.message_type === 'text' || msg.message_type === 'system' ? msg.content : `[Mídia recebida: ${msg.message_type}]`
+    });
+  }
+  return history;
 }
 
 function getTemperatureFromTone(tone: string): number {
@@ -751,35 +842,7 @@ async function handleAutomaticMode(body: {
   // Converter mensagens para formato OpenAI
   // Identificar robôs pelo sender_name contendo "[ROBOT]" ou "(IA)" - não pelo sender_id
   const readImages = robot.tools?.readImages ?? true;
-  const conversationHistory = (messagesData || []).map(msg => {
-    const isRobotMessage = msg.sender_name?.includes('[ROBOT]') || msg.sender_name?.includes('(IA)');
-    const isAgentMessage = msg.sender_id !== null;
-    const role = (isRobotMessage || isAgentMessage) ? 'assistant' as const : 'user' as const;
-    
-    // Handle image messages - send as vision content if readImages enabled
-    if (readImages && msg.message_type === 'image' && msg.content) {
-      // Content may be a URL to the image
-      const imageUrl = msg.content.startsWith('http') ? msg.content : null;
-      if (imageUrl) {
-        return {
-          role,
-          content: [
-            { type: "image_url" as const, image_url: { url: imageUrl } },
-            { type: "text" as const, text: "O cliente enviou esta imagem. Analise e responda." }
-          ]
-        };
-      }
-    }
-    
-    if (msg.message_type === 'audio') {
-      return { role, content: msg.content ? `[Áudio transcrito]: ${msg.content}` : '[Áudio recebido - sem transcrição]' };
-    }
-    
-    return {
-      role,
-      content: msg.message_type === 'text' || msg.message_type === 'system' ? msg.content : `[Mídia recebida: ${msg.message_type}]`
-    };
-  });
+  const conversationHistory = await buildMessageHistory(messagesData || [], readImages);
   
   // Buscar departamentos disponíveis para transferência
   const { data: allDepts } = await supabase
@@ -886,21 +949,9 @@ async function handleAutomaticMode(body: {
       .limit(30);
     
     // Rebuild conversation history with fresh data
-    const readImagesRefresh = robot.tools?.readImages ?? true;
+    const freshHistory = await buildMessageHistory(freshMessages || [], readImages);
     conversationHistory.length = 0;
-    (freshMessages || []).forEach(msg => {
-      const isRobotMessage = msg.sender_name?.includes('[ROBOT]') || msg.sender_name?.includes('(IA)');
-      const isAgentMessage = msg.sender_id !== null;
-      const role = (isRobotMessage || isAgentMessage) ? 'assistant' as const : 'user' as const;
-      
-      if (readImagesRefresh && msg.message_type === 'image' && msg.content?.startsWith('http')) {
-        conversationHistory.push({ role, content: [{ type: "image_url" as const, image_url: { url: msg.content } }, { type: "text" as const, text: "O cliente enviou esta imagem. Analise e responda." }] });
-      } else if (msg.message_type === 'audio') {
-        conversationHistory.push({ role, content: msg.content ? `[Áudio transcrito]: ${msg.content}` : '[Áudio recebido - sem transcrição]' });
-      } else {
-        conversationHistory.push({ role, content: msg.message_type === 'text' || msg.message_type === 'system' ? msg.content : `[Mídia recebida: ${msg.message_type}]` });
-      }
-    });
+    freshHistory.forEach(h => conversationHistory.push(h));
     console.log(`[Robot-Chat Auto] Histórico re-carregado com ${conversationHistory.length} mensagens após agrupamento`);
   }
 
