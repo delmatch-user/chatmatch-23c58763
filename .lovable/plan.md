@@ -1,69 +1,67 @@
 
 
-## Unificação das Conversas "Dona Formiguinha"
+## Unificação das Conversas "Paulo Iza" / "Paulo Rocumback"
 
 ### Situação Atual
 
-Duas conversas ativas para a mesma pessoa:
+Mesma pessoa, dois contatos e duas conversas:
 
-| Campo | Conversa Original (f3cea653) | Conversa Duplicada (3a132e21) |
+| Campo | Conversa 00112 (Paulo Iza) | Conversa 00025 (Paulo Rocumback) |
 |---|---|---|
-| Contato | `3b084005` — "016991663580", phone: 016991663580 | `429ef4f1` — "Dona Formiguinha", phone: null |
-| Mensagens | 2 (enviadas pela Yasmin) | 8 (respostas da cliente + Yasmin) |
-| Protocolo | 20260319-00024 | 20260319-00028 |
-| Instance | comercial | suporte |
+| ID | `c03dcd98-855c-46cd-b6c8-05a8181c856d` | `0db2762c-5974-46b9-9e69-4e4e7c034f87` |
+| Contato | `aa560aa3` — "Paulo Iza", phone: 5511932095781 | `05487fc1` — "Paulo Rocumback", phone: null |
+| JID | `5511932095781@s.whatsapp.net` | `8667864780946@lid` |
+| Dept | Comercial | Administrativo |
+| Mensagens | 2 (Mayara enviou) | 9 (Paulo respondeu + system) |
+| Atendente | Mayara | Mayara |
+
+A Mayara mandou mensagens para Paulo pela conversa 00112 (Comercial). Paulo respondeu pelo LID `8667864780946@lid`, que o sistema não reconheceu — criou contato novo "Paulo Rocumback" e conversa nova no Administrativo.
 
 ### Plano
 
-**1. Mover mensagens da conversa original para a duplicada** (a duplicada tem mais contexto e o nome correto)
+**1. Mover mensagens da conversa 00025 para a conversa 00112** (a 00112 é a original com o contato correto "Paulo Iza" e phone preenchido)
 
-A conversa `3a132e21` (protocolo 00028) é a que tem as respostas da cliente e o nome "Dona Formiguinha". Vamos mover as 2 mensagens de `f3cea653` para `3a132e21` e depois deletar `f3cea653`.
+**2. Atualizar contato primário** (`aa560aa3` — Paulo Iza)
+- Adicionar o LID `8667864780946@lid` nas notes para futuras resoluções
 
-**2. Atualizar contato primário** (`429ef4f1` — Dona Formiguinha)
-- Preencher `phone = '016991663580'`
-- Atualizar `notes` para incluir ambos os JIDs
+**3. Marcar contato duplicado** (`05487fc1` — Paulo Rocumback) como merged
 
-**3. Atualizar conversa mantida** (`3a132e21`)
-- Mudar `whatsapp_instance_id` para o correto da instância usada (ou manter `suporte`)
+**4. Deletar conversa vazia** (`0db2762c`) após mover mensagens
 
-**4. Marcar contato duplicado** (`3b084005`) como merged
+**5. Persistir LID no mapa** para evitar duplicação futura
 
-**5. Deletar conversa vazia** (`f3cea653`) após mover mensagens
-
-### Ações (todas via SQL insert tool — dados, não schema)
+### SQL a executar (via insert tool)
 
 ```sql
--- 1. Mover mensagens da conversa f3cea653 → 3a132e21
-UPDATE messages SET conversation_id = '3a132e21-42cb-42e2-9a91-5940c96778a8' 
-WHERE conversation_id = 'f3cea653-457e-49f7-8c61-f04507b291d7';
+-- 1. Mover mensagens da conversa 00025 → 00112
+UPDATE messages SET conversation_id = 'c03dcd98-855c-46cd-b6c8-05a8181c856d'
+WHERE conversation_id = '0db2762c-5974-46b9-9e69-4e4e7c034f87';
 
--- 2. Atualizar contato primário com phone e JIDs
-UPDATE contacts SET phone = '016991663580', 
-  notes = 'jid:781767975119@lid | jid:5516991663580@s.whatsapp.net',
-  name = 'Dona Formiguinha', name_edited = true
-WHERE id = '429ef4f1-a906-4167-95c5-3650af9f2b1b';
+-- 2. Atualizar contato primário com ambos os JIDs
+UPDATE contacts SET
+  notes = 'jid:5511932095781@s.whatsapp.net | jid:8667864780946@lid'
+WHERE id = 'aa560aa3-09b9-4994-aae1-0ec65a83670f';
 
 -- 3. Marcar contato duplicado como merged
-UPDATE contacts SET phone = null, 
-  notes = 'merged_into:429ef4f1-a906-4167-95c5-3650af9f2b1b'
-WHERE id = '3b084005-9472-46cf-84c5-ce890c2b9a8a';
+UPDATE contacts SET phone = null,
+  notes = 'merged_into:aa560aa3-09b9-4994-aae1-0ec65a83670f'
+WHERE id = '05487fc1-35fa-4bf2-8f3a-e2d8da8b35bf';
 
--- 4. Deletar mensagens da conversa original (já movidas)
--- 5. Deletar conversa original
-DELETE FROM messages WHERE conversation_id = 'f3cea653-457e-49f7-8c61-f04507b291d7';
-DELETE FROM conversations WHERE id = 'f3cea653-457e-49f7-8c61-f04507b291d7';
+-- 4. Deletar conversa vazia
+DELETE FROM messages WHERE conversation_id = '0db2762c-5974-46b9-9e69-4e4e7c034f87';
+DELETE FROM conversations WHERE id = '0db2762c-5974-46b9-9e69-4e4e7c034f87';
 
--- 6. Persistir LID mapping para ambos os JIDs
+-- 5. Persistir LID mapping
 INSERT INTO whatsapp_lid_map (lid_jid, phone_digits, instance_id)
-VALUES ('781767975119@lid', '5516991663580', 'suporte')
-ON CONFLICT (lid_jid, instance_id) DO UPDATE SET phone_digits = '5516991663580', updated_at = now();
+VALUES ('8667864780946@lid', '5511932095781', 'comercial')
+ON CONFLICT (lid_jid, instance_id) DO UPDATE SET phone_digits = '5511932095781', updated_at = now();
 ```
 
 ### Resultado
-- Uma única conversa (`3a132e21`) com todas as 10 mensagens em ordem cronológica
-- Contato "Dona Formiguinha" com phone e ambos JIDs
+- Uma única conversa (protocolo 00112) com as 2 mensagens da Mayara + 9 respostas do Paulo em ordem cronológica
+- Contato "Paulo Iza" com phone e ambos JIDs mapeados
 - LID map atualizado para prevenir duplicação futura
 
 ### Nenhuma alteração de código necessária
-A correção anterior da "Prova 4b" no webhook já cobre este cenário para o futuro.
+As correções anteriores (Prova 4b + filtro auto_assign) já cobrem este cenário.
 
