@@ -9,6 +9,44 @@ const corsHeaders = {
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
+function extractMediaUrl(content: string, expectedType?: string): string | null {
+  if (!content) return null;
+  if (content.startsWith('http')) return content;
+  try {
+    const parsed = JSON.parse(content);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const item = expectedType
+        ? parsed.find((p: any) => p.url && p.type?.startsWith(expectedType))
+        : parsed[0];
+      return item?.url || null;
+    }
+  } catch { /* not JSON */ }
+  return null;
+}
+
+async function transcribeAudioUrl(audioUrl: string): Promise<string | null> {
+  try {
+    console.log('[SDR-Robot-Chat] Transcrevendo áudio:', audioUrl.substring(0, 80));
+    const response = await fetch(`${supabaseUrl}/functions/v1/transcribe-audio`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseServiceKey}`
+      },
+      body: JSON.stringify({ audioUrl })
+    });
+    if (!response.ok) {
+      console.error('[SDR-Robot-Chat] Erro na transcrição:', response.status);
+      return null;
+    }
+    const data = await response.json();
+    return data?.transcription || null;
+  } catch (err) {
+    console.error('[SDR-Robot-Chat] Erro ao transcrever:', err);
+    return null;
+  }
+}
+
 function getModelFromIntelligence(intelligence: string): string {
   switch (intelligence) {
     case 'novato': return 'gemini-2.5-flash-lite';
