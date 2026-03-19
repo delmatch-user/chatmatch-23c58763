@@ -623,10 +623,13 @@ export function useWhatsAppSend() {
           console.log('[WhatsApp Baileys] JID do contato atualizado:', data.usedJid);
         }
       } else {
-        // Tentar atualizar pelo telefone
+        // Tentar atualizar pelo telefone (APPEND)
+        const { data: existingByPhone } = await supabase.from('contacts').select('notes').eq('phone', phone).maybeSingle();
+        const curNotes2 = existingByPhone?.notes || '';
+        const appendedNotes2 = curNotes2.includes(data.usedJid) ? curNotes2 : (curNotes2 ? `${curNotes2} | jid:${data.usedJid}` : `jid:${data.usedJid}`);
         const { error: updateError } = await supabase
           .from('contacts')
-          .update({ notes: `jid:${data.usedJid}` })
+          .update({ notes: appendedNotes2 })
           .eq('phone', phone);
         
         if (!updateError) {

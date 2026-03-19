@@ -1086,7 +1086,11 @@ serve(async (req) => {
                       // Atualizar JID e nome do contato
                       const orphanUpdates: Record<string, string> = {};
                       if (senderJid && (!jidInNotes || jidInNotes !== senderJid)) {
-                        orphanUpdates.notes = `jid:${senderJid}`;
+                        // APPEND JID em vez de sobrescrever
+                        const currentOrphanNotes = orphanContact.notes || '';
+                        orphanUpdates.notes = currentOrphanNotes.includes(senderJid)
+                          ? currentOrphanNotes
+                          : (currentOrphanNotes ? `${currentOrphanNotes} | jid:${senderJid}` : `jid:${senderJid}`);
                       }
                       if (senderName && senderName !== 'Desconhecido' && !orphanContact.name_edited) {
                         orphanUpdates.name = senderName;
