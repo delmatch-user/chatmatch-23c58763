@@ -128,13 +128,18 @@ async function buildMessageHistory(messages: any[], readImages: boolean, logPref
     if (readImages && msg.message_type === 'image' && msg.content) {
       const imageUrl = extractMediaUrl(msg.content, 'image');
       if (imageUrl) {
-        history.push({
-          role,
-          content: [
-            { type: "image_url" as const, image_url: { url: imageUrl } },
-            { type: "text" as const, text: "O cliente enviou esta imagem. Analise e responda." }
-          ]
-        });
+        const dataUrl = await resolveImageToDataUrl(imageUrl);
+        if (dataUrl) {
+          history.push({
+            role,
+            content: [
+              { type: "image_url" as const, image_url: { url: dataUrl } },
+              { type: "text" as const, text: "O cliente enviou esta imagem. Analise e responda." }
+            ]
+          });
+          continue;
+        }
+        history.push({ role, content: '[Imagem recebida - não foi possível carregar para análise]' });
         continue;
       }
     }
