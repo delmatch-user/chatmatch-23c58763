@@ -1529,15 +1529,19 @@ async function handleAutomaticMode(body: {
     }
   }
 
-  // Atualizar last_message_preview e limpar lock
-  await supabase
-    .from('conversations')
-    .update({
-      last_message_preview: messageParts[messageParts.length - 1].substring(0, 80),
-      updated_at: new Date().toISOString(),
-      robot_lock_until: null
-    })
-    .eq('id', conversationId);
+  // Atualizar last_message_preview e limpar lock (pular se houve transferência)
+  if (!hasTransferTool) {
+    await supabase
+      .from('conversations')
+      .update({
+        last_message_preview: messageParts[messageParts.length - 1].substring(0, 80),
+        updated_at: new Date().toISOString(),
+        robot_lock_until: null
+      })
+      .eq('id', conversationId);
+  } else {
+    console.log(`[Robot-Chat Auto] Skipping post-processing cleanup — transfer was executed`);
+  }
   
   // Incrementar contador de mensagens do robô
   await supabase
