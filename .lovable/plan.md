@@ -1,33 +1,34 @@
 
 
-## Fazer robôs entenderem áudios e imagens
+## Corrigir robôs que não conseguem ver imagens
 
-### Problema atual
-As mensagens de mídia (áudio/imagem) são armazenadas no banco como JSON: `[{"name":"audio.ogg","url":"https://...","type":"audio/ogg"}]`. O robot-chat tenta verificar `msg.content.startsWith('http')` que falha para JSON, resultando em:
-- **Imagens**: robô não consegue ver (cai no fallback `[Mídia recebida: image]`)
-- **Áudios**: robô recebe o JSON bruto como "transcrição", que é inútil
+### Problema raiz
+O código atual envia a URL da imagem diretamente ao modelo de IA via `image_url: { url: "https://..." }`. Existem dois cenários de falha:
 
-### Correções
+1. **URLs `meta_media:xxx`**: Quando o upload da Meta falha, a URL armazenada é `meta_media:MEDIA_ID` — não é uma URL HTTP válida, e o modelo IA não consegue acessar.
+2. **URLs de Storage externas**: Mesmo URLs válidas do Supabase Storage podem falhar porque os modelos Gemini/OpenAI precisam baixar a imagem externamente, o que pode falhar por timeout ou restrições.
 
-**1. Extrair URLs de conteúdo JSON em ambos os backends**
+### Solução
+Converter todas as imagens para **base64 data URL** (`data:image/jpeg;base64,...`) antes de enviar ao modelo. Isso garante compatibilidade com todos os provedores (Gemini e OpenAI) sem depender do modelo conseguir acessar URLs externas.
 
-Em `robot-chat/index.ts` e `sdr-robot-chat/index.ts`, criar uma função helper `extractMediaUrl(content, expectedType)` que:
-- Tenta `JSON.parse(content)` e extrai `url` do primeiro item que bate com o tipo
-- Se o conteúdo já começa com `http`, retorna direto
-- Caso contrário retorna `null`
+### Mudanças
 
-**2. Auto-transcrever áudios no robot-chat**
+**Arquivo: `supabase/functions/robot-chat/index.ts`**
 
-Quando o robô encontra uma mensagem de áudio com URL (não texto transcrito):
-- Chamar a edge function `transcribe-audio` internamente (via `fetch` direto ao Supabase URL)
-- Usar a transcrição retornada no histórico
-- Fallback: `[Áudio recebido - não foi possível transcrever]`
+1. Criar helper `resolveImageToDataUrl(url: string): Promise<string | null>` que:
+   - Se URL começa com `meta_media:` → chama `meta-media-proxy` internamente para obter o mediaId, baixa a imagem via Meta API, converte para base64
+   - Se URL começa com `http` → faz fetch direto, converte o buffer para base64 data URL
+   - Retorna `data:image/jpeg;base64,...` ou null em caso de falha
 
-**3. Parsear JSON para imagens**
+2. Em `buildMessageHistory`, ao processar imagem: chamar `resolveImageToDataUrl(imageUrl)` e usar o resultado como `image_url.url`
 
-Quando `message_type === 'image'`, usar `extractMediaUrl` para extrair a URL da imagem do JSON, e passá-la como `image_url` para a API de vision.
+3. Se resolução falhar, inserir texto descritivo em vez de silenciosamente enviar URL inválida
 
-### Arquivos modificados
-- `supabase/functions/robot-chat/index.ts` — helper + parse JSON para imagens e áudios + auto-transcrição
-- `supabase/functions/sdr-robot-chat/index.ts` — mesmas correções
+**Arquivo: `supabase/functions/sdr-robot-chat/index.ts`**
+- Mesmas alterações para paridade
+
+### Impacto
+- Robôs passarão a ver todas as imagens corretamente (Baileys e Meta API)
+- Funciona com todos os modelos (Gemini, GPT-4o, fallback Lovable AI)
+- Sem alteração no fluxo do usuário
 
