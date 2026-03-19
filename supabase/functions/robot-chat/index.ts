@@ -182,7 +182,7 @@ function buildSystemPrompt(config: RobotConfig, availableDepartments?: { id: str
 }
 
 // Definir ferramentas para OpenAI Function Calling
-function buildOpenAITools(config: RobotConfig, availableDepartments?: { id: string; name: string }[]): any[] {
+function buildOpenAITools(config: RobotConfig, availableDepartments?: { id: string; name: string }[], availableRobots?: { id: string; name: string }[]): any[] {
   const tools: any[] = [];
   
   if (config.tools.transferToDepartments && availableDepartments && availableDepartments.length > 0) {
@@ -233,6 +233,36 @@ function buildOpenAITools(config: RobotConfig, availableDepartments?: { id: stri
             }
           },
           required: ["reason", "message_to_client"]
+        }
+      }
+    });
+  }
+
+  // transfer_to_robot tool
+  if (availableRobots && availableRobots.length > 0) {
+    tools.push({
+      type: "function",
+      function: {
+        name: "transfer_to_robot",
+        description: "Transferir a conversa para outro agente especialista quando o assunto for da área dele",
+        parameters: {
+          type: "object",
+          properties: {
+            robot_name: {
+              type: "string",
+              description: `Nome do agente de destino. Opções: ${availableRobots.map(r => r.name).join(', ')}`,
+              enum: availableRobots.map(r => r.name)
+            },
+            reason: {
+              type: "string",
+              description: "Motivo da transferência e contexto para o agente destino"
+            },
+            message_to_client: {
+              type: "string",
+              description: "Mensagem para informar o cliente sobre a transferência"
+            }
+          },
+          required: ["robot_name", "reason", "message_to_client"]
         }
       }
     });
