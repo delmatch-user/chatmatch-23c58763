@@ -20,6 +20,7 @@ interface RobotConfig {
   tools: {
     transferToAgents: boolean;
     transferToAgentsMode: string;
+    transferToAgentIds: string[];
     transferToDepartments: boolean;
     transferToDepartmentsMode: string;
     askHumanAgents: boolean;
