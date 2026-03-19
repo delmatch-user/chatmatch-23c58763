@@ -149,6 +149,7 @@ function buildSystemPrompt(config: RobotConfig, availableDepartments?: { id: str
   }
   if (availableRobots && availableRobots.length > 0) {
     prompt += `- **transfer_to_robot**: Use para transferir a conversa para outro agente especialista.\n`;
+    prompt += `  **IMPORTANTE**: Ao transferir, o campo "reason" DEVE conter um RESUMO COMPLETO DA TRIAGEM, incluindo: (1) o que o cliente deseja/precisa, (2) informações já coletadas (nome, cidade, tipo de problema, etc.), (3) contexto relevante da conversa. Isso é essencial para que o agente especialista dê continuidade sem repetir perguntas.\n`;
     prompt += `  Agentes disponíveis:\n`;
     availableRobots.forEach(r => {
       prompt += `    - **${r.name}**: ${r.description || 'Sem descrição'}\n`;
@@ -257,7 +258,7 @@ function buildOpenAITools(config: RobotConfig, availableDepartments?: { id: stri
             },
             reason: {
               type: "string",
-              description: "Motivo da transferência e contexto para o agente destino"
+              description: "OBRIGATÓRIO: Resumo detalhado da triagem/conversa até o momento. Inclua: o que o cliente quer, dados já coletados (nome, cidade, tipo de problema, etc.) e a necessidade específica. Exemplo: 'Cliente João de Uberlândia, entregador, está com problema no login do app. Já tentou reinstalar sem sucesso. Precisa de suporte técnico para reset de senha.'"
             },
             message_to_client: {
               type: "string",
