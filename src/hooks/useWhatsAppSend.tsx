@@ -608,9 +608,13 @@ export function useWhatsAppSend() {
       
       // Atualizar contato no banco se possível
       if (contactId) {
+        // APPEND JID em vez de sobrescrever
+        const { data: existingC } = await supabase.from('contacts').select('notes').eq('id', contactId).single();
+        const curNotes = existingC?.notes || '';
+        const appendedNotes = curNotes.includes(data.usedJid) ? curNotes : (curNotes ? `${curNotes} | jid:${data.usedJid}` : `jid:${data.usedJid}`);
         const { error: updateError } = await supabase
           .from('contacts')
-          .update({ notes: `jid:${data.usedJid}` })
+          .update({ notes: appendedNotes })
           .eq('id', contactId);
         
         if (updateError) {
