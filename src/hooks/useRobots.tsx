@@ -71,6 +71,7 @@ export interface Robot {
 export const defaultTools: RobotTools = {
   transferToAgents: true,
   transferToAgentsMode: 'all',
+  transferToAgentIds: [],
   transferToDepartments: true,
   transferToDepartmentsMode: 'all',
   transferToDepartmentIds: [],

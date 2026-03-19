@@ -922,7 +922,14 @@ async function handleAutomaticMode(body: {
     .select('id, name, description, auto_assign, status')
     .neq('id', robotId)
     .or('status.eq.active,auto_assign.eq.false');
-  const availableRobotsForTransfer = (otherRobots || []).map(r => ({
+  
+  // Filtrar por transferToAgentIds se o modo for 'select'
+  const transferToAgentIds = (robotConfig.tools as any).transferToAgentIds || [];
+  const filteredRobots = robotConfig.tools.transferToAgentsMode === 'select' && transferToAgentIds.length > 0
+    ? (otherRobots || []).filter(r => transferToAgentIds.includes(r.id))
+    : (otherRobots || []);
+  
+  const availableRobotsForTransfer = filteredRobots.map(r => ({
     id: r.id,
     name: r.name,
     description: r.description || ''
