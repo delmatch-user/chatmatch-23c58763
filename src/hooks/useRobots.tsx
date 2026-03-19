@@ -153,6 +153,7 @@ function robotToDb(robot: Robot, userId?: string) {
     qa_pairs: JSON.parse(JSON.stringify(robot.qaPairs)),
     reference_links: JSON.parse(JSON.stringify(robot.referenceLinks)),
     tools: JSON.parse(JSON.stringify(robot.tools)),
+    auto_assign: robot.autoAssign,
     ...(userId ? { created_by: userId } : {}),
   };
 }
