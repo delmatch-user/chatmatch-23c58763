@@ -1,0 +1,1 @@
+ALTER TABLE public.robots ADD COLUMN auto_assign boolean NOT NULL DEFAULT true;

@@ -1170,6 +1170,7 @@ export type Database = {
       }
       robots: {
         Row: {
+          auto_assign: boolean
           avatar_url: string | null
           channels: string[]
           created_at: string
@@ -1194,6 +1195,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          auto_assign?: boolean
           avatar_url?: string | null
           channels?: string[]
           created_at?: string
@@ -1218,6 +1220,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          auto_assign?: boolean
           avatar_url?: string | null
           channels?: string[]
           created_at?: string
