@@ -914,8 +914,21 @@ async function handleAutomaticMode(body: {
   const model = getModelFromIntelligence(robotConfig.intelligence);
   const temperature = getTemperatureFromTone(robotConfig.tone);
   const referenceLinks = (robot.reference_links as any[]) || [];
-  const systemPrompt = buildSystemPrompt(robotConfig, availableDepts || [], referenceLinks);
-  const openaiTools = buildOpenAITools(robotConfig, availableDepts || []);
+
+  // Buscar robôs disponíveis para transferência (outros robôs ativos no mesmo ou outros departamentos)
+  const { data: otherRobots } = await supabase
+    .from('robots')
+    .select('id, name, description')
+    .eq('status', 'active')
+    .neq('id', robotId);
+  const availableRobotsForTransfer = (otherRobots || []).map(r => ({
+    id: r.id,
+    name: r.name,
+    description: r.description || ''
+  }));
+
+  const systemPrompt = buildSystemPrompt(robotConfig, availableDepts || [], referenceLinks, availableRobotsForTransfer);
+  const openaiTools = buildOpenAITools(robotConfig, availableDepts || [], availableRobotsForTransfer);
   
   console.log(`[Robot-Chat Auto] Provider: ${providerName}, Model: ${model}, Temperature: ${temperature}, Tools: ${openaiTools.length}`);
   
