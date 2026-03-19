@@ -949,21 +949,9 @@ async function handleAutomaticMode(body: {
       .limit(30);
     
     // Rebuild conversation history with fresh data
-    const readImagesRefresh = robot.tools?.readImages ?? true;
+    const freshHistory = await buildMessageHistory(freshMessages || [], readImages);
     conversationHistory.length = 0;
-    (freshMessages || []).forEach(msg => {
-      const isRobotMessage = msg.sender_name?.includes('[ROBOT]') || msg.sender_name?.includes('(IA)');
-      const isAgentMessage = msg.sender_id !== null;
-      const role = (isRobotMessage || isAgentMessage) ? 'assistant' as const : 'user' as const;
-      
-      if (readImagesRefresh && msg.message_type === 'image' && msg.content?.startsWith('http')) {
-        conversationHistory.push({ role, content: [{ type: "image_url" as const, image_url: { url: msg.content } }, { type: "text" as const, text: "O cliente enviou esta imagem. Analise e responda." }] });
-      } else if (msg.message_type === 'audio') {
-        conversationHistory.push({ role, content: msg.content ? `[Áudio transcrito]: ${msg.content}` : '[Áudio recebido - sem transcrição]' });
-      } else {
-        conversationHistory.push({ role, content: msg.message_type === 'text' || msg.message_type === 'system' ? msg.content : `[Mídia recebida: ${msg.message_type}]` });
-      }
-    });
+    freshHistory.forEach(h => conversationHistory.push(h));
     console.log(`[Robot-Chat Auto] Histórico re-carregado com ${conversationHistory.length} mensagens após agrupamento`);
   }
 
