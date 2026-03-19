@@ -42,6 +42,7 @@ interface RobotConfig {
 function extractMediaUrl(content: string, expectedType?: string): string | null {
   if (!content) return null;
   if (content.startsWith('http')) return content;
+  if (content.startsWith('meta_media:')) return content;
   try {
     const parsed = JSON.parse(content);
     if (Array.isArray(parsed) && parsed.length > 0) {
@@ -52,6 +53,47 @@ function extractMediaUrl(content: string, expectedType?: string): string | null 
     }
   } catch { /* not JSON */ }
   return null;
+}
+
+async function resolveImageToDataUrl(url: string): Promise<string | null> {
+  try {
+    let fetchUrl = url;
+
+    if (url.startsWith('meta_media:')) {
+      const mediaId = url.replace('meta_media:', '');
+      console.log('[Robot-Chat] Resolvendo meta_media:', mediaId);
+      const proxyRes = await fetch(`${supabaseUrl}/functions/v1/meta-media-proxy`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`
+        },
+        body: JSON.stringify({ mediaId })
+      });
+      if (!proxyRes.ok) {
+        console.error('[Robot-Chat] meta-media-proxy falhou:', proxyRes.status);
+        return null;
+      }
+      const proxyData = await proxyRes.json();
+      fetchUrl = proxyData?.url;
+      if (!fetchUrl) return null;
+    }
+
+    console.log('[Robot-Chat] Baixando imagem para base64:', fetchUrl.substring(0, 80));
+    const imgRes = await fetch(fetchUrl);
+    if (!imgRes.ok) {
+      console.error('[Robot-Chat] Erro ao baixar imagem:', imgRes.status);
+      return null;
+    }
+    const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
+    const buffer = await imgRes.arrayBuffer();
+    const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+    const mimeType = contentType.split(';')[0];
+    return `data:${mimeType};base64,${base64}`;
+  } catch (err) {
+    console.error('[Robot-Chat] Erro ao resolver imagem para base64:', err);
+    return null;
+  }
 }
 
 async function transcribeAudioUrl(audioUrl: string): Promise<string | null> {
