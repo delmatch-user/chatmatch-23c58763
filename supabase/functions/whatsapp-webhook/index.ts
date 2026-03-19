@@ -864,11 +864,15 @@ serve(async (req) => {
               
               // Atualizar JID no contato encontrado
               if (senderJid) {
+                // APPEND JID em vez de sobrescrever
+                const { data: lcContact2 } = await supabase.from('contacts').select('notes').eq('id', contactId!).single();
+                const lcNotes2 = lcContact2?.notes || '';
+                const newNotes2 = lcNotes2.includes(senderJid) ? lcNotes2 : (lcNotes2 ? `${lcNotes2} | jid:${senderJid}` : `jid:${senderJid}`);
                 supabase
                   .from('contacts')
-                  .update({ notes: `jid:${senderJid}` })
-                  .eq('id', contactId)
-                  .then(() => console.log(`[WhatsApp] JID vinculado ao contato existente: ${senderJid}`));
+                  .update({ notes: newNotes2 })
+                  .eq('id', contactId!)
+                  .then(() => console.log(`[WhatsApp] JID vinculado ao contato existente (append): ${senderJid}`));
               }
             }
           }
