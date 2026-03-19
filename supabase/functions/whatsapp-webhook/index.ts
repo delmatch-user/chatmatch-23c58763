@@ -988,8 +988,72 @@ serve(async (req) => {
                                   instance_id: effectiveInstanceId,
                                   updated_at: new Date().toISOString()
                                 }, { onConflict: 'lid_jid,instance_id' });
-                              } else {
-                                console.log(`[WhatsApp] ❌ Prova 4: check(${orphanDigits}) retornou ${checkedJid} — não corresponde ao sender ${senderJid}`);
+                              } else if (!orphanPhoneMatchesViaCheck) {
+                                // Prova 4b: O check do orphanPhone retornou um LID diferente do sender.
+                                // Verificar reverso: resolver os dígitos do sender LID para ver se retorna o mesmo telefone do órfão.
+                                const senderLidDigits = senderJid.split('@')[0].split(':')[0];
+                                if (senderLidDigits.length > 5) {
+                                  try {
+                                    const reverseCheckUrl = `${BAILEYS_SERVER_URL}/instances/${effectiveInstanceId}/check/${encodeURIComponent(senderLidDigits)}`;
+                                    console.log(`[WhatsApp] Prova 4b: Verificando reverso ${reverseCheckUrl} para órfão phone ${orphanDigits}`);
+                                    const reverseResp = await fetch(reverseCheckUrl, { method: 'GET' });
+                                    if (reverseResp.ok) {
+                                      const reverseData = await reverseResp.json();
+                                      if (reverseData?.exists && reverseData?.jid) {
+                                        const reverseJid = String(reverseData.jid).toLowerCase();
+                                        if (reverseJid.endsWith('@s.whatsapp.net')) {
+                                          const reversePhone = reverseJid.split('@')[0];
+                                          const normalize4b = (d: string) => {
+                                            let n = d;
+                                            if (n.startsWith('55') && n.length >= 12) n = n.slice(2);
+                                            if (n.length === 11 && n[2] === '9') n = n.slice(0, 2) + n.slice(3);
+                                            return n;
+                                          };
+                                          if (normalize4b(reversePhone) === normalize4b(orphanDigits)) {
+                                            orphanPhoneMatchesViaCheck = true;
+                                            console.log(`[WhatsApp] ✅ Prova 4b: check(${senderLidDigits}) retornou ${reverseJid} cujo phone bate com órfão ${orphanDigits}`);
+                                            await supabase.from('whatsapp_lid_map').upsert({
+                                              lid_jid: senderJid,
+                                              phone_digits: orphanDigits,
+                                              instance_id: effectiveInstanceId,
+                                              updated_at: new Date().toISOString()
+                                            }, { onConflict: 'lid_jid,instance_id' });
+                                          } else {
+                                            console.log(`[WhatsApp] ❌ Prova 4b: check(${senderLidDigits}) retornou phone ${reversePhone} — não bate com órfão ${orphanDigits}`);
+                                          }
+                                        } else if (reverseJid.endsWith('@lid')) {
+                                          const { data: reverseMap } = await supabase
+                                            .from('whatsapp_lid_map')
+                                            .select('phone_digits')
+                                            .eq('lid_jid', reverseJid)
+                                            .eq('instance_id', effectiveInstanceId)
+                                            .maybeSingle();
+                                          const normalize4c = (d: string) => {
+                                            let n = d;
+                                            if (n.startsWith('55') && n.length >= 12) n = n.slice(2);
+                                            if (n.length === 11 && n[2] === '9') n = n.slice(0, 2) + n.slice(3);
+                                            return n;
+                                          };
+                                          if (reverseMap && normalize4c(reverseMap.phone_digits) === normalize4c(orphanDigits)) {
+                                            orphanPhoneMatchesViaCheck = true;
+                                            console.log(`[WhatsApp] ✅ Prova 4b(lid): check(${senderLidDigits}) → ${reverseJid} mapeado para ${reverseMap.phone_digits} = órfão ${orphanDigits}`);
+                                            await supabase.from('whatsapp_lid_map').upsert({
+                                              lid_jid: senderJid,
+                                              phone_digits: orphanDigits,
+                                              instance_id: effectiveInstanceId,
+                                              updated_at: new Date().toISOString()
+                                            }, { onConflict: 'lid_jid,instance_id' });
+                                          }
+                                        }
+                                      }
+                                    }
+                                  } catch (e4b) {
+                                    console.log(`[WhatsApp] Prova 4b: Erro — ${e4b}`);
+                                  }
+                                }
+                                if (!orphanPhoneMatchesViaCheck) {
+                                  console.log(`[WhatsApp] ❌ Prova 4: check(${orphanDigits}) retornou ${checkedJid} — não corresponde ao sender ${senderJid}`);
+                                }
                               }
                             }
                           }
