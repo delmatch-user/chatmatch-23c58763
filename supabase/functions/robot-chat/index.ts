@@ -258,7 +258,7 @@ function buildOpenAITools(config: RobotConfig, availableDepartments?: { id: stri
             },
             reason: {
               type: "string",
-              description: "Motivo da transferência e contexto para o agente destino"
+              description: "OBRIGATÓRIO: Resumo detalhado da triagem/conversa até o momento. Inclua: o que o cliente quer, dados já coletados (nome, cidade, tipo de problema, etc.) e a necessidade específica. Exemplo: 'Cliente João de Uberlândia, entregador, está com problema no login do app. Já tentou reinstalar sem sucesso. Precisa de suporte técnico para reset de senha.'"
             },
             message_to_client: {
               type: "string",
