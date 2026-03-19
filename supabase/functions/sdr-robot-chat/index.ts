@@ -12,6 +12,7 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 function extractMediaUrl(content: string, expectedType?: string): string | null {
   if (!content) return null;
   if (content.startsWith('http')) return content;
+  if (content.startsWith('meta_media:')) return content;
   try {
     const parsed = JSON.parse(content);
     if (Array.isArray(parsed) && parsed.length > 0) {
@@ -22,6 +23,47 @@ function extractMediaUrl(content: string, expectedType?: string): string | null 
     }
   } catch { /* not JSON */ }
   return null;
+}
+
+async function resolveImageToDataUrl(url: string): Promise<string | null> {
+  try {
+    let fetchUrl = url;
+
+    if (url.startsWith('meta_media:')) {
+      const mediaId = url.replace('meta_media:', '');
+      console.log('[SDR-Robot-Chat] Resolvendo meta_media:', mediaId);
+      const proxyRes = await fetch(`${supabaseUrl}/functions/v1/meta-media-proxy`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`
+        },
+        body: JSON.stringify({ mediaId })
+      });
+      if (!proxyRes.ok) {
+        console.error('[SDR-Robot-Chat] meta-media-proxy falhou:', proxyRes.status);
+        return null;
+      }
+      const proxyData = await proxyRes.json();
+      fetchUrl = proxyData?.url;
+      if (!fetchUrl) return null;
+    }
+
+    console.log('[SDR-Robot-Chat] Baixando imagem para base64:', fetchUrl.substring(0, 80));
+    const imgRes = await fetch(fetchUrl);
+    if (!imgRes.ok) {
+      console.error('[SDR-Robot-Chat] Erro ao baixar imagem:', imgRes.status);
+      return null;
+    }
+    const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
+    const buffer = await imgRes.arrayBuffer();
+    const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+    const mimeType = contentType.split(';')[0];
+    return `data:${mimeType};base64,${base64}`;
+  } catch (err) {
+    console.error('[SDR-Robot-Chat] Erro ao resolver imagem para base64:', err);
+    return null;
+  }
 }
 
 async function transcribeAudioUrl(audioUrl: string): Promise<string | null> {
@@ -86,13 +128,18 @@ async function buildMessageHistory(messages: any[], readImages: boolean, logPref
     if (readImages && msg.message_type === 'image' && msg.content) {
       const imageUrl = extractMediaUrl(msg.content, 'image');
       if (imageUrl) {
-        history.push({
-          role,
-          content: [
-            { type: "image_url" as const, image_url: { url: imageUrl } },
-            { type: "text" as const, text: "O cliente enviou esta imagem. Analise e responda." }
-          ]
-        });
+        const dataUrl = await resolveImageToDataUrl(imageUrl);
+        if (dataUrl) {
+          history.push({
+            role,
+            content: [
+              { type: "image_url" as const, image_url: { url: dataUrl } },
+              { type: "text" as const, text: "O cliente enviou esta imagem. Analise e responda." }
+            ]
+          });
+          continue;
+        }
+        history.push({ role, content: '[Imagem recebida - não foi possível carregar para análise]' });
         continue;
       }
     }
