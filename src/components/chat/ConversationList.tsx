@@ -296,8 +296,11 @@ export function ConversationList({
           .single();
         
         if (existingContact && (!existingContact.notes || !existingContact.notes.includes(resolvedJid))) {
-          await supabase.from('contacts').update({ notes: `jid:${resolvedJid}` }).eq('id', contactId);
-          console.log(`[ConversationList] JID atualizado no contato existente: ${resolvedJid}`);
+          // APPEND JID em vez de sobrescrever
+          const currentNotes = existingContact.notes || '';
+          const newNotes = currentNotes ? `${currentNotes} | jid:${resolvedJid}` : `jid:${resolvedJid}`;
+          await supabase.from('contacts').update({ notes: newNotes }).eq('id', contactId);
+          console.log(`[ConversationList] JID atualizado no contato existente (append): ${resolvedJid}`);
         }
         
         // Persistir LID no mapa se aplicável

@@ -711,9 +711,12 @@ serve(async (req) => {
             // Preparar atualizações do contato (SEM mismatch)
             const contactUpdates: Record<string, string | boolean> = {};
             
-            // Atualizar JID se necessário
+            // Atualizar JID se necessário (APPEND, nunca sobrescrever)
             if (senderJid && (!existingContact.notes || !existingContact.notes.includes(senderJid))) {
-              contactUpdates.notes = `jid:${senderJid}`;
+              const currentNotes = existingContact.notes || '';
+              contactUpdates.notes = currentNotes
+                ? `${currentNotes} | jid:${senderJid}`
+                : `jid:${senderJid}`;
             }
             
             // Atualizar nome se não foi editado manualmente e temos pushName válido
@@ -773,11 +776,15 @@ serve(async (req) => {
               
               // Atualizar JID no contato encontrado
               if (senderJid) {
+                // APPEND JID em vez de sobrescrever
+                const { data: lcContact } = await supabase.from('contacts').select('notes').eq('id', contactId!).single();
+                const lcNotes = lcContact?.notes || '';
+                const newNotes = lcNotes.includes(senderJid) ? lcNotes : (lcNotes ? `${lcNotes} | jid:${senderJid}` : `jid:${senderJid}`);
                 supabase
                   .from('contacts')
-                  .update({ notes: `jid:${senderJid}` })
-                  .eq('id', contactId)
-                  .then(() => console.log(`[WhatsApp] JID LID vinculado: ${senderJid}`));
+                  .update({ notes: newNotes })
+                  .eq('id', contactId!)
+                  .then(() => console.log(`[WhatsApp] JID LID vinculado (append): ${senderJid}`));
               }
             }
           }
@@ -822,13 +829,17 @@ serve(async (req) => {
                 contactId = lc.id;
                 console.log(`[WhatsApp] Reconciliação LID segura: contato ${contactId} atualizado com phone=${sender}`);
                 
+                // APPEND JID em vez de sobrescrever
+                const { data: reconContact } = await supabase.from('contacts').select('notes').eq('id', contactId!).single();
+                const reconNotes = reconContact?.notes || '';
+                const reconNewNotes = reconNotes.includes(senderJid) ? reconNotes : (reconNotes ? `${reconNotes} | jid:${senderJid}` : `jid:${senderJid}`);
                 await supabase
                   .from('contacts')
                   .update({
                     phone: formatBrazilianPhone(sender) || sender,
-                    notes: `jid:${senderJid}`
+                    notes: reconNewNotes
                   })
-                  .eq('id', contactId);
+                  .eq('id', contactId!);
                 break;
               }
             }
@@ -853,11 +864,15 @@ serve(async (req) => {
               
               // Atualizar JID no contato encontrado
               if (senderJid) {
+                // APPEND JID em vez de sobrescrever
+                const { data: lcContact2 } = await supabase.from('contacts').select('notes').eq('id', contactId!).single();
+                const lcNotes2 = lcContact2?.notes || '';
+                const newNotes2 = lcNotes2.includes(senderJid) ? lcNotes2 : (lcNotes2 ? `${lcNotes2} | jid:${senderJid}` : `jid:${senderJid}`);
                 supabase
                   .from('contacts')
-                  .update({ notes: `jid:${senderJid}` })
-                  .eq('id', contactId)
-                  .then(() => console.log(`[WhatsApp] JID vinculado ao contato existente: ${senderJid}`));
+                  .update({ notes: newNotes2 })
+                  .eq('id', contactId!)
+                  .then(() => console.log(`[WhatsApp] JID vinculado ao contato existente (append): ${senderJid}`));
               }
             }
           }
@@ -1071,7 +1086,11 @@ serve(async (req) => {
                       // Atualizar JID e nome do contato
                       const orphanUpdates: Record<string, string> = {};
                       if (senderJid && (!jidInNotes || jidInNotes !== senderJid)) {
-                        orphanUpdates.notes = `jid:${senderJid}`;
+                        // APPEND JID em vez de sobrescrever
+                        const currentOrphanNotes = orphanContact.notes || '';
+                        orphanUpdates.notes = currentOrphanNotes.includes(senderJid)
+                          ? currentOrphanNotes
+                          : (currentOrphanNotes ? `${currentOrphanNotes} | jid:${senderJid}` : `jid:${senderJid}`);
                       }
                       if (senderName && senderName !== 'Desconhecido' && !orphanContact.name_edited) {
                         orphanUpdates.name = senderName;
