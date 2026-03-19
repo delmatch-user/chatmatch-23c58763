@@ -132,6 +132,7 @@ function dbToRobot(db: DbRobot): Robot {
     qaPairs: (db.qa_pairs as QAPair[]) || [],
     referenceLinks: (db.reference_links as ReferenceLink[]) || [],
     tools: { ...defaultTools, ...(db.tools as Partial<RobotTools>) },
+    autoAssign: db.auto_assign ?? true,
   };
 }
 
