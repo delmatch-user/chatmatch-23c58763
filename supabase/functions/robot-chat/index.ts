@@ -55,6 +55,16 @@ function extractMediaUrl(content: string, expectedType?: string): string | null 
   return null;
 }
 
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunkSize = 8192;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
 async function resolveImageToDataUrl(url: string): Promise<string | null> {
   try {
     let fetchUrl = url;
@@ -87,7 +97,7 @@ async function resolveImageToDataUrl(url: string): Promise<string | null> {
     }
     const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
     const buffer = await imgRes.arrayBuffer();
-    const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+    const base64 = uint8ArrayToBase64(new Uint8Array(buffer));
     const mimeType = contentType.split(';')[0];
     return `data:${mimeType};base64,${base64}`;
   } catch (err) {
