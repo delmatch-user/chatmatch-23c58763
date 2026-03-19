@@ -1,53 +1,38 @@
 
 
-## Problemas Identificados
+## Testes de API do Instagram para App Review da Meta
 
-### 1. Auto-online fica brigando com status manual
-Quando o atendente está **dentro do horário** e muda manualmente para offline (ex: foi ao banheiro), o monitor detecta `status === 'offline'` e reseta `autoOnlineDoneRef` (linha 115-117), forçando-o de volta para online no próximo tick. Isso cria um loop conflitante.
+A Meta exige chamadas reais de API para cada permissão durante o processo de revisão. Vou criar uma edge function temporária que executa as chamadas necessárias para cada permissão pendente.
 
-### 2. Guard de auto-online está quebrado
-O `autoOnlineDoneRef` é resetado quando `profile?.status !== 'offline'` (linha 115), ou seja: online → manual offline → auto-online novamente. O guard não protege nada.
+### Permissões a testar (8 pendentes)
 
-### 3. Escala cross-midnight não busca dia anterior
-Se a escala é Sábado 22:00-02:00, no Domingo às 01:00 o código busca `day_of_week = 0` (Domingo). Mas a escala está em `day_of_week = 6` (Sábado). O atendente fica "sem escala" e é posto offline.
-
-### 4. Auto-offline dispara mesmo com extensão ativa
-Quando `remaining <= 0` e o atendente estendeu o turno, o cálculo pode oscilar dependendo de como `extensionMinutes` é somado no `endMinutes`, causando disparo prematuro.
-
----
-
-## Solução
-
-### Arquivo: `src/hooks/useWorkScheduleMonitor.tsx`
-
-**A. Corrigir fetch para incluir dia anterior (cross-midnight)**
-- Buscar escala do dia atual E do dia anterior
-- Se a escala do dia anterior tem `end_time < start_time` (cross-midnight), verificar se ainda estamos dentro dela
-
-**B. Auto-online apenas no início do turno (janela de 2 min)**
-- Só disparar auto-online se estamos nos primeiros 2 minutos do turno
-- Usar `autoOnlineDoneRef` sem reset por mudança de status — só resetar quando muda de dia/escala
-- Remover o reset em linha 115-117 que causa o conflito
-
-**C. Auto-offline robusto**
-- Quando `remaining <= 0`, verificar se realmente saiu do horário (double-check `isWithinSchedule` ficou false)
-- Usar `autoOfflineDoneRef` corretamente sem resetar dentro do horário
-
-**D. Não interferir com mudanças manuais durante o turno**
-- Adicionar flag `manualOverrideRef` que é setada quando o atendente muda status manualmente via Topbar
-- O monitor respeita essa flag e não força auto-online durante o turno ativo
-
-### Arquivo: `src/components/layout/Topbar.tsx`
-
-**E. Sinalizar mudança manual**
-- Quando `handleStatusChange` é chamado pelo usuário, emitir um evento ou setar uma flag no localStorage para que o monitor saiba que foi manual e não force auto-online
-
----
-
-## Resumo das mudanças
-
-| Arquivo | Mudança |
+| Permissão | Endpoint de teste |
 |---|---|
-| `useWorkScheduleMonitor.tsx` | Fetch dia anterior para cross-midnight; auto-online só nos primeiros 2min; remover reset de ref que causa loop; respeitar override manual |
-| `Topbar.tsx` | Marcar mudanças manuais de status para evitar conflito com auto-online |
+| `instagram_business_manage_messages` | `POST /{ig-id}/messages` (echo para si mesmo ou read conversations) |
+| `instagram_business_basic` | `GET /{ig-id}?fields=id,name,username` |
+| `public_profile` | `GET /me?fields=id,name` |
+| `instagram_manage_comments` | `GET /{ig-id}/media` → `GET /{media-id}/comments` |
+| `instagram_manage_messages` | `GET /{page-id}/conversations?platform=instagram` |
+| `instagram_content_publish` | `POST /{ig-id}/media` (container creation, sem publicar de fato) |
+| `instagram_basic` | `GET /{ig-id}?fields=id,ig_id,username,media_count` |
+| `business_management` | `GET /me/businesses` |
+
+### Implementação
+
+1. **Criar edge function `ig-permission-test`** que recebe o nome da permissão e executa a chamada Graph API correspondente usando o token já salvo no banco
+2. **Executar cada teste** via `curl_edge_functions`, registrando sucesso/falha
+3. **Remover a edge function** após os testes (é temporária)
+
+### Arquivo a criar
+- `supabase/functions/ig-permission-test/index.ts` — edge function temporária com switch/case para cada permissão
+
+### Dados disponíveis
+- **IG Account ID:** `17841447900741268`
+- **Page ID:** `273187287820589`
+- **Token:** salvo em `whatsapp_connections`
+
+### Notas
+- Nenhuma publicação real será feita (content_publish só cria container sem publicar)
+- Após os testes, a function será deletada
+- As chamadas serão feitas com `appsecret_proof` para consistência
 
