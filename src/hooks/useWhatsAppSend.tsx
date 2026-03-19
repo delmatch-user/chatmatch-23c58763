@@ -504,8 +504,10 @@ export function useWhatsAppSend() {
           console.warn('[WhatsApp Baileys] Erro ao buscar contato:', contactError);
         }
         
-        if (contact?.notes && contact.notes.startsWith('jid:')) {
-          jid = contact.notes.replace('jid:', '');
+        if (contact?.notes && contact.notes.includes('jid:')) {
+          // Extrair o primeiro JID das notes (pode ter múltiplos separados por " | ")
+          const jidMatch = contact.notes.match(/jid:([^\s|]+)/);
+          jid = jidMatch ? jidMatch[1] : contact.notes.replace('jid:', '');
           // Se o JID armazenado é um @s.whatsapp.net mas com >13 dígitos, converter para @lid
           const jidDigits = jid.split('@')[0]?.replace(/\D/g, '') || '';
           if (jid.endsWith('@s.whatsapp.net') && jidDigits.length > 13) {
