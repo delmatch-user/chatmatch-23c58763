@@ -1209,6 +1209,76 @@ async function handleAutomaticMode(body: {
         break; // Evitar duplicação de transferências
       }
       
+      else if (functionName === 'transfer_to_robot') {
+        // Buscar robô destino pelo nome
+        const targetRobot = availableRobotsForTransfer.find(
+          r => r.name.toLowerCase() === args.robot_name.toLowerCase()
+        );
+        
+        if (targetRobot) {
+          // Atualizar conversa para o robô destino
+          await supabase
+            .from('conversations')
+            .update({
+              assigned_to_robot: targetRobot.id,
+              assigned_to: null,
+              status: 'em_atendimento',
+              robot_transferred: false, // Não marcar como transferred (é robot-to-robot)
+              robot_lock_until: null, // Limpar lock para o novo robô processar
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', conversationId);
+          
+          // Mensagem de sistema
+          await supabase.from('messages').insert({
+            conversation_id: conversationId,
+            content: `🤖 ${targetRobot.name} assumiu a conversa`,
+            sender_name: 'SYSTEM',
+            sender_id: null,
+            message_type: 'system',
+            status: 'sent',
+          });
+          
+          // Log de transferência
+          await supabase.from('transfer_logs').insert({
+            conversation_id: conversationId,
+            from_user_name: `${robot.name} (IA)`,
+            to_department_id: convData?.department_id || '',
+            to_department_name: '',
+            to_robot_id: targetRobot.id,
+            to_robot_name: targetRobot.name,
+            reason: args.reason
+          });
+          
+          aiResponse = args.message_to_client || '';
+          skipSending = true; // O robô destino vai responder
+          actionTaken = true;
+          
+          // Chamar robot-chat para o robô destino
+          fetch(`${supabaseUrl}/functions/v1/robot-chat`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseServiceKey}`
+            },
+            body: JSON.stringify({
+              robotId: targetRobot.id,
+              conversationId: conversationId,
+              contactPhone,
+              contactJid,
+              connectionType,
+              phoneNumberId,
+              isTransfer: true,
+            })
+          }).catch(err => console.error('[Robot-Chat Auto] Erro ao chamar robot-chat destino:', err));
+          
+          console.log(`[Robot-Chat Auto] Transferido para robô: ${targetRobot.name}`);
+          break;
+        } else {
+          console.error(`[Robot-Chat Auto] Robô não encontrado: ${args.robot_name}`);
+        }
+      }
+      
       else if (functionName === 'manage_labels') {
         // Gerenciar etiquetas/tags na conversa
         const { action, label } = args;
