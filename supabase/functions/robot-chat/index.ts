@@ -915,12 +915,13 @@ async function handleAutomaticMode(body: {
   const temperature = getTemperatureFromTone(robotConfig.tone);
   const referenceLinks = (robot.reference_links as any[]) || [];
 
-  // Buscar robôs disponíveis para transferência (outros robôs ativos no mesmo ou outros departamentos)
+  // Buscar robôs disponíveis para transferência
+  // Inclui robôs ativos OU especialistas (auto_assign=false) independente do status
   const { data: otherRobots } = await supabase
     .from('robots')
-    .select('id, name, description')
-    .eq('status', 'active')
-    .neq('id', robotId);
+    .select('id, name, description, auto_assign, status')
+    .neq('id', robotId)
+    .or('status.eq.active,auto_assign.eq.false');
   const availableRobotsForTransfer = (otherRobots || []).map(r => ({
     id: r.id,
     name: r.name,
