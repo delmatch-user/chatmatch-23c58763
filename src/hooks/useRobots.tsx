@@ -108,6 +108,7 @@ interface DbRobot {
   qa_pairs: unknown;
   reference_links: unknown;
   tools: unknown;
+  auto_assign: boolean;
 }
 
 function dbToRobot(db: DbRobot): Robot {
