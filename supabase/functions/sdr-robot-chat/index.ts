@@ -592,19 +592,7 @@ serve(async (req) => {
     }
 
     const readImages = robot.tools?.readImages ?? true;
-    const conversationHistory = (messagesData || []).map(msg => {
-      const isRobotMessage = msg.sender_name?.includes('[ROBOT]') || msg.sender_name?.includes('(IA)');
-      const isAgentMessage = msg.sender_id !== null;
-      const role = (isRobotMessage || isAgentMessage) ? 'assistant' as const : 'user' as const;
-
-      if (readImages && msg.message_type === 'image' && msg.content?.startsWith('http')) {
-        return { role, content: [{ type: "image_url" as const, image_url: { url: msg.content } }, { type: "text" as const, text: "O cliente enviou esta imagem. Analise e responda." }] };
-      }
-      if (msg.message_type === 'audio') {
-        return { role, content: msg.content ? `[Áudio transcrito]: ${msg.content}` : '[Áudio recebido - sem transcrição]' };
-      }
-      return { role, content: msg.message_type === 'text' || msg.message_type === 'system' ? msg.content : `[Mídia recebida: ${msg.message_type}]` };
-    });
+    const conversationHistory = await buildMessageHistory(messagesData || [], readImages, '[SDR-Robot-Chat]');
 
     // Re-fetch messages after grouping if needed
     if (groupMessages) {
