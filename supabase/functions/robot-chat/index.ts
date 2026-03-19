@@ -92,7 +92,7 @@ function getTemperatureFromTone(tone: string): number {
   }
 }
 
-function buildSystemPrompt(config: RobotConfig, availableDepartments?: { id: string; name: string }[], referenceLinks?: { title: string; url: string; content?: string }[]): string {
+function buildSystemPrompt(config: RobotConfig, availableDepartments?: { id: string; name: string }[], referenceLinks?: { title: string; url: string; content?: string }[], availableRobots?: { id: string; name: string; description: string }[]): string {
   let prompt = `Você é ${config.name}, um assistente virtual inteligente.\n\n`;
   
   if (config.instructions) {
@@ -145,6 +145,13 @@ function buildSystemPrompt(config: RobotConfig, availableDepartments?: { id: str
     if (availableDepartments && availableDepartments.length > 0) {
       prompt += `  Departamentos disponíveis: ${availableDepartments.map(d => d.name).join(', ')}\n`;
     }
+  }
+  if (availableRobots && availableRobots.length > 0) {
+    prompt += `- **transfer_to_robot**: Use para transferir a conversa para outro agente especialista.\n`;
+    prompt += `  Agentes disponíveis:\n`;
+    availableRobots.forEach(r => {
+      prompt += `    - **${r.name}**: ${r.description || 'Sem descrição'}\n`;
+    });
   }
   if (config.tools.manageLabels) {
     prompt += `- **manage_labels**: Use para adicionar ou remover etiquetas/tags na conversa quando apropriado.\n`;
