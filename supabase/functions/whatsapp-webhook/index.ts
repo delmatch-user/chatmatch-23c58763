@@ -1450,7 +1450,8 @@ serve(async (req) => {
             const { data: activeRobotsForExisting } = await supabase
               .from('robots')
               .select('id, name, departments, channels')
-              .eq('status', 'active');
+              .eq('status', 'active')
+              .eq('auto_assign', true);
 
             // Buscar config SDR para pular robô SDR sem keyword
             const { data: sdrCfg } = await supabase.from('sdr_robot_config').select('robot_id').eq('is_active', true).maybeSingle();
