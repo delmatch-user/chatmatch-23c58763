@@ -163,21 +163,41 @@ async function derivePageAccessToken(
   return null;
 }
 
-async function persistDerivedDbToken(pageId: string, oldToken: string, newToken: string): Promise<void> {
+async function persistDerivedDbToken(pageId: string, igAccountId: string | undefined, oldToken: string, newToken: string): Promise<void> {
   if (!oldToken || !newToken || oldToken === newToken) return;
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-  const { error } = await supabase
-    .from('whatsapp_connections')
-    .update({ access_token: newToken, updated_at: new Date().toISOString() })
-    .eq('connection_type', 'instagram')
-    .eq('waba_id', pageId)
-    .eq('access_token', oldToken);
 
-  if (error) {
-    console.warn('[Instagram Send] Não foi possível persistir token derivado no banco:', error.message);
-  } else {
-    console.log('[Instagram Send] Token de página persistido no banco para próximos envios');
+  // Try updating by ig_account_id (phone_number_id) first, then by page_id (waba_id)
+  let updated = false;
+
+  if (igAccountId) {
+    const { error, count } = await supabase
+      .from('whatsapp_connections')
+      .update({ access_token: newToken, updated_at: new Date().toISOString() })
+      .eq('connection_type', 'instagram')
+      .eq('phone_number_id', igAccountId)
+      .eq('access_token', oldToken);
+
+    if (!error && (count ?? 0) > 0) {
+      updated = true;
+      console.log('[Instagram Send] Token de página persistido (via ig_account_id)');
+    }
+  }
+
+  if (!updated && pageId) {
+    const { error } = await supabase
+      .from('whatsapp_connections')
+      .update({ access_token: newToken, updated_at: new Date().toISOString() })
+      .eq('connection_type', 'instagram')
+      .eq('waba_id', pageId)
+      .eq('access_token', oldToken);
+
+    if (error) {
+      console.warn('[Instagram Send] Não foi possível persistir token derivado:', error.message);
+    } else {
+      console.log('[Instagram Send] Token de página persistido (via waba_id)');
+    }
   }
 }
 
