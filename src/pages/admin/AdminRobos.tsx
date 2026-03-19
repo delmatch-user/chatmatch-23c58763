@@ -220,6 +220,7 @@ export default function AdminRobos() {
       qaPairs: [],
       referenceLinks: [],
       tools: { ...defaultTools },
+      autoAssign: true,
     };
     setSelectedRobot(newRobot);
     setIsConfigOpen(true);
@@ -968,6 +969,33 @@ export default function AdminRobos() {
                         <p className="text-sm text-muted-foreground">
                           Configure todas as funções que o agente pode ter no chat. Quando é adicionado uma grande quantidade de funções, o agente pode gastar mais tokens e demorar mais para responder.
                         </p>
+
+                        {/* Assumir conversas da fila automaticamente */}
+                        <div className="bg-muted/30 rounded-lg p-4">
+                          <div className="flex items-start justify-between">
+                            <div className="flex items-start gap-3">
+                              <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
+                                <Bot className="w-5 h-5 text-emerald-600" />
+                              </div>
+                              <div>
+                                <h4 className="font-medium flex items-center gap-1">
+                                  Assumir conversas da fila automaticamente
+                                  <HelpCircle className="w-3 h-3 text-muted-foreground" />
+                                </h4>
+                                <p className="text-sm text-muted-foreground">
+                                  Quando ativado, o agente pega conversas novas da fila. Quando desativado, o agente só atende conversas recebidas por transferência de outro agente.
+                                </p>
+                              </div>
+                            </div>
+                            <Switch
+                              checked={selectedRobot.autoAssign}
+                              onCheckedChange={(checked) => setSelectedRobot({
+                                ...selectedRobot,
+                                autoAssign: checked
+                              })}
+                            />
+                          </div>
+                        </div>
 
                         {/* Transferir para outros atendentes */}
                         <div className="bg-muted/30 rounded-lg p-4 space-y-3">

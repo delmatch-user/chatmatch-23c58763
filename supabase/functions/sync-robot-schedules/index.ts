@@ -25,7 +25,7 @@ Deno.serve(async (req) => {
     // 2. Buscar robôs ativos
     const { data: activeRobots, error: robotsError } = await supabase
       .from("robots")
-      .select("id, name, departments, channels, manually_activated")
+      .select("id, name, departments, channels, manually_activated, auto_assign")
       .eq("status", "active");
 
     if (robotsError) throw robotsError;
@@ -118,9 +118,11 @@ Deno.serve(async (req) => {
         lastClientMsg = lm?.content || "";
       }
 
-      // Encontrar robô compatível (departamento + canal) entre robôs na escala ou ativados manualmente
+      // Encontrar robô compatível (departamento + canal + auto_assign) entre robôs na escala ou ativados manualmente
       let matchedRobot = null;
       for (const r of robotsInSchedule) {
+        // Pular robôs que não devem assumir da fila automaticamente
+        if (r.auto_assign === false) continue;
         const depts: string[] = r.departments || [];
         const channels: string[] = r.channels || ["whatsapp", "instagram", "machine"];
         if (!depts.includes(conv.department_id) || !channels.includes(channel)) continue;

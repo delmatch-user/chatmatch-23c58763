@@ -92,7 +92,7 @@ function getTemperatureFromTone(tone: string): number {
   }
 }
 
-function buildSystemPrompt(config: RobotConfig, availableDepartments?: { id: string; name: string }[], referenceLinks?: { title: string; url: string; content?: string }[]): string {
+function buildSystemPrompt(config: RobotConfig, availableDepartments?: { id: string; name: string }[], referenceLinks?: { title: string; url: string; content?: string }[], availableRobots?: { id: string; name: string; description: string }[]): string {
   let prompt = `Você é ${config.name}, um assistente virtual inteligente.\n\n`;
   
   if (config.instructions) {
@@ -146,6 +146,13 @@ function buildSystemPrompt(config: RobotConfig, availableDepartments?: { id: str
       prompt += `  Departamentos disponíveis: ${availableDepartments.map(d => d.name).join(', ')}\n`;
     }
   }
+  if (availableRobots && availableRobots.length > 0) {
+    prompt += `- **transfer_to_robot**: Use para transferir a conversa para outro agente especialista.\n`;
+    prompt += `  Agentes disponíveis:\n`;
+    availableRobots.forEach(r => {
+      prompt += `    - **${r.name}**: ${r.description || 'Sem descrição'}\n`;
+    });
+  }
   if (config.tools.manageLabels) {
     prompt += `- **manage_labels**: Use para adicionar ou remover etiquetas/tags na conversa quando apropriado.\n`;
   }
@@ -175,7 +182,7 @@ function buildSystemPrompt(config: RobotConfig, availableDepartments?: { id: str
 }
 
 // Definir ferramentas para OpenAI Function Calling
-function buildOpenAITools(config: RobotConfig, availableDepartments?: { id: string; name: string }[]): any[] {
+function buildOpenAITools(config: RobotConfig, availableDepartments?: { id: string; name: string }[], availableRobots?: { id: string; name: string }[]): any[] {
   const tools: any[] = [];
   
   if (config.tools.transferToDepartments && availableDepartments && availableDepartments.length > 0) {
@@ -226,6 +233,36 @@ function buildOpenAITools(config: RobotConfig, availableDepartments?: { id: stri
             }
           },
           required: ["reason", "message_to_client"]
+        }
+      }
+    });
+  }
+
+  // transfer_to_robot tool
+  if (availableRobots && availableRobots.length > 0) {
+    tools.push({
+      type: "function",
+      function: {
+        name: "transfer_to_robot",
+        description: "Transferir a conversa para outro agente especialista quando o assunto for da área dele",
+        parameters: {
+          type: "object",
+          properties: {
+            robot_name: {
+              type: "string",
+              description: `Nome do agente de destino. Opções: ${availableRobots.map(r => r.name).join(', ')}`,
+              enum: availableRobots.map(r => r.name)
+            },
+            reason: {
+              type: "string",
+              description: "Motivo da transferência e contexto para o agente destino"
+            },
+            message_to_client: {
+              type: "string",
+              description: "Mensagem para informar o cliente sobre a transferência"
+            }
+          },
+          required: ["robot_name", "reason", "message_to_client"]
         }
       }
     });
@@ -877,8 +914,21 @@ async function handleAutomaticMode(body: {
   const model = getModelFromIntelligence(robotConfig.intelligence);
   const temperature = getTemperatureFromTone(robotConfig.tone);
   const referenceLinks = (robot.reference_links as any[]) || [];
-  const systemPrompt = buildSystemPrompt(robotConfig, availableDepts || [], referenceLinks);
-  const openaiTools = buildOpenAITools(robotConfig, availableDepts || []);
+
+  // Buscar robôs disponíveis para transferência (outros robôs ativos no mesmo ou outros departamentos)
+  const { data: otherRobots } = await supabase
+    .from('robots')
+    .select('id, name, description')
+    .eq('status', 'active')
+    .neq('id', robotId);
+  const availableRobotsForTransfer = (otherRobots || []).map(r => ({
+    id: r.id,
+    name: r.name,
+    description: r.description || ''
+  }));
+
+  const systemPrompt = buildSystemPrompt(robotConfig, availableDepts || [], referenceLinks, availableRobotsForTransfer);
+  const openaiTools = buildOpenAITools(robotConfig, availableDepts || [], availableRobotsForTransfer);
   
   console.log(`[Robot-Chat Auto] Provider: ${providerName}, Model: ${model}, Temperature: ${temperature}, Tools: ${openaiTools.length}`);
   
@@ -1008,7 +1058,7 @@ async function handleAutomaticMode(body: {
     
     // Limpar content da IA quando há tool calls de transferência para evitar duplicação
     const hasTransferTool = toolCalls.some((tc: any) => 
-      ['transfer_to_department', 'transfer_to_human'].includes(tc.function.name)
+      ['transfer_to_department', 'transfer_to_human', 'transfer_to_robot'].includes(tc.function.name)
     );
     if (hasTransferTool) {
       aiResponse = '';
@@ -1157,6 +1207,76 @@ async function handleAutomaticMode(body: {
         
         console.log(`[Robot-Chat Auto] Transferido para atendente humano`);
         break; // Evitar duplicação de transferências
+      }
+      
+      else if (functionName === 'transfer_to_robot') {
+        // Buscar robô destino pelo nome
+        const targetRobot = availableRobotsForTransfer.find(
+          r => r.name.toLowerCase() === args.robot_name.toLowerCase()
+        );
+        
+        if (targetRobot) {
+          // Atualizar conversa para o robô destino
+          await supabase
+            .from('conversations')
+            .update({
+              assigned_to_robot: targetRobot.id,
+              assigned_to: null,
+              status: 'em_atendimento',
+              robot_transferred: false, // Não marcar como transferred (é robot-to-robot)
+              robot_lock_until: null, // Limpar lock para o novo robô processar
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', conversationId);
+          
+          // Mensagem de sistema
+          await supabase.from('messages').insert({
+            conversation_id: conversationId,
+            content: `🤖 ${targetRobot.name} assumiu a conversa`,
+            sender_name: 'SYSTEM',
+            sender_id: null,
+            message_type: 'system',
+            status: 'sent',
+          });
+          
+          // Log de transferência
+          await supabase.from('transfer_logs').insert({
+            conversation_id: conversationId,
+            from_user_name: `${robot.name} (IA)`,
+            to_department_id: convData?.department_id || '',
+            to_department_name: '',
+            to_robot_id: targetRobot.id,
+            to_robot_name: targetRobot.name,
+            reason: args.reason
+          });
+          
+          aiResponse = args.message_to_client || '';
+          skipSending = true; // O robô destino vai responder
+          actionTaken = true;
+          
+          // Chamar robot-chat para o robô destino
+          fetch(`${supabaseUrl}/functions/v1/robot-chat`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseServiceKey}`
+            },
+            body: JSON.stringify({
+              robotId: targetRobot.id,
+              conversationId: conversationId,
+              contactPhone,
+              contactJid,
+              connectionType,
+              phoneNumberId,
+              isTransfer: true,
+            })
+          }).catch(err => console.error('[Robot-Chat Auto] Erro ao chamar robot-chat destino:', err));
+          
+          console.log(`[Robot-Chat Auto] Transferido para robô: ${targetRobot.name}`);
+          break;
+        } else {
+          console.error(`[Robot-Chat Auto] Robô não encontrado: ${args.robot_name}`);
+        }
       }
       
       else if (functionName === 'manage_labels') {

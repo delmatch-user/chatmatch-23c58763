@@ -64,6 +64,7 @@ export interface Robot {
   qaPairs: QAPair[];
   referenceLinks: ReferenceLink[];
   tools: RobotTools;
+  autoAssign: boolean;
 }
 
 export const defaultTools: RobotTools = {
@@ -107,6 +108,7 @@ interface DbRobot {
   qa_pairs: unknown;
   reference_links: unknown;
   tools: unknown;
+  auto_assign: boolean;
 }
 
 function dbToRobot(db: DbRobot): Robot {
@@ -130,6 +132,7 @@ function dbToRobot(db: DbRobot): Robot {
     qaPairs: (db.qa_pairs as QAPair[]) || [],
     referenceLinks: (db.reference_links as ReferenceLink[]) || [],
     tools: { ...defaultTools, ...(db.tools as Partial<RobotTools>) },
+    autoAssign: db.auto_assign ?? true,
   };
 }
 
@@ -150,6 +153,7 @@ function robotToDb(robot: Robot, userId?: string) {
     qa_pairs: JSON.parse(JSON.stringify(robot.qaPairs)),
     reference_links: JSON.parse(JSON.stringify(robot.referenceLinks)),
     tools: JSON.parse(JSON.stringify(robot.tools)),
+    auto_assign: robot.autoAssign,
     ...(userId ? { created_by: userId } : {}),
   };
 }
