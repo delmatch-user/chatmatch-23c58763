@@ -149,6 +149,7 @@ function buildSystemPrompt(config: RobotConfig, availableDepartments?: { id: str
   }
   if (availableRobots && availableRobots.length > 0) {
     prompt += `- **transfer_to_robot**: Use para transferir a conversa para outro agente especialista.\n`;
+    prompt += `  **IMPORTANTE**: Ao transferir, o campo "reason" DEVE conter um RESUMO COMPLETO DA TRIAGEM, incluindo: (1) o que o cliente deseja/precisa, (2) informações já coletadas (nome, cidade, tipo de problema, etc.), (3) contexto relevante da conversa. Isso é essencial para que o agente especialista dê continuidade sem repetir perguntas.\n`;
     prompt += `  Agentes disponíveis:\n`;
     availableRobots.forEach(r => {
       prompt += `    - **${r.name}**: ${r.description || 'Sem descrição'}\n`;
