@@ -76,6 +76,54 @@ function getApiConfig(intelligence: string) {
   };
 }
 
+async function buildMessageHistory(messages: any[], readImages: boolean, logPrefix = '[SDR-Robot-Chat]'): Promise<any[]> {
+  const history: any[] = [];
+  for (const msg of messages) {
+    const isRobotMessage = msg.sender_name?.includes('[ROBOT]') || msg.sender_name?.includes('(IA)');
+    const isAgentMessage = msg.sender_id !== null;
+    const role = (isRobotMessage || isAgentMessage) ? 'assistant' as const : 'user' as const;
+
+    if (readImages && msg.message_type === 'image' && msg.content) {
+      const imageUrl = extractMediaUrl(msg.content, 'image');
+      if (imageUrl) {
+        history.push({
+          role,
+          content: [
+            { type: "image_url" as const, image_url: { url: imageUrl } },
+            { type: "text" as const, text: "O cliente enviou esta imagem. Analise e responda." }
+          ]
+        });
+        continue;
+      }
+    }
+
+    if (msg.message_type === 'audio') {
+      const audioUrl = extractMediaUrl(msg.content, 'audio');
+      if (audioUrl) {
+        const transcription = await transcribeAudioUrl(audioUrl);
+        history.push({ role, content: transcription ? `[Áudio transcrito]: ${transcription}` : '[Áudio recebido - não foi possível transcrever]' });
+      } else if (msg.content && !msg.content.startsWith('[') && !msg.content.startsWith('{')) {
+        history.push({ role, content: `[Áudio transcrito]: ${msg.content}` });
+      } else {
+        history.push({ role, content: '[Áudio recebido - sem transcrição]' });
+      }
+      continue;
+    }
+
+    if (msg.message_type === 'video' && msg.content) {
+      const videoUrl = extractMediaUrl(msg.content, 'video');
+      history.push({ role, content: videoUrl ? `[Vídeo recebido: ${videoUrl}]` : '[Vídeo recebido]' });
+      continue;
+    }
+
+    history.push({
+      role,
+      content: msg.message_type === 'text' || msg.message_type === 'system' ? msg.content : `[Mídia recebida: ${msg.message_type}]`
+    });
+  }
+  return history;
+}
+
 function getTemperatureFromTone(tone: string): number {
   switch (tone) {
     case 'muito_criativo': return 1.0;
