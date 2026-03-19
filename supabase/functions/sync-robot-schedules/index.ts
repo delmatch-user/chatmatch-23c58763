@@ -25,7 +25,7 @@ Deno.serve(async (req) => {
     // 2. Buscar robôs ativos
     const { data: activeRobots, error: robotsError } = await supabase
       .from("robots")
-      .select("id, name, departments, channels, manually_activated")
+      .select("id, name, departments, channels, manually_activated, auto_assign")
       .eq("status", "active");
 
     if (robotsError) throw robotsError;
