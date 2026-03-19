@@ -220,6 +220,7 @@ export default function AdminRobos() {
       qaPairs: [],
       referenceLinks: [],
       tools: { ...defaultTools },
+      autoAssign: true,
     };
     setSelectedRobot(newRobot);
     setIsConfigOpen(true);
