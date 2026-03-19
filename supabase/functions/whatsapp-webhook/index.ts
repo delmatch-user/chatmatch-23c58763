@@ -711,9 +711,12 @@ serve(async (req) => {
             // Preparar atualizações do contato (SEM mismatch)
             const contactUpdates: Record<string, string | boolean> = {};
             
-            // Atualizar JID se necessário
+            // Atualizar JID se necessário (APPEND, nunca sobrescrever)
             if (senderJid && (!existingContact.notes || !existingContact.notes.includes(senderJid))) {
-              contactUpdates.notes = `jid:${senderJid}`;
+              const currentNotes = existingContact.notes || '';
+              contactUpdates.notes = currentNotes
+                ? `${currentNotes} | jid:${senderJid}`
+                : `jid:${senderJid}`;
             }
             
             // Atualizar nome se não foi editado manualmente e temos pushName válido
