@@ -878,7 +878,7 @@ serve(async (req) => {
               .select('id, contact_id')
               .eq('whatsapp_instance_id', effectiveInstanceId)
               .in('status', ['em_fila', 'em_atendimento', 'pendente'])
-              .gte('created_at', new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString())
+              .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
               .order('created_at', { ascending: false })
               .limit(20);
             
@@ -1292,7 +1292,8 @@ serve(async (req) => {
           const { data: activeRobots } = await supabase
             .from('robots')
             .select('id, name, departments, channels')
-            .eq('status', 'active');
+            .eq('status', 'active')
+            .eq('auto_assign', true);
 
           // Buscar config SDR para guarda de robô SDR
           const { data: sdrConfig } = await supabase
@@ -1449,7 +1450,8 @@ serve(async (req) => {
             const { data: activeRobotsForExisting } = await supabase
               .from('robots')
               .select('id, name, departments, channels')
-              .eq('status', 'active');
+              .eq('status', 'active')
+              .eq('auto_assign', true);
 
             // Buscar config SDR para pular robô SDR sem keyword
             const { data: sdrCfg } = await supabase.from('sdr_robot_config').select('robot_id').eq('is_active', true).maybeSingle();
