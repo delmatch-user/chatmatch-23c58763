@@ -1058,7 +1058,7 @@ async function handleAutomaticMode(body: {
     
     // Limpar content da IA quando há tool calls de transferência para evitar duplicação
     const hasTransferTool = toolCalls.some((tc: any) => 
-      ['transfer_to_department', 'transfer_to_human'].includes(tc.function.name)
+      ['transfer_to_department', 'transfer_to_human', 'transfer_to_robot'].includes(tc.function.name)
     );
     if (hasTransferTool) {
       aiResponse = '';
