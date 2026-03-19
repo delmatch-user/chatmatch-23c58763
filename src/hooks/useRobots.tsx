@@ -22,6 +22,7 @@ export interface ReferenceLink {
 export interface RobotTools {
   transferToAgents: boolean;
   transferToAgentsMode: 'all' | 'select';
+  transferToAgentIds: string[];
   transferToDepartments: boolean;
   transferToDepartmentsMode: 'all' | 'select';
   transferToDepartmentIds: string[];
