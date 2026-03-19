@@ -829,13 +829,17 @@ serve(async (req) => {
                 contactId = lc.id;
                 console.log(`[WhatsApp] Reconciliação LID segura: contato ${contactId} atualizado com phone=${sender}`);
                 
+                // APPEND JID em vez de sobrescrever
+                const { data: reconContact } = await supabase.from('contacts').select('notes').eq('id', contactId!).single();
+                const reconNotes = reconContact?.notes || '';
+                const reconNewNotes = reconNotes.includes(senderJid) ? reconNotes : (reconNotes ? `${reconNotes} | jid:${senderJid}` : `jid:${senderJid}`);
                 await supabase
                   .from('contacts')
                   .update({
                     phone: formatBrazilianPhone(sender) || sender,
-                    notes: `jid:${senderJid}`
+                    notes: reconNewNotes
                   })
-                  .eq('id', contactId);
+                  .eq('id', contactId!);
                 break;
               }
             }
