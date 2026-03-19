@@ -242,14 +242,15 @@ async function callGraphAPI(
 
       if (needsPageToken && !triedDerive) {
         triedDerive = true;
+        console.log(`[Instagram Send] Token requer Page Access Token. Tentando derivar para pageId=${pageId}...`);
         const derived = await derivePageAccessToken(pageId, activeToken, appSecret);
 
         if (derived && derived.token !== activeToken) {
           console.log(`[Instagram Send] Token de página derivado via ${derived.strategy} para source=${candidate.source}`);
           activeToken = derived.token;
 
-          if (candidate.source === 'db') {
-            await persistDerivedDbToken(pageId, originalToken, derived.token);
+          if (candidate.source.startsWith('db')) {
+            await persistDerivedDbToken(pageId, igAccountId, originalToken, derived.token);
           }
 
           continue;
