@@ -25,6 +25,16 @@ function extractMediaUrl(content: string, expectedType?: string): string | null 
   return null;
 }
 
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunkSize = 8192;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
 async function resolveImageToDataUrl(url: string): Promise<string | null> {
   try {
     let fetchUrl = url;
@@ -57,7 +67,7 @@ async function resolveImageToDataUrl(url: string): Promise<string | null> {
     }
     const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
     const buffer = await imgRes.arrayBuffer();
-    const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+    const base64 = uint8ArrayToBase64(new Uint8Array(buffer));
     const mimeType = contentType.split(';')[0];
     return `data:${mimeType};base64,${base64}`;
   } catch (err) {
@@ -120,46 +130,60 @@ function getApiConfig(intelligence: string) {
 
 async function buildMessageHistory(messages: any[], readImages: boolean, logPrefix = '[SDR-Robot-Chat]'): Promise<any[]> {
   const history: any[] = [];
-  for (const msg of messages) {
+  const totalMessages = messages.length;
+  const MEDIA_RESOLVE_WINDOW = 3;
+
+  for (let i = 0; i < totalMessages; i++) {
+    const msg = messages[i];
     const isRobotMessage = msg.sender_name?.includes('[ROBOT]') || msg.sender_name?.includes('(IA)');
     const isAgentMessage = msg.sender_id !== null;
     const role = (isRobotMessage || isAgentMessage) ? 'assistant' as const : 'user' as const;
+    const isRecent = i >= totalMessages - MEDIA_RESOLVE_WINDOW;
 
-    if (readImages && msg.message_type === 'image' && msg.content) {
-      const imageUrl = extractMediaUrl(msg.content, 'image');
-      if (imageUrl) {
-        const dataUrl = await resolveImageToDataUrl(imageUrl);
-        if (dataUrl) {
-          history.push({
-            role,
-            content: [
-              { type: "image_url" as const, image_url: { url: dataUrl } },
-              { type: "text" as const, text: "O cliente enviou esta imagem. Analise e responda." }
-            ]
-          });
-          continue;
+    if (msg.message_type === 'image' && msg.content) {
+      if (readImages && isRecent) {
+        const imageUrl = extractMediaUrl(msg.content, 'image');
+        if (imageUrl) {
+          const dataUrl = await resolveImageToDataUrl(imageUrl);
+          if (dataUrl) {
+            history.push({
+              role,
+              content: [
+                { type: "image_url" as const, image_url: { url: dataUrl } },
+                { type: "text" as const, text: "O cliente enviou esta imagem. Analise e responda." }
+              ]
+            });
+            continue;
+          }
         }
-        history.push({ role, content: '[Imagem recebida - não foi possível carregar para análise]' });
-        continue;
       }
+      history.push({ role, content: '[Imagem recebida]' });
+      continue;
     }
 
     if (msg.message_type === 'audio') {
-      const audioUrl = extractMediaUrl(msg.content, 'audio');
-      if (audioUrl) {
-        const transcription = await transcribeAudioUrl(audioUrl);
-        history.push({ role, content: transcription ? `[Áudio transcrito]: ${transcription}` : '[Áudio recebido - não foi possível transcrever]' });
-      } else if (msg.content && !msg.content.startsWith('[') && !msg.content.startsWith('{')) {
-        history.push({ role, content: `[Áudio transcrito]: ${msg.content}` });
+      if (isRecent) {
+        const audioUrl = extractMediaUrl(msg.content, 'audio');
+        if (audioUrl) {
+          const transcription = await transcribeAudioUrl(audioUrl);
+          history.push({ role, content: transcription ? `[Áudio transcrito]: ${transcription}` : '[Áudio recebido - não foi possível transcrever]' });
+        } else if (msg.content && !msg.content.startsWith('[') && !msg.content.startsWith('{')) {
+          history.push({ role, content: `[Áudio transcrito]: ${msg.content}` });
+        } else {
+          history.push({ role, content: '[Áudio recebido]' });
+        }
       } else {
-        history.push({ role, content: '[Áudio recebido - sem transcrição]' });
+        if (msg.content && !msg.content.startsWith('[') && !msg.content.startsWith('{') && !msg.content.startsWith('http') && !msg.content.startsWith('meta_media:')) {
+          history.push({ role, content: `[Áudio transcrito]: ${msg.content}` });
+        } else {
+          history.push({ role, content: '[Áudio recebido]' });
+        }
       }
       continue;
     }
 
     if (msg.message_type === 'video' && msg.content) {
-      const videoUrl = extractMediaUrl(msg.content, 'video');
-      history.push({ role, content: videoUrl ? `[Vídeo recebido: ${videoUrl}]` : '[Vídeo recebido]' });
+      history.push({ role, content: '[Vídeo recebido]' });
       continue;
     }
 
