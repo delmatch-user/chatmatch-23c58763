@@ -87,6 +87,42 @@ export function ConversationPreviewDialog({
     return () => clearInterval(interval);
   }, [conversation.createdAt]);
 
+  // Carregar mensagens reais do banco ao abrir o preview
+  useEffect(() => {
+    if (open && conversation?.id) {
+      const fetchRealMessages = async () => {
+        setIsLoadingMessages(true);
+        const { data, error } = await supabase
+          .from('messages')
+          .select('*')
+          .eq('conversation_id', conversation.id)
+          .order('created_at', { ascending: true });
+
+        if (!error && data) {
+          const mapped: Message[] = data.map((m) => ({
+            id: m.id,
+            conversationId: m.conversation_id,
+            senderId: m.sender_id || 'contact',
+            senderName: m.sender_name,
+            content: m.content,
+            type: m.message_type as Message['type'],
+            timestamp: new Date(m.created_at),
+            read: m.status === 'read',
+            status: m.status as Message['status'],
+            deleted: m.deleted ?? false,
+          }));
+          setRealMessages(mapped);
+        } else {
+          setRealMessages(null);
+        }
+        setIsLoadingMessages(false);
+      };
+      fetchRealMessages();
+    } else {
+      setRealMessages(null);
+    }
+  }, [open, conversation?.id]);
+
   // Marcar mensagens como lidas ao abrir o preview
   useEffect(() => {
     if (open && conversation?.id) {
@@ -110,12 +146,12 @@ export function ConversationPreviewDialog({
 
   // Scroll to bottom on open
   useEffect(() => {
-    if (open && scrollRef.current) {
+    if (open && scrollRef.current && !isLoadingMessages) {
       setTimeout(() => {
         scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
       }, 100);
     }
-  }, [open]);
+  }, [open, isLoadingMessages]);
 
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
