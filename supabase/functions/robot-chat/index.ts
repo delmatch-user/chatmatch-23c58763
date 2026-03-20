@@ -684,7 +684,7 @@ async function handleAutomaticMode(body: {
   // Buscar conversa para detectar canal, departamento e lock
   const { data: convData } = await supabase
     .from('conversations')
-    .select('department_id, channel, robot_lock_until, sdr_deal_id, assigned_to, robot_transferred')
+    .select('department_id, channel, robot_lock_until, sdr_deal_id, assigned_to, robot_transferred, assigned_to_robot')
     .eq('id', conversationId)
     .single();
 
@@ -692,6 +692,33 @@ async function handleAutomaticMode(body: {
   if (convData?.robot_transferred === true && !isTransfer) {
     console.log(`[Robot-Chat Auto] Conversa ${conversationId} já foi transferida por robô. Ignorando.`);
     return new Response(JSON.stringify({ skipped: true, reason: 'robot_already_transferred' }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  // === ROBOT OWNERSHIP GUARD: Não processar se a conversa pertence a outro robô ===
+  if (convData?.assigned_to_robot && convData.assigned_to_robot !== robotId && !isTransfer) {
+    console.log(`[Robot-Chat Auto] Conversa ${conversationId} pertence ao robô ${convData.assigned_to_robot}, não ao ${robotId}. Ignorando.`);
+    return new Response(JSON.stringify({ skipped: true, reason: 'assigned_to_different_robot' }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  // === RECENT OUTBOUND TRANSFER GUARD: Não processar se este robô já transferiu esta conversa recentemente ===
+  const twoMinutesAgo = new Date(Date.now() - 120000).toISOString();
+  const { data: recentOutboundTransfer } = await supabase
+    .from('transfer_logs')
+    .select('id')
+    .eq('conversation_id', conversationId)
+    .gte('created_at', twoMinutesAgo)
+    .limit(1)
+    .maybeSingle();
+
+  if (recentOutboundTransfer && !isTransfer) {
+    console.log(`[Robot-Chat Auto] Conversa ${conversationId} teve transferência recente. Robô ${robotId} não deve reassumir. Ignorando.`);
+    return new Response(JSON.stringify({ skipped: true, reason: 'robot_recently_transferred_out' }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
