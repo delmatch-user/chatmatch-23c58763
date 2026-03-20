@@ -976,12 +976,33 @@ async function handleAutomaticMode(body: {
     .maybeSingle();
   
   const isFromTransfer = recentTransfer && (Date.now() - new Date(recentTransfer.created_at).getTime()) < 60000;
-  const transferDelay = 30; // 30s delay para transferências
+  const transferDelay = 15; // 15s delay para transferências (reduzido de 30s)
 
   // === SET LOCK + GROUP MESSAGES ===
   const groupMessages = robotConfig.tools.groupMessages;
   const groupMessagesTime = robotConfig.tools.groupMessagesTime || 40;
-  const effectiveDelay = isFromTransfer ? Math.max(transferDelay, groupMessages ? groupMessagesTime : 0) : (groupMessages ? groupMessagesTime : 30);
+  
+  // Triagem inteligente: se o cliente já enviou conteúdo substantivo, reduz delay pela metade
+  let effectiveDelay: number;
+  if (isFromTransfer) {
+    effectiveDelay = Math.max(transferDelay, groupMessages ? groupMessagesTime : 0);
+  } else if (groupMessages) {
+    // Verificar a última mensagem do cliente para decidir o delay
+    const customerMessages = (messagesData || []).filter((m: any) => !m.sender_name?.startsWith('[ROBOT]') && !m.sender_name?.startsWith('[SISTEMA]') && m.sender_id === null);
+    const lastCustomerMsg = customerMessages.length > 0 ? customerMessages[customerMessages.length - 1]?.content || '' : '';
+    const isSubstantiveMessage = lastCustomerMsg.length > 15 || lastCustomerMsg.trim().split(/\s+/).length > 2;
+    
+    if (isSubstantiveMessage) {
+      effectiveDelay = Math.max(10, Math.floor(groupMessagesTime / 2));
+      console.log(`[Robot-Chat Auto] Triagem inteligente: mensagem substantiva detectada ("${lastCustomerMsg.substring(0, 50)}..."), delay reduzido para ${effectiveDelay}s`);
+    } else {
+      effectiveDelay = groupMessagesTime;
+      console.log(`[Robot-Chat Auto] Mensagem curta detectada ("${lastCustomerMsg}"), aguardando ${effectiveDelay}s para mais contexto`);
+    }
+  } else {
+    effectiveDelay = 5; // Sem agrupamento: 5s (reduzido de 30s)
+  }
+  
   const lockDuration = effectiveDelay; // seconds
   
   const lockUntil = new Date(Date.now() + lockDuration * 1000).toISOString();
@@ -989,8 +1010,8 @@ async function handleAutomaticMode(body: {
   console.log(`[Robot-Chat Auto] Lock setado por ${lockDuration}s até ${lockUntil}${isFromTransfer ? ' (transferência detectada)' : ''}`);
 
   // Aguardar delay (transferência ou agrupamento)
-  if (isFromTransfer || groupMessages) {
-    const waitTime = isFromTransfer ? transferDelay : groupMessagesTime;
+  if (effectiveDelay > 0) {
+    const waitTime = effectiveDelay;
     console.log(`[Robot-Chat Auto] ${isFromTransfer ? 'Delay de transferência' : 'Agrupando mensagens'} por ${waitTime}s...`);
     await new Promise(resolve => setTimeout(resolve, waitTime * 1000));
     
