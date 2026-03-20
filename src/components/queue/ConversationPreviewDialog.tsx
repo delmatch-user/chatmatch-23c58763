@@ -67,6 +67,8 @@ export function ConversationPreviewDialog({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [liveWaitTime, setLiveWaitTime] = useState(0);
   const [isMarkingAsRead, setIsMarkingAsRead] = useState(false);
+  const [realMessages, setRealMessages] = useState<Message[] | null>(null);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const { refetchConversations } = useApp();
 
   // Calcular tempo de espera
