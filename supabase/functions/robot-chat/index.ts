@@ -1328,7 +1328,7 @@ async function handleAutomaticMode(body: {
         // e NÃO enviar message_to_client via WhatsApp (o robô destino vai cumprimentar)
         if (targetRobot) {
           // Salvar message_to_client apenas no DB como registro, sem enviar ao cliente
-          aiResponse = args.message_to_client || '';
+          aiResponse = ''; // Robô destino responde, Delma não salva mensagem
           skipSending = true; // Não enviar via WhatsApp, o robô destino vai responder
           
           fetch(`${supabaseUrl}/functions/v1/robot-chat`, {
@@ -1544,7 +1544,7 @@ async function handleAutomaticMode(body: {
   await new Promise(resolve => setTimeout(resolve, 3000));
 
   // Pular salvamento no DB quando houve transfer_to_robot (robô destino responde)
-  const hasTransferToolUsed = skipSending && aiResponse === '';
+  const hasTransferToolUsed = hasTransferTool && skipSending;
   for (let i = 0; i < messageParts.length && !hasTransferToolUsed; i++) {
     const part = messageParts[i];
     
