@@ -67,6 +67,8 @@ export function ConversationPreviewDialog({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [liveWaitTime, setLiveWaitTime] = useState(0);
   const [isMarkingAsRead, setIsMarkingAsRead] = useState(false);
+  const [realMessages, setRealMessages] = useState<Message[] | null>(null);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const { refetchConversations } = useApp();
 
   // Calcular tempo de espera
@@ -84,6 +86,42 @@ export function ConversationPreviewDialog({
     }, 1000);
     return () => clearInterval(interval);
   }, [conversation.createdAt]);
+
+  // Carregar mensagens reais do banco ao abrir o preview
+  useEffect(() => {
+    if (open && conversation?.id) {
+      const fetchRealMessages = async () => {
+        setIsLoadingMessages(true);
+        const { data, error } = await supabase
+          .from('messages')
+          .select('*')
+          .eq('conversation_id', conversation.id)
+          .order('created_at', { ascending: true });
+
+        if (!error && data) {
+          const mapped: Message[] = data.map((m) => ({
+            id: m.id,
+            conversationId: m.conversation_id,
+            senderId: m.sender_id || 'contact',
+            senderName: m.sender_name,
+            content: m.content,
+            type: m.message_type as Message['type'],
+            timestamp: new Date(m.created_at),
+            read: m.status === 'read',
+            status: m.status as Message['status'],
+            deleted: m.deleted ?? false,
+          }));
+          setRealMessages(mapped);
+        } else {
+          setRealMessages(null);
+        }
+        setIsLoadingMessages(false);
+      };
+      fetchRealMessages();
+    } else {
+      setRealMessages(null);
+    }
+  }, [open, conversation?.id]);
 
   // Marcar mensagens como lidas ao abrir o preview
   useEffect(() => {
@@ -108,12 +146,12 @@ export function ConversationPreviewDialog({
 
   // Scroll to bottom on open
   useEffect(() => {
-    if (open && scrollRef.current) {
+    if (open && scrollRef.current && !isLoadingMessages) {
       setTimeout(() => {
         scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
       }, 100);
     }
-  }, [open]);
+  }, [open, isLoadingMessages]);
 
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -305,12 +343,17 @@ export function ConversationPreviewDialog({
         {/* Messages */}
         <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto pr-2">
           <div className="py-4 space-y-3">
-            {conversation.messages.length === 0 ? (
+            {isLoadingMessages ? (
+              <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span className="text-sm">Carregando histórico...</span>
+              </div>
+            ) : (realMessages || conversation.messages).length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 Nenhuma mensagem ainda
               </div>
             ) : (
-              conversation.messages.map((message) => {
+              (realMessages || conversation.messages).map((message) => {
                 const isSystemMessage = (message.type as string) === 'system' || message.senderName === 'SYSTEM';
                 const isFromContact = !message.senderId || message.senderId === 'contact';
                 const messageTime = message.timestamp instanceof Date 
