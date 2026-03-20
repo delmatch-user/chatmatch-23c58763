@@ -192,20 +192,26 @@ export default function InternalChat() {
   // Sort users by last activity (most recent first)
   const sortedFilteredUsers = useMemo(() => {
     return [...filteredUsers].sort((a, b) => {
+      const aUnread = unreadDetails.users[a.id] || 0;
+      const bUnread = unreadDetails.users[b.id] || 0;
+      
+      // Unread users come first
+      if (aUnread > 0 && bUnread === 0) return -1;
+      if (aUnread === 0 && bUnread > 0) return 1;
+      
+      // Among unread or among read, sort by last activity
       const aTime = lastActivityDetails.users[a.id];
       const bTime = lastActivityDetails.users[b.id];
       
-      // Users with messages come first
       if (aTime && bTime) {
         return new Date(bTime).getTime() - new Date(aTime).getTime();
       }
       if (aTime && !bTime) return -1;
       if (!aTime && bTime) return 1;
       
-      // Fallback: sort by name
       return a.name.localeCompare(b.name);
     });
-  }, [filteredUsers, lastActivityDetails.users]);
+  }, [filteredUsers, lastActivityDetails.users, unreadDetails.users]);
 
   // Fetch messages when selection changes
   useEffect(() => {
