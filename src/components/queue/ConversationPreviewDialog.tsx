@@ -343,7 +343,12 @@ export function ConversationPreviewDialog({
         {/* Messages */}
         <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto pr-2">
           <div className="py-4 space-y-3">
-            {conversation.messages.length === 0 ? (
+            {isLoadingMessages ? (
+              <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span className="text-sm">Carregando histórico...</span>
+              </div>
+            ) : (realMessages || conversation.messages).length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 Nenhuma mensagem ainda
               </div>
