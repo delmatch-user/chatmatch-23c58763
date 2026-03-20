@@ -353,7 +353,7 @@ export function ConversationPreviewDialog({
                 Nenhuma mensagem ainda
               </div>
             ) : (
-              conversation.messages.map((message) => {
+              (realMessages || conversation.messages).map((message) => {
                 const isSystemMessage = (message.type as string) === 'system' || message.senderName === 'SYSTEM';
                 const isFromContact = !message.senderId || message.senderId === 'contact';
                 const messageTime = message.timestamp instanceof Date 
