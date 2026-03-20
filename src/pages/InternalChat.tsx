@@ -496,7 +496,9 @@ export default function InternalChat() {
                   {sortedFilteredUsers.length === 0 ? (
                     <div className="p-4 text-sm text-muted-foreground">Nenhum membro encontrado.</div>
                   ) : (
-                    sortedFilteredUsers.map((u) => (
+                    sortedFilteredUsers.map((u) => {
+                      const hasUnread = (unreadDetails.users[u.id] || 0) > 0;
+                      return (
                       <button
                         key={u.id}
                         onClick={() => {
@@ -507,7 +509,9 @@ export default function InternalChat() {
                           'w-full flex items-start gap-3 p-3 rounded-lg transition-all',
                           selectedUserId === u.id
                             ? 'bg-primary/10 text-primary'
-                            : 'hover:bg-secondary text-foreground'
+                            : hasUnread
+                              ? 'bg-primary/5 hover:bg-primary/10 text-foreground font-medium'
+                              : 'hover:bg-secondary text-foreground'
                         )}
                       >
                         <div className="relative mt-0.5">
@@ -526,13 +530,10 @@ export default function InternalChat() {
                               u.status === 'offline' && 'bg-offline'
                             )}
                           />
-                          {unreadDetails.users[u.id] > 0 && (
-                            <span className="absolute -top-1 -right-1 w-3 h-3 bg-orange-500 rounded-full border-2 border-card" />
-                          )}
                         </div>
 
                         <div className="flex-1 text-left min-w-0">
-                          <p className="font-medium truncate">{u.name}</p>
+                          <p className={cn("truncate", hasUnread ? "font-semibold" : "font-medium")}>{u.name}</p>
                           <p className="text-xs text-muted-foreground capitalize">{u.role}</p>
 
                           {u.departments.length > 0 && (
@@ -554,8 +555,14 @@ export default function InternalChat() {
                             </div>
                           )}
                         </div>
+                        {hasUnread && (
+                          <Badge className="bg-primary text-primary-foreground text-xs min-w-[20px] h-5 flex items-center justify-center shrink-0 mt-1">
+                            {unreadDetails.users[u.id]}
+                          </Badge>
+                        )}
                       </button>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               )}
