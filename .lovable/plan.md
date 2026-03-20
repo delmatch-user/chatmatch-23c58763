@@ -1,37 +1,46 @@
 
+Objetivo: impedir que conversas abertas apareçam com histórico incompleto e explicar a causa.
 
-## Corrigir Delma assumindo conversas de outros robôs IA
+Diagnóstico (causa provável já identificada no código):
+1) O AppContext carrega conversas inicialmente só com preview (`last_message_preview`) e não com histórico completo.
+2) No ChatPanel, o carregamento completo só dispara quando `conversation.messages.length <= 1`.
+3) Se entrar mensagem em tempo real antes de abrir a conversa, ela fica com 2+ itens (preview + nova), então o carregamento completo é pulado.
+4) Depois disso, o polling incremental busca apenas mensagens novas (`created_at > último timestamp`) e não recupera as antigas. Resultado: conversa parece “perdida/incompleta” sem ter sido finalizada.
 
-### Problema identificado
+Plano de correção:
+1) Trocar a regra de “histórico carregado”
+- Arquivos: `src/contexts/AppContext.tsx`, `src/types/index.ts`.
+- Adicionar um estado explícito por conversa (ex.: `historyLoaded: boolean`) em vez de inferir por quantidade de mensagens.
+- Conversas vindas de `fetchConversations` (preview) iniciam com `historyLoaded = false`.
 
-Quando um robô especialista (Júlia, Sebastião) usa a ferramenta `transfer_to_department` para transferir uma conversa de volta ao departamento de Suporte, o código busca **qualquer robô ativo** naquele departamento (linha 1271-1281 de `robot-chat/index.ts`). Como Delma é o robô de triagem ativo no Suporte, ela é selecionada automaticamente como `targetRobot` — mesmo que a intenção fosse transferir para um humano ou outro robô específico.
+2) Ajustar gatilho de carregamento no ChatPanel
+- Arquivo: `src/components/chat/ChatPanel.tsx`.
+- Substituir condição atual (`messages.length <= 1`) por: “se conversa selecionada não está hidratada, carregar histórico completo”.
+- Garantir que ao trocar de conversa o carregamento completo aconteça sempre na primeira abertura daquela conversa.
 
-Esse bloco de código **ignora** a restrição `transferToAgentIds` configurada no painel administrativo, que deveria limitar para quais robôs a transferência é permitida.
+3) Marcar hidratação somente após carga completa do banco
+- Arquivo: `src/contexts/AppContext.tsx` (`loadConversationMessages`).
+- Após buscar todas as mensagens + reações com sucesso, atualizar `messages` e marcar `historyLoaded = true`.
+- Se falhar, manter `historyLoaded = false` (para permitir nova tentativa), sem sobrescrever o que já existe na tela.
 
-Além disso, `transfer_to_department` não filtra por `auto_assign`, então Delma (com `auto_assign: true`) é sempre a primeira escolhida.
+4) Preservar integridade durante realtime/polling
+- Arquivo: `src/contexts/AppContext.tsx`.
+- Realtime de INSERT/UPDATE não deve “promover” conversa para carregada.
+- Polling incremental só complementa mensagens quando `historyLoaded = true`; se não estiver carregada, ele não substitui o fluxo de hidratação completa.
+- Assim evita estado “parcial permanente”.
 
-### Solução
+5) Ação de recuperação manual (segurança operacional)
+- Arquivo: `src/components/chat/ChatPanel.tsx`.
+- Adicionar opção “Recarregar histórico completo” no menu da conversa para forçar `loadConversationMessages(conversation.id)`.
+- Útil para atendimento em produção sem depender de refresh geral da página.
 
-**Arquivo: `supabase/functions/robot-chat/index.ts`**
+6) Validação final (cenários críticos)
+- Cenário A: conversa antiga com preview recebe nova mensagem antes de abrir → ao abrir, deve carregar todo histórico.
+- Cenário B: conversa com muitas mensagens (paginação >1000) → histórico completo deve aparecer.
+- Cenário C: queda temporária de rede durante load → não marcar como carregada; botão de recarga deve recuperar.
+- Cenário D: fila (`/fila`) e conversas (`/conversas`) com comportamento consistente.
 
-1. **Aplicar filtro `transferToAgentIds` no `transfer_to_department`**: Quando o robô tem restrições de transferência configuradas (`transferToAgentsMode === 'select'`), o `targetRobot` encontrado pelo `transfer_to_department` deve respeitar essa lista. Se Delma não estiver na lista, a conversa vai para a fila sem robô.
-
-2. **Respeitar `auto_assign` no `transfer_to_department`**: Só selecionar como `targetRobot` robôs que tenham `auto_assign: true`, evitando atribuir robôs especialistas que só devem receber transferências diretas.
-
-3. **Usar a lista `availableRobotsForTransfer` já filtrada** ao invés de fazer uma query separada, garantindo consistência com as mesmas regras do `transfer_to_robot`.
-
-```text
-Antes:
-  transfer_to_department → query TODOS os robôs ativos → pega Delma
-
-Depois:
-  transfer_to_department → usa availableRobotsForTransfer (já filtrada)
-                         → filtra por dept destino + canal
-                         → se nenhum robô permitido, vai pra fila
-```
-
-### Impacto
-- Delma só assumirá conversas transferidas por departamento se estiver na lista de robôs permitidos do robô que transfere
-- Robôs especialistas poderão transferir para departamentos sem que Delma recapture automaticamente
-- A flag `robot_transferred` será corretamente setada quando não houver robô destino permitido
-
+Impacto esperado:
+- Não haverá mais conversa “aberta com histórico incompleto” por falha de hidratação.
+- As mensagens antigas deixam de depender da condição frágil de quantidade em memória.
+- Sem migração de banco e sem alteração de políticas; correção é de estado/fluxo no frontend.
