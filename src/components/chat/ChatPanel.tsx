@@ -136,12 +136,12 @@ export function ChatPanel({ conversation, showContactDetails, onToggleContactDet
     ? users.find(u => u.id === conversation?.assignedTo)
     : null;
 
-  // Lazy-load messages when conversation is selected and has no messages loaded
+  // Lazy-load messages when conversation is selected and history not yet loaded
   useEffect(() => {
-    if (conversation && conversation.messages.length <= 1) {
+    if (conversation && !conversation.historyLoaded) {
       loadConversationMessages(conversation.id);
     }
-  }, [conversation?.id, conversation?.status, loadConversationMessages]);
+  }, [conversation?.id, conversation?.historyLoaded, loadConversationMessages]);
 
   // Scroll to bottom quando mensagens mudam
   useEffect(() => {
@@ -1307,6 +1307,18 @@ export function ChatPanel({ conversation, showContactDetails, onToggleContactDet
                     Assumir Atendimento
                   </DropdownMenuItem>
                 )}
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onSelect={() => {
+                    if (conversation) {
+                      loadConversationMessages(conversation.id);
+                      toast.success('Histórico recarregado');
+                    }
+                  }}
+                >
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Recarregar histórico
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
             {onToggleContactDetails && (

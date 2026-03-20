@@ -282,11 +282,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
               user?.departments?.includes(conv.departmentId)
             );
 
-        // Preserve existing messages when refreshing metadata
+        // Preserve existing messages and historyLoaded when refreshing metadata
         setConversations(prev => {
           return filteredConversations.map(conv => {
             const existing = prev.find(c => c.id === conv.id);
-            return existing ? { ...conv, messages: existing.messages } : conv;
+            return existing ? { ...conv, messages: existing.messages, historyLoaded: existing.historyLoaded } : conv;
           });
         });
         
@@ -295,7 +295,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (!prev) return null;
           const updatedConv = filteredConversations.find(c => c.id === prev.id);
           if (!updatedConv) return prev;
-          return { ...updatedConv, messages: prev.messages };
+          return { ...updatedConv, messages: prev.messages, historyLoaded: prev.historyLoaded };
         });
       }
     } catch (error) {
@@ -367,10 +367,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
 
     setConversations(prev => prev.map(conv =>
-      conv.id === conversationId ? { ...conv, messages: mappedMessages } : conv
+      conv.id === conversationId ? { ...conv, messages: mappedMessages, historyLoaded: true } : conv
     ));
     setSelectedConversation(prev =>
-      prev?.id === conversationId ? { ...prev, messages: mappedMessages } : prev
+      prev?.id === conversationId ? { ...prev, messages: mappedMessages, historyLoaded: true } : prev
     );
   }, []);
 
@@ -674,6 +674,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                   updatedAt: new Date(convData.updated_at),
                   waitTime: convData.wait_time || 0,
                   channel: (convData.channel || 'whatsapp') as Conversation['channel'],
+                  historyLoaded: true, // Full messages were fetched
                 };
                 
                 setConversations(current => {
@@ -1013,7 +1014,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Incremental polling for selected conversation (5s) — only fetches NEW messages
   useEffect(() => {
-    if (!selectedConversation) return;
+    if (!selectedConversation || !selectedConversation.historyLoaded) return;
 
     const convId = selectedConversation.id;
 

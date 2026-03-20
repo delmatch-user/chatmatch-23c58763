@@ -124,6 +124,7 @@ export default function FranqueadoPanel() {
           waitTime: conv.wait_time || 0,
           channel: 'machine' as const,
           protocol: conv.protocol || undefined,
+          historyLoaded: true,
         };
       });
 
