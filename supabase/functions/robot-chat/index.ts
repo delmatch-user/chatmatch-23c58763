@@ -1440,7 +1440,7 @@ async function handleAutomaticMode(body: {
             reason: args.reason
           });
           
-          aiResponse = args.message_to_client || '';
+          aiResponse = ''; // Robô destino responde, não a Delma
           skipSending = true; // O robô destino vai responder
           actionTaken = true;
           
@@ -1543,7 +1543,9 @@ async function handleAutomaticMode(body: {
   // Delay de 3s para garantir que a mensagem do cliente carregou na tela dos atendentes
   await new Promise(resolve => setTimeout(resolve, 3000));
 
-  for (let i = 0; i < messageParts.length; i++) {
+  // Pular salvamento no DB quando houve transfer_to_robot (robô destino responde)
+  const hasTransferToolUsed = skipSending && aiResponse === '';
+  for (let i = 0; i < messageParts.length && !hasTransferToolUsed; i++) {
     const part = messageParts[i];
     
     // Salvar cada parte no banco
