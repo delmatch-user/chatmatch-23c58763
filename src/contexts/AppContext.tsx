@@ -674,6 +674,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                   updatedAt: new Date(convData.updated_at),
                   waitTime: convData.wait_time || 0,
                   channel: (convData.channel || 'whatsapp') as Conversation['channel'],
+                  historyLoaded: true, // Full messages were fetched
                 };
                 
                 setConversations(current => {

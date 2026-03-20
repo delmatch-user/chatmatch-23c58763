@@ -136,12 +136,12 @@ export function ChatPanel({ conversation, showContactDetails, onToggleContactDet
     ? users.find(u => u.id === conversation?.assignedTo)
     : null;
 
-  // Lazy-load messages when conversation is selected and has no messages loaded
+  // Lazy-load messages when conversation is selected and history not yet loaded
   useEffect(() => {
-    if (conversation && conversation.messages.length <= 1) {
+    if (conversation && !conversation.historyLoaded) {
       loadConversationMessages(conversation.id);
     }
-  }, [conversation?.id, conversation?.status, loadConversationMessages]);
+  }, [conversation?.id, conversation?.historyLoaded, loadConversationMessages]);
 
   // Scroll to bottom quando mensagens mudam
   useEffect(() => {
