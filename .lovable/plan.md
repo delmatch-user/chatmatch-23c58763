@@ -1,44 +1,53 @@
 
 
-## Acelerar resposta da Delma na triagem
+## Impedir Delma de reassumir conversa após transferência
 
-### Problema identificado
+### Problema
 
-A Delma demora para responder porque o código aplica delays excessivos:
+Quando Delma transfere para Sebastião via `transfer_to_robot`, a conversa fica com `assigned_to_robot = Sebastião` e `robot_transferred = false` (intencional para robot-to-robot). Porém, se `sync-robot-schedules` ou um webhook re-dispara `robot-chat` com o ID da Delma, os guards iniciais não verificam se a conversa ainda pertence à Delma:
 
-1. **Delay inicial de 3s** (linha 733) — aceitável, serve para evitar duplicação
-2. **Agrupamento de mensagens: 40s** (padrão `groupMessagesTime`) — muito lento para triagem
-3. **Delay fixo de 30s** quando agrupamento está desativado (linha 984) — desnecessário para triage
+- `robot_transferred` = false (pass)
+- `assigned_to` = null (pass)
+- `robot_lock_until` = null (pass, pois transfer_to_robot limpa o lock)
 
-Resultado: mesmo quando o cliente já mandou o assunto, Delma espera 40s antes de ler e responder.
+Resultado: Delma processa novamente, responde com mensagem de transferência duplicada.
 
-### Correções
+### Correção
 
 **Arquivo: `supabase/functions/robot-chat/index.ts`**
 
-1. **Reduzir delay padrão sem agrupamento**: Trocar o fallback de 30s para 5s (linha 984). Quando `groupMessages` está desativado, não faz sentido esperar 30s.
+1. **Adicionar `assigned_to_robot` ao SELECT inicial** (linha 687): incluir o campo no query da conversa.
 
-2. **Modo triagem inteligente**: Quando `groupMessages` está ativado, verificar se a primeira mensagem do cliente já contém conteúdo substantivo (mais de 15 caracteres ou mais de 2 palavras). Se sim, reduzir o tempo de agrupamento pela metade (ex: 40s → 20s), pois o cliente provavelmente já relatou o assunto. Se a mensagem é curta (tipo "oi", "olá"), manter o delay normal para aguardar o assunto completo.
-
-3. **Reduzir delay de transferência**: O delay de 30s para transferências é importante para feedback visual, mas pode ser reduzido para 15s para agilizar a resposta do especialista.
-
-### Mudança no código (linha ~984)
+2. **Novo guard: verificar ownership do robô** (após linha 698): Se `convData.assigned_to_robot` existe e é diferente do `robotId` atual, e não é uma transferência explícita (`isTransfer`), abortar imediatamente.
 
 ```text
-ANTES:
-  effectiveDelay = isFromTransfer ? max(30, groupTime) : (groupMessages ? groupTime : 30)
+// Logo após o ROBOT_TRANSFERRED GUARD (linha 698):
+if (convData?.assigned_to_robot && convData.assigned_to_robot !== robotId && !isTransfer) {
+  console.log(`[Robot-Chat Auto] Conversa ${conversationId} pertence ao robô ${convData.assigned_to_robot}, não ao ${robotId}. Ignorando.`);
+  return { skipped: true, reason: 'assigned_to_different_robot' };
+}
+```
 
-DEPOIS:
-  Se isFromTransfer → 15s (ou groupTime, o que for maior)
-  Se groupMessages:
-    - última msg do cliente > 15 chars → groupTime / 2 (mínimo 10s)
-    - última msg curta → groupTime normal
-  Se !groupMessages → 5s
+3. **Adicionar guard de transferência recente FROM this robot** (antes do lock): Verificar se este robô já transferiu esta conversa nos últimos 120 segundos. Se sim, abortar.
+
+```text
+// Antes do lock imediato (linha 727):
+const { data: recentOutboundTransfer } = await supabase
+  .from('transfer_logs')
+  .select('id')
+  .eq('conversation_id', conversationId)
+  .eq('from_robot_id', robotId)
+  .gte('created_at', new Date(Date.now() - 120000).toISOString())
+  .limit(1)
+  .maybeSingle();
+
+if (recentOutboundTransfer && !isTransfer) {
+  return { skipped: true, reason: 'robot_recently_transferred_out' };
+}
 ```
 
 ### Impacto
-- Delma responde em ~8s quando o cliente já disse o assunto (ao invés de 43s)
-- Delma responde em ~43s quando o cliente manda só "oi" (mantém agrupamento para esperar o assunto)
-- Especialistas (Júlia/Sebastião) respondem em ~18s após transferência (ao invés de 33s)
-- Nenhuma mudança nas instruções do robô — a lógica de triagem já está no prompt
+- Delma nunca mais reassume uma conversa que já transferiu para outro robô
+- Nenhuma mudança no fluxo normal: transferências legítimas (com `isTransfer: true`) continuam funcionando
+- Dupla proteção: ownership check + outbound transfer check
 
