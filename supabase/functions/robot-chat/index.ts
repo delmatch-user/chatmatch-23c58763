@@ -1100,7 +1100,7 @@ async function handleAutomaticMode(body: {
   // Inclui robôs ativos OU especialistas (auto_assign=false) independente do status
   const { data: otherRobots } = await supabase
     .from('robots')
-    .select('id, name, description, auto_assign, status')
+    .select('id, name, description, auto_assign, status, departments, channels')
     .neq('id', robotId)
     .or('status.eq.active,auto_assign.eq.false');
   
