@@ -1014,7 +1014,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Incremental polling for selected conversation (5s) — only fetches NEW messages
   useEffect(() => {
-    if (!selectedConversation) return;
+    if (!selectedConversation || !selectedConversation.historyLoaded) return;
 
     const convId = selectedConversation.id;
 
