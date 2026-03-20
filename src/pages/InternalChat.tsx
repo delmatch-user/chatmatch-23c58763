@@ -192,20 +192,26 @@ export default function InternalChat() {
   // Sort users by last activity (most recent first)
   const sortedFilteredUsers = useMemo(() => {
     return [...filteredUsers].sort((a, b) => {
+      const aUnread = unreadDetails.users[a.id] || 0;
+      const bUnread = unreadDetails.users[b.id] || 0;
+      
+      // Unread users come first
+      if (aUnread > 0 && bUnread === 0) return -1;
+      if (aUnread === 0 && bUnread > 0) return 1;
+      
+      // Among unread or among read, sort by last activity
       const aTime = lastActivityDetails.users[a.id];
       const bTime = lastActivityDetails.users[b.id];
       
-      // Users with messages come first
       if (aTime && bTime) {
         return new Date(bTime).getTime() - new Date(aTime).getTime();
       }
       if (aTime && !bTime) return -1;
       if (!aTime && bTime) return 1;
       
-      // Fallback: sort by name
       return a.name.localeCompare(b.name);
     });
-  }, [filteredUsers, lastActivityDetails.users]);
+  }, [filteredUsers, lastActivityDetails.users, unreadDetails.users]);
 
   // Fetch messages when selection changes
   useEffect(() => {
@@ -490,7 +496,9 @@ export default function InternalChat() {
                   {sortedFilteredUsers.length === 0 ? (
                     <div className="p-4 text-sm text-muted-foreground">Nenhum membro encontrado.</div>
                   ) : (
-                    sortedFilteredUsers.map((u) => (
+                    sortedFilteredUsers.map((u) => {
+                      const hasUnread = (unreadDetails.users[u.id] || 0) > 0;
+                      return (
                       <button
                         key={u.id}
                         onClick={() => {
@@ -501,7 +509,9 @@ export default function InternalChat() {
                           'w-full flex items-start gap-3 p-3 rounded-lg transition-all',
                           selectedUserId === u.id
                             ? 'bg-primary/10 text-primary'
-                            : 'hover:bg-secondary text-foreground'
+                            : hasUnread
+                              ? 'bg-primary/5 hover:bg-primary/10 text-foreground font-medium'
+                              : 'hover:bg-secondary text-foreground'
                         )}
                       >
                         <div className="relative mt-0.5">
@@ -520,13 +530,10 @@ export default function InternalChat() {
                               u.status === 'offline' && 'bg-offline'
                             )}
                           />
-                          {unreadDetails.users[u.id] > 0 && (
-                            <span className="absolute -top-1 -right-1 w-3 h-3 bg-orange-500 rounded-full border-2 border-card" />
-                          )}
                         </div>
 
                         <div className="flex-1 text-left min-w-0">
-                          <p className="font-medium truncate">{u.name}</p>
+                          <p className={cn("truncate", hasUnread ? "font-semibold" : "font-medium")}>{u.name}</p>
                           <p className="text-xs text-muted-foreground capitalize">{u.role}</p>
 
                           {u.departments.length > 0 && (
@@ -548,8 +555,14 @@ export default function InternalChat() {
                             </div>
                           )}
                         </div>
+                        {hasUnread && (
+                          <Badge className="bg-primary text-primary-foreground text-xs min-w-[20px] h-5 flex items-center justify-center shrink-0 mt-1">
+                            {unreadDetails.users[u.id]}
+                          </Badge>
+                        )}
                       </button>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               )}

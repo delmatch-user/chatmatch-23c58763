@@ -111,20 +111,18 @@ export function useUnreadMessages() {
       }
 
       // Count unread DMs per sender
-      let dmQuery = supabase
+      const { data: unreadDMs } = await supabase
         .from('internal_messages')
         .select('id, sender_id, created_at')
         .is('channel_id', null)
         .eq('receiver_id', profile.id)
         .neq('sender_id', profile.id);
       
-      const { data: unreadDMs } = await dmQuery;
-      
       if (unreadDMs) {
         for (const dm of unreadDMs) {
           const lastDmRead = lastReadTimestamps[`dm_${dm.sender_id}`];
-          // Check if this DM is after last read
-          if (!lastDmRead) {
+          // Count as unread if no lastRead OR if message is newer than lastRead
+          if (!lastDmRead || dm.created_at > lastDmRead) {
             userCounts[dm.sender_id] = (userCounts[dm.sender_id] || 0) + 1;
             totalUnread += 1;
           }
