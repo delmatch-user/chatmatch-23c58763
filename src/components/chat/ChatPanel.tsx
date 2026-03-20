@@ -1307,6 +1307,18 @@ export function ChatPanel({ conversation, showContactDetails, onToggleContactDet
                     Assumir Atendimento
                   </DropdownMenuItem>
                 )}
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onSelect={() => {
+                    if (conversation) {
+                      loadConversationMessages(conversation.id);
+                      toast.success('Histórico recarregado');
+                    }
+                  }}
+                >
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Recarregar histórico
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
             {onToggleContactDetails && (
