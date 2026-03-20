@@ -1267,18 +1267,16 @@ async function handleAutomaticMode(body: {
         );
         
         if (targetDept) {
-          // Verificar se o departamento destino tem um robô ativo
-          const { data: targetRobots } = await supabase
-            .from('robots')
-            .select('id, name, departments, channels')
-            .eq('status', 'active');
-          
-          // Filter by department AND channel
-          const targetRobot = targetRobots?.find(r => 
-            r.departments?.includes(targetDept.id) && 
-            r.id !== robotId &&
-            (r.channels || ['whatsapp','instagram','machine']).includes(conversationChannel)
-          ) || null;
+          // Usar availableRobotsForTransfer (já filtrada por transferToAgentIds) 
+          // para respeitar restrições de transferência configuradas no painel
+          const targetRobot = availableRobotsForTransfer.find(r => {
+            // Precisamos verificar se o robô pertence ao departamento destino
+            // availableRobotsForTransfer já tem id/name/description mas não departments
+            // Vamos buscar nos otherRobots originais que têm os dados completos
+            const fullRobot = otherRobots?.find(or => or.id === r.id);
+            return fullRobot?.departments?.includes(targetDept.id) &&
+              (fullRobot.channels || ['whatsapp','instagram','machine']).includes(conversationChannel);
+          }) || null;
 
           if (targetRobot) {
             console.log(`[Robot-Chat Auto] Departamento destino tem robô ativo: ${targetRobot.name}`);
