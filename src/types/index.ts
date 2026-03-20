@@ -82,6 +82,7 @@ export interface Conversation {
   isInternal?: boolean;
   channelId?: string;
   receiverId?: string;
+  historyLoaded?: boolean;
 }
 
 export interface TransferLog {
