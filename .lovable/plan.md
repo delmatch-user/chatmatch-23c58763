@@ -1,28 +1,37 @@
 
 
-## Mostrar histórico completo na fila antes do atendente assumir
+## Corrigir Delma assumindo conversas de outros robôs IA
 
-### Problema
+### Problema identificado
 
-As mensagens do robô ficam salvas no banco corretamente durante transferências, mas o **preview da fila** (`ConversationPreviewDialog`) usa apenas a mensagem sintética do `last_message_preview` — ou seja, mostra somente a última mensagem. O atendente humano não vê o contexto completo (interação com Delma/Sebastião) antes de assumir, e ao abrir a conversa recebe ela "picada".
+Quando um robô especialista (Júlia, Sebastião) usa a ferramenta `transfer_to_department` para transferir uma conversa de volta ao departamento de Suporte, o código busca **qualquer robô ativo** naquele departamento (linha 1271-1281 de `robot-chat/index.ts`). Como Delma é o robô de triagem ativo no Suporte, ela é selecionada automaticamente como `targetRobot` — mesmo que a intenção fosse transferir para um humano ou outro robô específico.
 
-### Correção
+Esse bloco de código **ignora** a restrição `transferToAgentIds` configurada no painel administrativo, que deveria limitar para quais robôs a transferência é permitida.
 
-**Arquivo: `src/components/queue/ConversationPreviewDialog.tsx`**
+Além disso, `transfer_to_department` não filtra por `auto_assign`, então Delma (com `auto_assign: true`) é sempre a primeira escolhida.
 
-Ao abrir o dialog de preview, carregar as mensagens reais do banco (tabela `messages`) ao invés de usar apenas `conversation.messages` (sintético).
+### Solução
 
-1. Adicionar state `realMessages` e um `useEffect` que dispara ao abrir o dialog:
-   - Faz `supabase.from('messages').select('*').eq('conversation_id', conversation.id).order('created_at', { ascending: true })`
-   - Mapeia para o formato `Message[]`
-   - Usa `realMessages` (se carregadas) no lugar de `conversation.messages` para renderizar
+**Arquivo: `supabase/functions/robot-chat/index.ts`**
 
-2. Adicionar indicador de loading enquanto as mensagens são buscadas
+1. **Aplicar filtro `transferToAgentIds` no `transfer_to_department`**: Quando o robô tem restrições de transferência configuradas (`transferToAgentsMode === 'select'`), o `targetRobot` encontrado pelo `transfer_to_department` deve respeitar essa lista. Se Delma não estiver na lista, a conversa vai para a fila sem robô.
 
-3. Manter fallback para `conversation.messages` caso a busca falhe
+2. **Respeitar `auto_assign` no `transfer_to_department`**: Só selecionar como `targetRobot` robôs que tenham `auto_assign: true`, evitando atribuir robôs especialistas que só devem receber transferências diretas.
+
+3. **Usar a lista `availableRobotsForTransfer` já filtrada** ao invés de fazer uma query separada, garantindo consistência com as mesmas regras do `transfer_to_robot`.
+
+```text
+Antes:
+  transfer_to_department → query TODOS os robôs ativos → pega Delma
+
+Depois:
+  transfer_to_department → usa availableRobotsForTransfer (já filtrada)
+                         → filtra por dept destino + canal
+                         → se nenhum robô permitido, vai pra fila
+```
 
 ### Impacto
-- Atendente vê TODO o histórico (mensagens do cliente + respostas dos robôs + mensagens de sistema) antes de assumir
-- Contexto completo visível sem precisar assumir primeiro
-- Nenhuma mudança no fluxo de banco de dados ou no robot-chat
+- Delma só assumirá conversas transferidas por departamento se estiver na lista de robôs permitidos do robô que transfere
+- Robôs especialistas poderão transferir para departamentos sem que Delma recapture automaticamente
+- A flag `robot_transferred` será corretamente setada quando não houver robô destino permitido
 
