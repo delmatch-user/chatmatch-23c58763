@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 
 interface RankingConfig {
+  is_active: boolean;
   conversations_goal_daily: number;
   conversations_goal_weekly: number;
   conversations_goal_monthly: number;
@@ -38,6 +39,7 @@ interface AgentRanking {
 }
 
 const defaultConfig: RankingConfig = {
+  is_active: true,
   conversations_goal_daily: 15,
   conversations_goal_weekly: 75,
   conversations_goal_monthly: 300,
