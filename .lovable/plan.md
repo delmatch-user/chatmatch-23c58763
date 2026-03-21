@@ -1,21 +1,25 @@
 
 
-## Plano: Toggle Ativar/Desativar Ranking
+## Plano: Sincronizar Ranking do Dashboard com a Página de Ranking
 
-### 1. Migração de banco
-Adicionar coluna `is_active BOOLEAN NOT NULL DEFAULT true` na tabela `ranking_config`.
+### Problema
+O ranking no AdminDashboard e a página Ranking usam queries e lógicas diferentes:
 
-### 2. Alterar `AdminRankingConfig.tsx`
-- Adicionar `is_active` ao interface `RankingConfig` e ao `defaultConfig`.
-- Adicionar um `Switch` no header (ao lado do botão Salvar) com label "Ranking Ativo/Inativo".
-- Incluir `is_active` nos payloads de `insert` e `update` do `handleSave`.
+| Aspecto | Dashboard | Ranking |
+|---------|-----------|---------|
+| Filtro `reset_at` | Nenhum | `IS NULL` |
+| Filtro de data | Nenhum (all-time) | Apenas hoje |
+| Ordenação | Total de conversas | Score ponderado (conversas + TMA + TME) |
 
-### 3. Alterar `Ranking.tsx`
-- Ler `is_active` do config carregado.
-- Se `is_active === false`, exibir mensagem "O ranking está desativado" e não renderizar a lista.
+### Solução
+Alterar `fetchAgentRanking` no `AdminDashboard.tsx` para usar os mesmos filtros e cálculos da página Ranking:
 
-### Arquivos
-- Nova migração SQL
-- `src/pages/admin/AdminRankingConfig.tsx`
-- `src/pages/Ranking.tsx`
+1. Adicionar `.is('reset_at', null)` na query
+2. Adicionar `.gte('finalized_at', today.toISOString())` para filtrar apenas hoje
+3. Buscar `ranking_config` do departamento Suporte para obter os pesos e metas
+4. Calcular score ponderado igual ao Ranking (conversas vs meta, TMA score, TME score)
+5. Ordenar por score em vez de total de conversas
+
+### Arquivo
+- `src/pages/admin/AdminDashboard.tsx` — alterar `fetchAgentRanking` e adicionar fetch de `ranking_config`
 
