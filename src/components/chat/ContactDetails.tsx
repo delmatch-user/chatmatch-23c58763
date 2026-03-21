@@ -405,6 +405,22 @@ export function ContactDetails({ conversation }: ContactDetailsProps) {
         </div>
       </Collapsible>
 
+      {/* Handoff Summary - Resumo Invisível (only for Suporte) */}
+      {(conversation as any).handoffSummary && (
+        <Collapsible open={sectionsOpen.resumo ?? true} onOpenChange={() => toggleSection('resumo' as any)}>
+          <div className="border-b border-border">
+            <SectionHeader title="📋 Resumo da IA" isOpen={sectionsOpen.resumo ?? true} onToggle={() => toggleSection('resumo' as any)} />
+            <CollapsibleContent>
+              <div className="px-4 pb-4">
+                <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
+                  <p className="text-sm text-foreground whitespace-pre-wrap">{(conversation as any).handoffSummary}</p>
+                </div>
+              </div>
+            </CollapsibleContent>
+          </div>
+        </Collapsible>
+      )}
+
       {/* Notes - Collapsible */}
       {conversation.contact.notes && (
         <Collapsible open={sectionsOpen.notas} onOpenChange={() => toggleSection('notas')}>
