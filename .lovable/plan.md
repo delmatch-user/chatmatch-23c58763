@@ -1,46 +1,31 @@
 
 
-## Plano: Corrigir Robô SDR Não Enviando Simulação
+## Plano: Garantir que IAs Entendam e Ajam com Base no Motivo da Transferência
 
-### Problema Raiz
-
-Nos logs, o Arthur (robô SDR) chama a ferramenta `edit_contact` para anotar informações do lead (ex: "interesse em Praia Grande"), mas a IA retorna **somente tool calls sem texto**. O código atual trata isso como erro ("Empty response") e para — nunca envia a simulação ao cliente.
-
-Isso acontece porque o código não implementa o **loop de tool calls** padrão da OpenAI/Gemini: após processar tool calls, é preciso enviar os resultados de volta à IA para que ela gere a resposta final.
+### Problema
+Ambas as Edge Functions (`robot-chat` e `sdr-robot-chat`) já buscam o motivo da transferência de `transfer_logs` e injetam como mensagem de sistema. Porém, essa mensagem é colocada **após** o histórico de conversa, onde LLMs tendem a depriorizá-la. A IA pode ignorar a instrução e dar uma resposta genérica em vez de seguir o motivo.
 
 ### Solução
+Mover o contexto da transferência para **imediatamente após o system prompt principal**, antes do histórico de conversa, onde a IA dará máxima atenção.
 
-Alterar `supabase/functions/sdr-robot-chat/index.ts`:
+### Alterações
 
-**1. Marcar `edit_contact` e `manage_labels` como `actionTaken`**
-- Atualmente só `advance_lead_stage` e `transfer_to_human` setam `actionTaken = true`
-- Adicionar `actionTaken = true` para os outros tools também, para não dar erro silencioso
+**1. `supabase/functions/robot-chat/index.ts` (~linha 1165)**
+- Mover o bloco `lastTransfer?.reason` de depois do `conversationHistory` para logo após o system prompt
+- Estrutura: `[systemPrompt, transferContext, ...conversationHistory]`
 
-**2. Implementar follow-up AI call (tool result loop)**
-Após processar tool calls não-transferência com `responseText` vazio:
-- Montar mensagens com os resultados dos tools (`role: "tool"`)
-- Fazer uma segunda chamada à IA **sem tools** para obter a resposta textual
-- Isso permite que o Arthur execute `edit_contact` E gere a simulação na sequência
+**2. `supabase/functions/sdr-robot-chat/index.ts` (~linha 887)**
+- Mesma mudança: mover `lastTransfer?.reason` para antes do histórico
+- Reforçar a instrução para que o Arthur aja imediatamente com base no motivo (ex: enviar simulação)
 
+### Exemplo da mudança
 ```text
-Fluxo atual (quebrado):
-  Cliente: "Praia Grande"
-  → IA retorna: tool_call(edit_contact) + content: ""
-  → Código processa edit_contact
-  → responseText="" && actionTaken=false → ERRO "Empty response"
+ANTES:
+  messages: [systemPrompt, ...history, transferContext]
 
-Fluxo corrigido:
-  Cliente: "Praia Grande"  
-  → IA retorna: tool_call(edit_contact) + content: ""
-  → Código processa edit_contact
-  → responseText="" → Follow-up call sem tools
-  → IA retorna: "Ótimo! Veja a simulação para Praia Grande..."
-  → Mensagem enviada ao cliente ✅
+DEPOIS:
+  messages: [systemPrompt, transferContext, ...history]
 ```
 
-**3. Não limpar `responseText` quando não há transfer/advance**
-- O bloco `hasTransferTool` (linhas 959-964) já é correto, mas garantir que não afete tool calls de `edit_contact`
-
-### Arquivo
-- `supabase/functions/sdr-robot-chat/index.ts` — adicionar follow-up call e marcar actionTaken para todos os tools
+Isso garante que a IA processe o motivo como contexto prioritário antes de ver as mensagens, resultando em respostas alinhadas com a instrução do atendente.
 
