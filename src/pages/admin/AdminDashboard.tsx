@@ -137,6 +137,7 @@ export default function AdminDashboard() {
   const [hourlyData, setHourlyData] = useState<any[]>([]);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [agentRanking, setAgentRanking] = useState<AgentRanking[]>([]);
+  const [todayFinalized, setTodayFinalized] = useState<number>(0);
 
   // Buscar métricas de tempo dos logs
   const fetchTimeMetrics = async () => {
@@ -391,7 +392,7 @@ export default function AdminDashboard() {
   const totalConversations = conversations.length;
   const inQueue = conversations.filter(c => c.status === 'em_fila').length;
   const inProgress = conversations.filter(c => c.status === 'em_atendimento').length;
-  const completed = conversations.filter(c => c.status === 'finalizada').length;
+  const completed = todayFinalized;
   const onlineUsers = users.filter(u => u.status === 'online').length;
   const awayUsers = users.filter(u => u.status === 'away').length;
 
