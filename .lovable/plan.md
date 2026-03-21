@@ -1,32 +1,41 @@
 
 
-## Plano: Adicionar campo Cidade no Pipeline de Leads
+## Plano: Preencher campo Cidade nos leads existentes (Qualificado e Proposta)
 
-### Problema
-O robô Arthur coleta a cidade do lead mas salva apenas no campo `notes` (texto livre) do contato — sem campo estruturado. O pipeline não exibe a cidade.
+### Contexto
+Encontrei **23 leads** nos stages "Qualificado" e "Proposta" sem cidade preenchida. Analisei as mensagens do Arthur em cada conversa e identifiquei a cidade mencionada na simulação em **21 deles**. Apenas 2 leads (Aniger e Andre) não tiveram cidade identificável nas mensagens.
 
 ### Solução
+Executar uma migration SQL para atualizar o campo `city` na tabela `contacts` com base nos dados extraídos das conversas:
 
-**1. Adicionar coluna `city` na tabela `contacts`**
-- Nova migration: `ALTER TABLE contacts ADD COLUMN city TEXT DEFAULT NULL`
-- Migrar dados existentes: extrair cidade de `notes` onde possível (padrão `franqueado:Cidade`)
+| Lead | Cidade |
+|------|--------|
+| Praia Grande | Praia Grande |
+| felipequimura | São Paulo |
+| Ciceron | São Paulo |
+| rogiriotoledo29 | Barretos |
+| Roberley Alves | Lorena |
+| Cid Monteiro | Piraju |
+| (Cris) amor a cristo | Atibaia |
+| Pedro Toledo | Franca |
+| deisecarvalhocarvalho | Saquarema |
+| Eduardo Alcantara Brecht | Itu |
+| José Carlos | Guaratinguetá |
+| Nelsom | Morro Redondo |
+| ita | Itapetininga |
+| Paulo Jorge Da Conceição | Araraquara |
+| Sergio Nepomuceno | Conselheiro Pena |
+| Adriano | Piracaia |
+| Marli | Pedra Azul |
+| allanmartins190 | Botucatu |
+| Alexandro Dias | João Pessoa |
+| Hélio Francisco Dos Reis | Pitangueiras |
+| José Francisco Lopes | Jaú |
 
-**2. Atualizar `edit_contact` no `sdr-robot-chat`**
-- Adicionar parâmetro `city` no schema da tool
-- No handler, salvar `city` no campo dedicado (além de `notes`)
+### Implementação
+- Uma migration SQL com `UPDATE contacts SET city = '...' WHERE id = (SELECT contact_id FROM sdr_deals WHERE id = '...')` para cada lead identificado.
+- Nenhuma alteração de código necessária — o campo `city` já é exibido no pipeline.
 
-**3. Atualizar `fetchPipeline` no `sdrApi.ts`**
-- Incluir `city` no select: `contact:contacts(name, phone, city)`
-- Adicionar `contactCity` ao tipo `SDRDeal`
-
-**4. Exibir cidade no pipeline UI (`SDRPipelinePage.tsx`)**
-- **No card do deal**: mostrar a cidade abaixo do nome da empresa (com ícone MapPin)
-- **No drawer lateral**: exibir campo "Cidade" na seção de informações
-- Para stages "Qualificado" e "Proposta", a cidade aparecerá automaticamente assim que o Arthur ou o atendente a preencher
-
-### Arquivos alterados
-- `supabase/functions/sdr-robot-chat/index.ts` — tool schema + handler
-- `src/services/sdrApi.ts` — tipo SDRDeal + query
-- `src/pages/sdr/SDRPipelinePage.tsx` — UI cards + drawer
-- Migration SQL — nova coluna + migração de dados
+### Resultado
+Após a migration, os cards desses leads no pipeline mostrarão a cidade com o ícone de MapPin automaticamente.
 
