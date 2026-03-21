@@ -1402,19 +1402,21 @@ async function handleAutomaticMode(body: {
         const isUrgent = taxonomyTag.includes('ACIDENTE_URGENTE');
         
         // Colocar na fila para atendente humano
+        const updatePayload: Record<string, unknown> = {
+          status: 'em_fila',
+          assigned_to_robot: null,
+          assigned_to: null,
+          wait_time: 0,
+          robot_transferred: true,
+          handoff_summary: handoffSummary,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        if (isUrgent) updatePayload.priority = 'urgent';
+        
         await supabase
           .from('conversations')
-          .update({
-            status: 'em_fila',
-            assigned_to_robot: null,
-            assigned_to: null,
-            wait_time: 0,
-            robot_transferred: true,
-            handoff_summary: handoffSummary,
-            priority: isUrgent ? 'urgent' : undefined,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
+          .update(updatePayload)
           .eq('id', conversationId);
         
         // Adicionar tag de taxonomia à conversa
