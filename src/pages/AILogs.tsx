@@ -10,9 +10,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
-import { Search, MessageSquare, Clock, Bot, Instagram, MessageCircle, CalendarIcon, Bike, AlertTriangle } from 'lucide-react';
+import { Search, MessageSquare, Clock, Bot, Instagram, CalendarIcon, Bike, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-import { MessageAttachment } from '@/components/chat/MessageAttachment';
+import { useApp } from '@/contexts/AppContext';
 import { useApp } from '@/contexts/AppContext';
 import { format, startOfDay, endOfDay, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -417,7 +417,7 @@ export default function AILogs() {
                         >
                           <p className="text-xs font-medium mb-0.5 opacity-70">{msg.sender_name}</p>
                           {msg.message_type === 'image' || msg.message_type === 'file' || msg.message_type === 'audio' ? (
-                            <MessageAttachment content={msg.content} type={msg.message_type} />
+                            <p className="text-xs italic opacity-70">[{msg.message_type}]</p>
                           ) : (
                             <p className="whitespace-pre-wrap break-words">{msg.content}</p>
                           )}
