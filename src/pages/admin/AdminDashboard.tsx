@@ -127,6 +127,7 @@ interface AgentRanking {
   totalConversations: number;
   avgServiceTime: number; // in minutes
   avgWaitTime: number; // in minutes
+  score: number;
 }
 
 export default function AdminDashboard() {
