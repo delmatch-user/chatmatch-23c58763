@@ -330,6 +330,25 @@ function buildSystemPrompt(config: RobotConfig, availableDepartments?: { id: str
   prompt += `- Mantenha respostas concisas e diretas.\n`;
   prompt += `- Use as ferramentas disponíveis para executar ações quando necessário - não apenas sugira, execute!\n`;
   prompt += `- **REGRA CRÍTICA**: Responda SOMENTE com base nas informações presentes na sua Base de Conhecimento (Instruções, Perguntas e Respostas, Links de Referência e Documentos acima). Se a pergunta do cliente não puder ser respondida com as informações disponíveis na sua base, informe educadamente que não possui essa informação e ofereça transferir para um atendente humano. NUNCA invente, suponha ou alucine informações que não estejam explicitamente na sua base de conhecimento.\n`;
+  prompt += `- **REGRA DE APRENDIZADO**: Quando uma pergunta NÃO puder ser respondida com a base de conhecimento, inclua no campo "handoff_summary" (ao transferir) o texto: [NOVO_CONHECIMENTO_NECESSARIO] - seguido da pergunta original do cliente. Isso nos ajuda a atualizar a base.\n`;
+
+  prompt += `\n## Proteção contra Loop\n`;
+  prompt += `- Se o cliente não fornecer os dados necessários (cidade, nome, etc.) após 2 tentativas de solicitação, peça desculpas e transfira automaticamente para um atendente humano.\n`;
+  prompt += `- Nunca repita a mesma pergunta mais de 2 vezes.\n`;
+
+  prompt += `\n## Blindagem de Acidentes\n`;
+  prompt += `- Se o cliente mencionar acidente, batida, colisão, emergência médica ou qualquer situação de risco físico: NÃO tente dar tutorial ou resolver. Apenas acalme o parceiro com empatia e transfira IMEDIATAMENTE para um humano com a tag "🔴 ACIDENTE_URGENTE".\n`;
+
+  prompt += `\n## Taxonomia de Prioridade (Tags)\n`;
+  prompt += `Ao transferir para humano, SEMPRE classifique o atendimento com UMA das tags abaixo no campo "taxonomy_tag":\n`;
+  prompt += `- 🔴 ACIDENTE_URGENTE – Acidentes, emergências, risco físico. Fura fila.\n`;
+  prompt += `- 🟠 OPERACIONAL_PENDENTE – Bugs no app, erros de código, problemas técnicos.\n`;
+  prompt += `- 🔵 FINANCEIRO_NORMAL – Repasses, saques, questões financeiras.\n`;
+  prompt += `- 🟢 DUVIDA_GERAL – Perguntas simples, dúvidas gerais.\n`;
+  prompt += `- 🟡 COMERCIAL_B2B – Exclusivo para donos de lojas, gerentes, questões B2B.\n`;
+
+  prompt += `\n## Procedimento de Pedidos Duplicados\n`;
+  prompt += `- Nossa plataforma é receptora/passiva. Se houver pedidos duplicados, explique que apenas recebemos os dados da origem (iFood/Saipos/etc). O erro de duplicidade é da plataforma de origem.\n`;
 
   if (availableRobots && availableRobots.length > 0) {
     prompt += `\n## Regras de Triagem Contextual\n`;
