@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
+import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,6 +16,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 interface RankingConfig {
   id?: string;
   department_id: string;
+  is_active: boolean;
   conversations_goal_daily: number;
   conversations_goal_weekly: number;
   conversations_goal_monthly: number;
@@ -28,6 +30,7 @@ interface RankingConfig {
 }
 
 const defaultConfig: Omit<RankingConfig, 'department_id'> = {
+  is_active: true,
   conversations_goal_daily: 15,
   conversations_goal_weekly: 75,
   conversations_goal_monthly: 300,
@@ -110,6 +113,7 @@ export default function AdminRankingConfig() {
         const { error } = await supabase
           .from('ranking_config')
           .update({
+            is_active: config.is_active,
             conversations_goal_daily: config.conversations_goal_daily,
             conversations_goal_weekly: config.conversations_goal_weekly,
             conversations_goal_monthly: config.conversations_goal_monthly,
@@ -130,6 +134,7 @@ export default function AdminRankingConfig() {
           .from('ranking_config')
           .insert({
             department_id: suporteDept.id,
+            is_active: config.is_active,
             conversations_goal_daily: config.conversations_goal_daily,
             conversations_goal_weekly: config.conversations_goal_weekly,
             conversations_goal_monthly: config.conversations_goal_monthly,
@@ -204,14 +209,27 @@ export default function AdminRankingConfig() {
               </p>
             </div>
           </div>
-          <Button onClick={handleSave} disabled={saving || totalWeight !== 100}>
-            {saving ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            ) : (
-              <Save className="w-4 h-4 mr-2" />
+          <div className="flex items-center gap-4">
+            {config && (
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={config.is_active}
+                  onCheckedChange={(checked) => updateConfig('is_active', checked as any)}
+                />
+                <span className={`text-sm font-medium ${config.is_active ? 'text-green-500' : 'text-muted-foreground'}`}>
+                  {config.is_active ? 'Ranking Ativo' : 'Ranking Inativo'}
+                </span>
+              </div>
             )}
-            Salvar Configurações
-          </Button>
+            <Button onClick={handleSave} disabled={saving || totalWeight !== 100}>
+              {saving ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4 mr-2" />
+              )}
+              Salvar Configurações
+            </Button>
+          </div>
         </div>
 
         {loading ? (

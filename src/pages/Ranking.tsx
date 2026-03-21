@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 
 interface RankingConfig {
+  is_active: boolean;
   conversations_goal_daily: number;
   conversations_goal_weekly: number;
   conversations_goal_monthly: number;
@@ -38,6 +39,7 @@ interface AgentRanking {
 }
 
 const defaultConfig: RankingConfig = {
+  is_active: true,
   conversations_goal_daily: 15,
   conversations_goal_weekly: 75,
   conversations_goal_monthly: 300,
@@ -333,6 +335,20 @@ export default function Ranking() {
     
     return { totalConversations, avgTMA, avgTME, avgScore, activeAgents };
   }, [ranking]);
+
+  if (!config.is_active) {
+    return (
+      <MainLayout>
+        <div className="p-4 sm:p-6 flex flex-col items-center justify-center min-h-[60vh]">
+          <Trophy className="w-16 h-16 text-muted-foreground/30 mb-4" />
+          <h2 className="text-xl font-semibold text-foreground mb-2">Ranking Desativado</h2>
+          <p className="text-muted-foreground text-center">
+            O ranking está temporariamente desativado pelo administrador.
+          </p>
+        </div>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout>

@@ -1,0 +1,1 @@
+ALTER TABLE public.ranking_config ADD COLUMN is_active boolean NOT NULL DEFAULT true;

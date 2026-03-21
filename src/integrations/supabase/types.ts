@@ -958,6 +958,7 @@ export type Database = {
           created_at: string
           department_id: string
           id: string
+          is_active: boolean
           tma_green_limit: number
           tma_yellow_limit: number
           tme_green_limit: number
@@ -974,6 +975,7 @@ export type Database = {
           created_at?: string
           department_id: string
           id?: string
+          is_active?: boolean
           tma_green_limit?: number
           tma_yellow_limit?: number
           tme_green_limit?: number
@@ -990,6 +992,7 @@ export type Database = {
           created_at?: string
           department_id?: string
           id?: string
+          is_active?: boolean
           tma_green_limit?: number
           tma_yellow_limit?: number
           tme_green_limit?: number
