@@ -317,23 +317,41 @@ export function ConversationList({
       // 3. Verificar se já existe conversa ativa para este contato
       const { data: activeConv } = await supabase
         .from('conversations')
-        .select('id')
+        .select('id, assigned_to')
         .eq('contact_id', contactId)
         .in('status', ['em_fila', 'em_atendimento', 'pendente'])
         .maybeSingle();
 
       if (activeConv) {
-        // Já existe conversa ativa — selecionar e abrir automaticamente
+        // Se está com outro atendente, apenas avisar e NÃO abrir
+        if (activeConv.assigned_to && activeConv.assigned_to !== user?.id) {
+          const { data: agentProfile } = await supabase
+            .from('profiles')
+            .select('name')
+            .eq('id', activeConv.assigned_to)
+            .maybeSingle();
+          
+          const agentName = agentProfile?.name || 'outro atendente';
+          toast.warning(`Essa conversa está com o ${agentName}`);
+          return;
+        }
+
+        // Se não tem atendente (fila)
+        if (!activeConv.assigned_to) {
+          toast.info('Este contato já está na fila de atendimento');
+        } else {
+          // É o próprio usuário
+          toast.info('Você já possui uma conversa ativa com este contato');
+        }
+
+        // Abrir a conversa normalmente
         await refetchConversations();
         setSearchTerm('');
         
-        // Buscar a conversa completa no estado local para selecionar
         const fullConv = conversations.find(c => c.id === activeConv.id);
         if (fullConv) {
           setSelectedConversation(fullConv);
         } else {
-          // Se não estiver no estado local ainda (pode ter acabado de ser carregada),
-          // fazer um segundo refetch e tentar encontrar
           const { data: convData } = await supabase
             .from('conversations')
             .select('*, contact:contacts(*)')
@@ -341,7 +359,6 @@ export function ConversationList({
             .maybeSingle();
           
           if (convData) {
-            // Montar objeto Conversation mínimo para seleção imediata
             const convObj: any = {
               ...convData,
               contact: convData.contact,
@@ -351,8 +368,6 @@ export function ConversationList({
             setSelectedConversation(convObj);
           }
         }
-        
-        toast.info('Conversa ativa encontrada para este contato');
         return;
       }
 
