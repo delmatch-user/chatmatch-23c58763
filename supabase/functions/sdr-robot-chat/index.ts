@@ -1125,6 +1125,7 @@ serve(async (req) => {
               await supabase.from('contacts').update(updateData).eq('id', convData.contact_id);
             }
           }
+          actionTaken = true;
         }
 
         else if (fnName === 'manage_labels') {
@@ -1133,6 +1134,7 @@ serve(async (req) => {
           if (args.action === 'add' && !currentTags.includes(args.label)) currentTags.push(args.label);
           else if (args.action === 'remove') currentTags = currentTags.filter(t => t !== args.label);
           await supabase.from('conversations').update({ tags: currentTags, updated_at: new Date().toISOString() }).eq('id', conversationId);
+          actionTaken = true;
         }
       }
     }
