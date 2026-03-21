@@ -224,10 +224,9 @@ export default function AdminDashboard() {
     }
   };
 
-  // Buscar ranking de atendentes (apenas do departamento Suporte)
+  // Buscar ranking de atendentes (apenas do departamento Suporte) - sincronizado com página Ranking
   const fetchAgentRanking = useCallback(async () => {
     try {
-      // Primeiro, buscar o ID do departamento Suporte
       const { data: suporteDept, error: deptError } = await supabase
         .from('departments')
         .select('id')
@@ -240,14 +239,29 @@ export default function AdminDashboard() {
       }
 
       const suporteDeptId = suporteDept?.id;
-      
       if (!suporteDeptId) {
-        console.log('Departamento Suporte não encontrado');
         setAgentRanking([]);
         return;
       }
 
-      // Buscar membros do departamento Suporte
+      // Buscar ranking_config para pesos e metas
+      const { data: rankingConfig } = await supabase
+        .from('ranking_config')
+        .select('*')
+        .eq('department_id', suporteDeptId)
+        .maybeSingle();
+
+      const cfg = {
+        goal: rankingConfig?.conversations_goal_daily ?? 15,
+        tmaGreen: rankingConfig?.tma_green_limit ?? 10,
+        tmaYellow: rankingConfig?.tma_yellow_limit ?? 30,
+        tmeGreen: rankingConfig?.tme_green_limit ?? 10,
+        tmeYellow: rankingConfig?.tme_yellow_limit ?? 30,
+        wConv: rankingConfig?.weight_conversations ?? 50,
+        wTma: rankingConfig?.weight_tma ?? 30,
+        wTme: rankingConfig?.weight_tme ?? 20,
+      };
+
       const { data: suporteMembers, error: membersError } = await supabase
         .from('profile_departments')
         .select('profile_id')
@@ -259,92 +273,74 @@ export default function AdminDashboard() {
       }
 
       const suporteMemberIds = suporteMembers?.map(m => m.profile_id) || [];
-
       if (suporteMemberIds.length === 0) {
         setAgentRanking([]);
         return;
       }
 
-      // Buscar logs apenas do departamento Suporte
+      // Filtros iguais ao Ranking.tsx: apenas hoje, não resetados
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
       const { data, error } = await supabase
         .from('conversation_logs')
         .select('finalized_by, finalized_by_name, started_at, finalized_at, wait_time')
         .not('finalized_by', 'is', null)
         .eq('department_id', suporteDeptId)
-        .in('finalized_by', suporteMemberIds);
+        .in('finalized_by', suporteMemberIds)
+        .is('reset_at', null)
+        .gte('finalized_at', today.toISOString());
 
       if (error) {
         console.error('Erro ao buscar ranking:', error);
         return;
       }
 
-      if (!data || data.length === 0) {
-        setAgentRanking([]);
-        return;
-      }
-
       // Agrupar por atendente
       const agentStats: Record<string, {
-        id: string;
-        name: string;
-        totalConversations: number;
-        totalServiceTime: number;
-        serviceCount: number;
-        totalWaitTime: number;
-        waitCount: number;
+        id: string; name: string;
+        totalConversations: number; totalServiceTime: number; serviceCount: number;
+        totalWaitTime: number; waitCount: number;
       }> = {};
 
-      data.forEach(log => {
+      // Inicializar todos os membros
+      suporteMemberIds.forEach(mid => {
+        const u = users.find(u => u.id === mid);
+        agentStats[mid] = { id: mid, name: u?.name || 'Desconhecido', totalConversations: 0, totalServiceTime: 0, serviceCount: 0, totalWaitTime: 0, waitCount: 0 };
+      });
+
+      data?.forEach(log => {
         const agentId = log.finalized_by;
-        const agentName = log.finalized_by_name || 'Desconhecido';
-
-        if (!agentStats[agentId]) {
-          agentStats[agentId] = {
-            id: agentId,
-            name: agentName,
-            totalConversations: 0,
-            totalServiceTime: 0,
-            serviceCount: 0,
-            totalWaitTime: 0,
-            waitCount: 0,
-          };
-        }
-
+        if (!agentId || !agentStats[agentId]) return;
+        if (log.finalized_by_name) agentStats[agentId].name = log.finalized_by_name;
         agentStats[agentId].totalConversations++;
 
-        // Excluir tempos > 1 hora (3600s) que indicam acúmulo noturno/offline
         if (log.started_at && log.finalized_at) {
-          const serviceTime = (new Date(log.finalized_at).getTime() - new Date(log.started_at).getTime()) / 1000;
-          if (serviceTime > 0 && serviceTime < 3600) {
-            agentStats[agentId].totalServiceTime += serviceTime;
-            agentStats[agentId].serviceCount++;
-          }
+          const st = (new Date(log.finalized_at).getTime() - new Date(log.started_at).getTime()) / 1000;
+          if (st > 0 && st < 3600) { agentStats[agentId].totalServiceTime += st; agentStats[agentId].serviceCount++; }
         }
-
-        if (log.wait_time !== null && log.wait_time !== undefined && log.wait_time > 0 && log.wait_time < 3600) {
-          agentStats[agentId].totalWaitTime += log.wait_time;
-          agentStats[agentId].waitCount++;
+        if (log.wait_time != null && log.wait_time > 0 && log.wait_time < 3600) {
+          agentStats[agentId].totalWaitTime += log.wait_time; agentStats[agentId].waitCount++;
         }
       });
 
-      // Calcular médias e ordenar por total de conversas
+      const timeScore = (min: number, green: number, yellow: number) => min <= green ? 100 : min <= yellow ? 70 : 40;
+
       const ranking: AgentRanking[] = Object.values(agentStats)
         .map(agent => {
           const user = users.find(u => u.id === agent.id);
-          return {
-            id: agent.id,
-            name: agent.name,
-            avatar: user?.avatar,
-            totalConversations: agent.totalConversations,
-            avgServiceTime: agent.serviceCount > 0 
-              ? Math.round(agent.totalServiceTime / agent.serviceCount / 60) 
-              : 0,
-            avgWaitTime: agent.waitCount > 0 
-              ? Math.round(agent.totalWaitTime / agent.waitCount / 60) 
-              : 0,
-          };
+          const avgSvc = agent.serviceCount > 0 ? Math.round(agent.totalServiceTime / agent.serviceCount / 60) : 0;
+          const avgWt = agent.waitCount > 0 ? Math.round(agent.totalWaitTime / agent.waitCount / 60) : 0;
+          let score = 0;
+          if (agent.totalConversations > 0) {
+            const convScore = Math.min((agent.totalConversations / cfg.goal) * 100, 100);
+            const tmaS = timeScore(avgSvc, cfg.tmaGreen, cfg.tmaYellow);
+            const tmeS = avgWt > 0 ? timeScore(avgWt, cfg.tmeGreen, cfg.tmeYellow) : 100;
+            score = Math.round((convScore * cfg.wConv / 100) + (tmaS * cfg.wTma / 100) + (tmeS * cfg.wTme / 100));
+          }
+          return { id: agent.id, name: agent.name, avatar: user?.avatar, totalConversations: agent.totalConversations, avgServiceTime: avgSvc, avgWaitTime: avgWt, score };
         })
-        .sort((a, b) => b.totalConversations - a.totalConversations);
+        .sort((a, b) => b.score - a.score);
 
       setAgentRanking(ranking);
     } catch (error) {
