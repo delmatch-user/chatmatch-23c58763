@@ -137,31 +137,47 @@ export default function AdminDashboard() {
   const [hourlyData, setHourlyData] = useState<any[]>([]);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [agentRanking, setAgentRanking] = useState<AgentRanking[]>([]);
+  const [todayFinalized, setTodayFinalized] = useState<number>(0);
 
   // Buscar métricas de tempo dos logs
   const fetchTimeMetrics = async () => {
     try {
-      // Buscar logs com status 'online' para métricas de tempo (excluir resetados)
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayISO = today.toISOString();
+
+      // Buscar logs com status 'online' para métricas de tempo (apenas hoje, não resetados)
       const { data: onlineLogs, error: onlineError } = await supabase
         .from('conversation_logs')
         .select('started_at, finalized_at, wait_time, agent_status_at_finalization')
         .eq('agent_status_at_finalization', 'online')
-        .is('reset_at', null);
+        .is('reset_at', null)
+        .gte('started_at', todayISO);
 
-      // Buscar TODOS os logs para o gráfico de atividade
+      // Buscar logs para o gráfico de atividade (apenas hoje, filtro no banco)
       const { data: allLogs, error: allError } = await supabase
         .from('conversation_logs')
-        .select('started_at, finalized_at');
+        .select('started_at, finalized_at')
+        .gte('started_at', todayISO);
+
+      // Buscar contagem de finalizadas hoje
+      const { count: finalizedCount, error: finalizedError } = await supabase
+        .from('conversation_logs')
+        .select('id', { count: 'exact', head: true })
+        .is('reset_at', null)
+        .gte('finalized_at', todayISO);
 
       if (onlineError) console.error('Erro logs online:', onlineError);
       if (allError) console.error('Erro todos logs:', allError);
+      if (finalizedError) console.error('Erro finalizadas:', finalizedError);
+
+      setTodayFinalized(finalizedCount ?? 0);
 
       // Calcular métricas de tempo apenas com logs 'online'
       if (onlineLogs && onlineLogs.length > 0) {
         let totalServiceTime = 0;
         let serviceCount = 0;
 
-        // Excluir tempos > 1 hora (3600s) que indicam acúmulo noturno/offline
         onlineLogs.forEach(log => {
           if (log.started_at && log.finalized_at) {
             const serviceTime = (new Date(log.finalized_at).getTime() - new Date(log.started_at).getTime()) / 1000;
@@ -188,10 +204,7 @@ export default function AdminDashboard() {
         setAvgWaitTime(0);
       }
 
-      // Gerar dados por hora para o gráfico (TODOS os logs)
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
+      // Gerar dados por hora para o gráfico (já filtrado no banco)
       const hourlyStats: Record<number, { conversations: number; resolved: number }> = {};
       for (let i = 0; i < 24; i++) {
         hourlyStats[i] = { conversations: 0, resolved: 0 };
@@ -200,13 +213,10 @@ export default function AdminDashboard() {
       if (allLogs && allLogs.length > 0) {
         allLogs.forEach(log => {
           if (log.started_at) {
-            const logDate = new Date(log.started_at);
-            if (logDate >= today) {
-              const hour = logDate.getHours();
-              hourlyStats[hour].conversations++;
-              if (log.finalized_at) {
-                hourlyStats[hour].resolved++;
-              }
+            const hour = new Date(log.started_at).getHours();
+            hourlyStats[hour].conversations++;
+            if (log.finalized_at) {
+              hourlyStats[hour].resolved++;
             }
           }
         });
@@ -380,6 +390,13 @@ export default function AdminDashboard() {
           setLastUpdate(new Date());
         }
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'profiles' },
+        () => {
+          setLastUpdate(new Date());
+        }
+      )
       .subscribe();
 
     return () => {
@@ -391,7 +408,7 @@ export default function AdminDashboard() {
   const totalConversations = conversations.length;
   const inQueue = conversations.filter(c => c.status === 'em_fila').length;
   const inProgress = conversations.filter(c => c.status === 'em_atendimento').length;
-  const completed = conversations.filter(c => c.status === 'finalizada').length;
+  const completed = todayFinalized;
   const onlineUsers = users.filter(u => u.status === 'online').length;
   const awayUsers = users.filter(u => u.status === 'away').length;
 
