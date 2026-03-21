@@ -1164,11 +1164,11 @@ async function handleAutomaticMode(body: {
     model,
     messages: [
       { role: "system", content: systemPrompt },
-      ...conversationHistory,
       ...(lastTransfer?.reason ? [{
         role: "system",
-        content: `## Contexto da Transferência — PRIORIDADE MÁXIMA\nO atendente "${lastTransfer.from_user_name}" transferiu esta conversa para você com a seguinte instrução:\n"${lastTransfer.reason}"\n\nIMPORTANTE: NÃO se apresente novamente nem cumprimente o cliente como se fosse um novo atendimento. Continue a conversa naturalmente, usando o motivo acima como guia para ajudar o cliente. Responda diretamente ao assunto da transferência.`
+        content: `## CONTEXTO DA TRANSFERÊNCIA — AÇÃO IMEDIATA OBRIGATÓRIA\nO atendente "${lastTransfer.from_user_name || 'Atendente'}" transferiu esta conversa para você com a seguinte instrução:\n"${lastTransfer.reason}"\n\nREGRAS:\n1. NÃO se apresente novamente nem cumprimente como novo atendimento\n2. Aja IMEDIATAMENTE com base no motivo acima — ele é sua prioridade número 1\n3. Continue a conversa naturalmente a partir do ponto onde o atendente parou\n4. Responda diretamente ao assunto da transferência`
       }] : []),
+      ...conversationHistory,
     ],
     max_tokens: robotConfig.maxTokens || 500,
     temperature,
