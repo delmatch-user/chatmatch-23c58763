@@ -1391,6 +1391,12 @@ async function handleAutomaticMode(body: {
       }
       
       else if (functionName === 'transfer_to_human') {
+        const taxonomyTag = args.taxonomy_tag || '🟢 DUVIDA_GERAL';
+        const handoffSummary = args.handoff_summary || args.reason || '';
+        
+        // Determinar prioridade baseada na tag
+        const isUrgent = taxonomyTag.includes('ACIDENTE_URGENTE');
+        
         // Colocar na fila para atendente humano
         await supabase
           .from('conversations')
@@ -1399,16 +1405,34 @@ async function handleAutomaticMode(body: {
             assigned_to_robot: null,
             assigned_to: null,
             wait_time: 0,
-            robot_transferred: true, // Flag para evitar re-captura por robô
+            robot_transferred: true,
+            handoff_summary: handoffSummary,
+            priority: isUrgent ? 'urgent' : undefined,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           })
           .eq('id', conversationId);
         
+        // Adicionar tag de taxonomia à conversa
+        const { data: convTagsData } = await supabase
+          .from('conversations')
+          .select('tags')
+          .eq('id', conversationId)
+          .single();
+        
+        const currentConvTags: string[] = convTagsData?.tags || [];
+        if (!currentConvTags.includes(taxonomyTag)) {
+          currentConvTags.push(taxonomyTag);
+          await supabase
+            .from('conversations')
+            .update({ tags: currentConvTags })
+            .eq('id', conversationId);
+        }
+        
         // Mensagem de sistema no chat
         await supabase.from('messages').insert({
           conversation_id: conversationId,
-          content: `${robot.name} transferiu para atendimento humano`,
+          content: `${robot.name} transferiu para atendimento humano [${taxonomyTag}]`,
           sender_name: 'SYSTEM',
           sender_id: null,
           message_type: 'system',
@@ -1421,7 +1445,7 @@ async function handleAutomaticMode(body: {
           .insert({
             conversation_id: conversationId,
             from_robot_id: robotId,
-            reason: args.reason
+            reason: `${args.reason}\n\n---\nResumo: ${handoffSummary}\nTag: ${taxonomyTag}`
           });
         
         aiResponse = args.message_to_client || 'Vou transferir você para um atendente humano. Por favor, aguarde um momento!';
