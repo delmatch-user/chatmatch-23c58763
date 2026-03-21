@@ -22,6 +22,7 @@ export interface SDRDeal {
   contactId?: string;
   contactName?: string;
   contactPhone?: string;
+  contactCity?: string;
   ownerId?: string;
   ownerName?: string;
   ownerAvatar?: string;
@@ -193,7 +194,7 @@ export const sdrApi = {
   fetchPipeline: async (): Promise<SDRDeal[]> => {
     const { data, error } = await supabase
       .from('sdr_deals')
-      .select('*, contact:contacts(name, phone), owner:profiles(name, avatar_url)')
+      .select('*, contact:contacts(name, phone, city), owner:profiles(name, avatar_url)')
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -201,6 +202,7 @@ export const sdrApi = {
       id: d.id, title: d.title, company: d.company || d.contact?.name || 'Sem empresa',
       value: Number(d.value) || 0, stageId: d.stage_id,
       contactId: d.contact_id, contactName: d.contact?.name, contactPhone: d.contact?.phone,
+      contactCity: d.contact?.city || undefined,
       ownerId: d.owner_id, ownerName: d.owner?.name,
       ownerAvatar: d.owner?.avatar_url || `https://ui-avatars.com/api/?name=NA&background=334155&color=fff`,
       tags: d.tags || [], dueDate: d.due_date, priority: (d.priority || 'medium') as 'low' | 'medium' | 'high',
