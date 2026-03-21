@@ -1467,14 +1467,16 @@ async function handleAutomaticMode(body: {
         
         if (targetRobot) {
           // Atualizar conversa para o robô destino
+          const handoffSummaryRobot = args.handoff_summary || args.reason || '';
           await supabase
             .from('conversations')
             .update({
               assigned_to_robot: targetRobot.id,
               assigned_to: null,
               status: 'em_atendimento',
-              robot_transferred: false, // Não marcar como transferred (é robot-to-robot)
-              robot_lock_until: null, // Limpar lock para o novo robô processar
+              robot_transferred: false,
+              robot_lock_until: null,
+              handoff_summary: handoffSummaryRobot || null,
               updated_at: new Date().toISOString()
             })
             .eq('id', conversationId);
