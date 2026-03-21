@@ -385,9 +385,13 @@ export function ConversationList({
       setSearchTerm('');
       
       toast.success('Conversa iniciada!');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao criar conversa:', error);
-      toast.error('Erro ao iniciar conversa');
+      console.error('Erro detalhes:', JSON.stringify(error, null, 2));
+      console.error('Erro message:', error?.message);
+      console.error('Erro code:', error?.code);
+      console.error('Erro details:', error?.details);
+      toast.error(`Erro ao iniciar conversa: ${error?.message || error?.code || 'desconhecido'}`);
     } finally {
       setIsCreating(false);
     }
