@@ -1125,6 +1125,7 @@ serve(async (req) => {
               await supabase.from('contacts').update(updateData).eq('id', convData.contact_id);
             }
           }
+          actionTaken = true;
         }
 
         else if (fnName === 'manage_labels') {
@@ -1133,6 +1134,59 @@ serve(async (req) => {
           if (args.action === 'add' && !currentTags.includes(args.label)) currentTags.push(args.label);
           else if (args.action === 'remove') currentTags = currentTags.filter(t => t !== args.label);
           await supabase.from('conversations').update({ tags: currentTags, updated_at: new Date().toISOString() }).eq('id', conversationId);
+          actionTaken = true;
+        }
+      }
+    }
+
+    // Follow-up AI call when tools were executed but no text response was generated
+    if (!responseText && actionTaken && toolCalls?.length > 0) {
+      const hasTransferOrAdvance = toolCalls.some((tc: any) => 
+        ['transfer_to_human', 'advance_lead_stage'].includes(tc.function.name)
+      );
+      
+      if (!hasTransferOrAdvance) {
+        console.log('[SDR-Robot-Chat] Follow-up call: tools executed but no responseText, calling AI again without tools');
+        
+        // Build tool results for context
+        const toolResultMessages = toolCalls.map((tc: any) => ({
+          role: "assistant" as const,
+          content: null,
+          tool_calls: [tc],
+        }));
+        const toolResponseMessages = toolCalls.map((tc: any) => ({
+          role: "tool" as const,
+          tool_call_id: tc.id,
+          content: JSON.stringify({ success: true }),
+        }));
+
+        const followUpBody = {
+          model: getModelFromIntelligence(robot.intelligence),
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...conversationHistory,
+            ...toolResultMessages.flatMap((m: any, i: number) => [m, toolResponseMessages[i]]),
+          ],
+          max_tokens: robot.max_tokens || 500,
+          temperature: getTemperatureFromTone(robot.tone),
+        };
+
+        try {
+          const followUpResp = await fetch(apiUrl, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+            body: JSON.stringify(followUpBody),
+          });
+
+          if (followUpResp.ok) {
+            const followUpData = await followUpResp.json();
+            responseText = followUpData.choices?.[0]?.message?.content || '';
+            console.log(`[SDR-Robot-Chat] Follow-up response: ${responseText.substring(0, 100)}...`);
+          } else {
+            console.error(`[SDR-Robot-Chat] Follow-up call failed: ${followUpResp.status}`);
+          }
+        } catch (err) {
+          console.error('[SDR-Robot-Chat] Follow-up call error:', err);
         }
       }
     }
@@ -1141,6 +1195,18 @@ serve(async (req) => {
       console.error('[SDR-Robot-Chat] Empty response');
       return new Response(JSON.stringify({ error: 'Empty AI response' }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!responseText) {
+      console.log('[SDR-Robot-Chat] No text to send (transfer/advance only), skipping message send');
+      await supabase.from('conversations').update({ robot_lock_until: null }).eq('id', conversationId);
+      await supabase.from('robots').update({
+        messages_count: (robot.messages_count || 0) + 1,
+        last_triggered: new Date().toISOString()
+      }).eq('id', robotConfig.robot_id);
+      return new Response(JSON.stringify({ success: true, action: 'tool_only' }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
