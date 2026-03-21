@@ -38,7 +38,8 @@ export function ContactDetails({ conversation }: ContactDetailsProps) {
     acoes: true,
     contato: true,
     conversa: true,
-    notas: true
+    notas: true,
+    resumo: true
   });
 
   const toggleSection = (section: keyof typeof sectionsOpen) => {
