@@ -1172,18 +1172,29 @@ serve(async (req) => {
         };
 
         try {
-          const followUpResp = await fetch(apiUrl, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-            body: JSON.stringify(followUpBody),
-          });
+          let followUpResp: Response | null = null;
+          for (let followUpAttempt = 0; followUpAttempt < 3; followUpAttempt++) {
+            followUpResp = await fetch(apiUrl, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+              body: JSON.stringify(followUpBody),
+            });
 
-          if (followUpResp.ok) {
+            if (followUpResp.status === 429) {
+              const waitTime = 25 + (followUpAttempt * 10);
+              console.warn(`[SDR-Robot-Chat] Follow-up 429 rate limit, retrying in ${waitTime}s... (attempt ${followUpAttempt + 1}/3)`);
+              await new Promise(r => setTimeout(r, waitTime * 1000));
+              continue;
+            }
+            break;
+          }
+
+          if (followUpResp && followUpResp.ok) {
             const followUpData = await followUpResp.json();
             responseText = followUpData.choices?.[0]?.message?.content || '';
             console.log(`[SDR-Robot-Chat] Follow-up response: ${responseText.substring(0, 100)}...`);
           } else {
-            console.error(`[SDR-Robot-Chat] Follow-up call failed: ${followUpResp.status}`);
+            console.error(`[SDR-Robot-Chat] Follow-up call failed: ${followUpResp?.status}`);
           }
         } catch (err) {
           console.error('[SDR-Robot-Chat] Follow-up call error:', err);
