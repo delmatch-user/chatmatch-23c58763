@@ -422,9 +422,24 @@ function buildOpenAITools(config: RobotConfig, availableDepartments?: { id: stri
             message_to_client: {
               type: "string",
               description: "Mensagem para informar o cliente que será transferido"
+            },
+            handoff_summary: {
+              type: "string",
+              description: "Resumo invisível para o atendente. Inclua: quem é o cliente, o problema, dados coletados e contexto relevante. Se a dúvida não estava na base de conhecimento, inclua: [NOVO_CONHECIMENTO_NECESSARIO] - pergunta original"
+            },
+            taxonomy_tag: {
+              type: "string",
+              description: "Tag de prioridade para classificar o atendimento",
+              enum: [
+                "🔴 ACIDENTE_URGENTE",
+                "🟠 OPERACIONAL_PENDENTE",
+                "🔵 FINANCEIRO_NORMAL",
+                "🟢 DUVIDA_GERAL",
+                "🟡 COMERCIAL_B2B"
+              ]
             }
           },
-          required: ["reason", "message_to_client"]
+          required: ["reason", "message_to_client", "handoff_summary", "taxonomy_tag"]
         }
       }
     });
