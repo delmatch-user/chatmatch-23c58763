@@ -1289,7 +1289,7 @@ export function ChatPanel({ conversation, showContactDetails, onToggleContactDet
                   <Clock className="w-4 h-4 mr-2" />
                   Marcar como Pendente
                 </DropdownMenuItem>
-                {conversation.assignedToRobot && (
+                {conversation.assignedToRobot ? (
                   <DropdownMenuItem
                     className="cursor-pointer"
                     onSelect={handleAssumeFromRobot}
@@ -1297,8 +1297,7 @@ export function ChatPanel({ conversation, showContactDetails, onToggleContactDet
                     <UserCheck className="w-4 h-4 mr-2" />
                     Assumir Atendimento
                   </DropdownMenuItem>
-                )}
-                {needsAssume && (
+                ) : needsAssume ? (
                   <DropdownMenuItem
                     className="cursor-pointer"
                     onSelect={handleAssumeFromOtherAgent}
@@ -1306,7 +1305,7 @@ export function ChatPanel({ conversation, showContactDetails, onToggleContactDet
                     <UserCheck className="w-4 h-4 mr-2" />
                     Assumir Atendimento
                   </DropdownMenuItem>
-                )}
+                ) : null}
                 <DropdownMenuItem
                   className="cursor-pointer"
                   onSelect={() => {
