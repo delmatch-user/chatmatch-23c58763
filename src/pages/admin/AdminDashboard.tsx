@@ -645,8 +645,8 @@ export default function AdminDashboard() {
                 <div className="space-y-2 max-h-[280px] overflow-y-auto scrollbar-thin pr-1">
                   {agentRanking.length > 0 ? (
                     agentRanking.map((agent, index) => {
-                      const maxConversations = agentRanking[0]?.totalConversations || 1;
-                      const progressPercent = Math.round((agent.totalConversations / maxConversations) * 100);
+                      const maxScore = agentRanking[0]?.score || 1;
+                      const progressPercent = Math.round((agent.score / maxScore) * 100);
                       
                       // Time color helpers
                       const getServiceTimeColor = (time: number) => {
