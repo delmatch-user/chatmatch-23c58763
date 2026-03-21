@@ -462,11 +462,15 @@ function buildOpenAITools(config: RobotConfig, availableDepartments?: { id: stri
             },
             reason: {
               type: "string",
-              description: "OBRIGATÓRIO: Resumo detalhado da triagem/conversa até o momento. Inclua: o que o cliente quer, dados já coletados (nome, cidade, tipo de problema, etc.) e a necessidade específica. Exemplo: 'Cliente João de Uberlândia, entregador, está com problema no login do app. Já tentou reinstalar sem sucesso. Precisa de suporte técnico para reset de senha.'"
+              description: "OBRIGATÓRIO: Resumo detalhado da triagem/conversa até o momento. Inclua: o que o cliente quer, dados já coletados (nome, cidade, tipo de problema, etc.) e a necessidade específica."
             },
             message_to_client: {
               type: "string",
               description: "Mensagem para informar o cliente sobre a transferência"
+            },
+            handoff_summary: {
+              type: "string",
+              description: "Resumo invisível para o agente de destino. Inclua: quem é o cliente, o problema, dados coletados e contexto. Se a dúvida não estava na base, inclua: [NOVO_CONHECIMENTO_NECESSARIO] - pergunta"
             }
           },
           required: ["robot_name", "reason", "message_to_client"]
