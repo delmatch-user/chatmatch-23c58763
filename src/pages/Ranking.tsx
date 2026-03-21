@@ -336,6 +336,20 @@ export default function Ranking() {
     return { totalConversations, avgTMA, avgTME, avgScore, activeAgents };
   }, [ranking]);
 
+  if (!config.is_active) {
+    return (
+      <MainLayout>
+        <div className="p-4 sm:p-6 flex flex-col items-center justify-center min-h-[60vh]">
+          <Trophy className="w-16 h-16 text-muted-foreground/30 mb-4" />
+          <h2 className="text-xl font-semibold text-foreground mb-2">Ranking Desativado</h2>
+          <p className="text-muted-foreground text-center">
+            O ranking está temporariamente desativado pelo administrador.
+          </p>
+        </div>
+      </MainLayout>
+    );
+  }
+
   return (
     <MainLayout>
       <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
