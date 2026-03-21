@@ -13,7 +13,6 @@ import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Search, MessageSquare, Clock, Bot, Instagram, CalendarIcon, Bike, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useApp } from '@/contexts/AppContext';
-import { useApp } from '@/contexts/AppContext';
 import { format, startOfDay, endOfDay, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { getTagColorClasses } from '@/lib/tagColors';
