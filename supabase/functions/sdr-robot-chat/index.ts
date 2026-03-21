@@ -843,14 +843,16 @@ serve(async (req) => {
         type: "function",
         function: {
           name: "edit_contact",
-          description: "Atualizar informações do contato",
+          description: "Atualizar informações do contato. SEMPRE inclua message_to_client com a resposta/simulação que deve ser enviada ao cliente após atualizar os dados.",
           parameters: {
             type: "object",
             properties: {
               name: { type: "string", description: "Novo nome (opcional)" },
               email: { type: "string", description: "Email (opcional)" },
-              notes: { type: "string", description: "Observações (opcional)" }
-            }
+              notes: { type: "string", description: "Observações (opcional)" },
+              message_to_client: { type: "string", description: "Mensagem/resposta/simulação que será enviada ao cliente após atualizar os dados. OBRIGATÓRIO." }
+            },
+            required: ["message_to_client"]
           }
         }
       },
@@ -1123,7 +1125,13 @@ serve(async (req) => {
             if (args.notes) updateData.notes = args.notes;
             if (Object.keys(updateData).length > 0) {
               await supabase.from('contacts').update(updateData).eq('id', convData.contact_id);
+              console.log(`[SDR-Robot-Chat] Contact updated:`, updateData);
             }
+          }
+          // Use message_to_client from tool args as responseText
+          if (args.message_to_client) {
+            responseText = args.message_to_client;
+            console.log(`[SDR-Robot-Chat] edit_contact message_to_client set as responseText: ${responseText.substring(0, 80)}...`);
           }
           actionTaken = true;
         }
@@ -1160,12 +1168,20 @@ serve(async (req) => {
           content: JSON.stringify({ success: true }),
         }));
 
+        // Include transfer context in follow-up (same as primary call)
+        const transferContextMsgs = lastTransfer?.reason ? [{
+          role: "system" as const,
+          content: `## CONTEXTO DA TRANSFERÊNCIA — AÇÃO IMEDIATA OBRIGATÓRIA\nO atendente "${lastTransfer.from_user_name || 'Atendente'}" transferiu esta conversa para você com a seguinte instrução:\n"${lastTransfer.reason}"\n\nREGRAS:\n1. NÃO se apresente novamente\n2. Aja IMEDIATAMENTE com base no motivo acima\n3. Se o motivo menciona "simulação", gere e envie a simulação AGORA\n4. Continue naturalmente`
+        }] : [];
+
         const followUpBody = {
           model: getModelFromIntelligence(robot.intelligence),
           messages: [
             { role: "system", content: systemPrompt },
+            ...transferContextMsgs,
             ...conversationHistory,
             ...toolResultMessages.flatMap((m: any, i: number) => [m, toolResponseMessages[i]]),
+            { role: "user", content: "As ferramentas foram executadas com sucesso. Agora gere a resposta para o cliente." },
           ],
           max_tokens: robot.max_tokens || 500,
           temperature: getTemperatureFromTone(robot.tone),
@@ -1173,7 +1189,8 @@ serve(async (req) => {
 
         try {
           let followUpResp: Response | null = null;
-          for (let followUpAttempt = 0; followUpAttempt < 3; followUpAttempt++) {
+          // Attempt 1: primary API with short retry
+          for (let followUpAttempt = 0; followUpAttempt < 2; followUpAttempt++) {
             followUpResp = await fetch(apiUrl, {
               method: "POST",
               headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -1181,20 +1198,34 @@ serve(async (req) => {
             });
 
             if (followUpResp.status === 429) {
-              const waitTime = 25 + (followUpAttempt * 10);
-              console.warn(`[SDR-Robot-Chat] Follow-up 429 rate limit, retrying in ${waitTime}s... (attempt ${followUpAttempt + 1}/3)`);
+              const waitTime = 5 + (followUpAttempt * 5);
+              console.warn(`[SDR-Robot-Chat] Follow-up 429, retrying in ${waitTime}s (attempt ${followUpAttempt + 1}/2)`);
               await new Promise(r => setTimeout(r, waitTime * 1000));
               continue;
             }
             break;
           }
 
+          // Fallback to Lovable AI if primary failed
+          if (!followUpResp || !followUpResp.ok) {
+            const lovableKey = Deno.env.get("LOVABLE_API_KEY");
+            if (lovableKey) {
+              console.log('[SDR-Robot-Chat] Follow-up fallback to Lovable AI gateway');
+              const fallbackBody = { ...followUpBody, model: "google/gemini-2.5-flash" };
+              followUpResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+                method: "POST",
+                headers: { Authorization: `Bearer ${lovableKey}`, "Content-Type": "application/json" },
+                body: JSON.stringify(fallbackBody),
+              });
+            }
+          }
+
           if (followUpResp && followUpResp.ok) {
             const followUpData = await followUpResp.json();
             responseText = followUpData.choices?.[0]?.message?.content || '';
-            console.log(`[SDR-Robot-Chat] Follow-up response: ${responseText.substring(0, 100)}...`);
+            console.log(`[SDR-Robot-Chat] Follow-up response (source: ${followUpResp.url?.includes('lovable') ? 'lovable-fallback' : 'primary'}): ${responseText.substring(0, 100)}...`);
           } else {
-            console.error(`[SDR-Robot-Chat] Follow-up call failed: ${followUpResp?.status}`);
+            console.error(`[SDR-Robot-Chat] Follow-up call failed entirely: ${followUpResp?.status}`);
           }
         } catch (err) {
           console.error('[SDR-Robot-Chat] Follow-up call error:', err);
@@ -1209,16 +1240,33 @@ serve(async (req) => {
       });
     }
 
-    if (!responseText) {
-      console.log('[SDR-Robot-Chat] No text to send (transfer/advance only), skipping message send');
-      await supabase.from('conversations').update({ robot_lock_until: null }).eq('id', conversationId);
-      await supabase.from('robots').update({
-        messages_count: (robot.messages_count || 0) + 1,
-        last_triggered: new Date().toISOString()
-      }).eq('id', robotConfig.robot_id);
-      return new Response(JSON.stringify({ success: true, action: 'tool_only' }), {
-        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    // Safety fallback: if edit_contact was called but still no text, send a continuity message
+    if (!responseText && actionTaken) {
+      const hasEditContact = toolCalls?.some((tc: any) => tc.function.name === 'edit_contact');
+      const hasTransferOrAdvance = toolCalls?.some((tc: any) => 
+        ['transfer_to_human', 'advance_lead_stage'].includes(tc.function.name)
+      );
+      
+      if (hasTransferOrAdvance) {
+        console.log('[SDR-Robot-Chat] No text to send (transfer/advance only), skipping message send');
+        await supabase.from('conversations').update({ robot_lock_until: null }).eq('id', conversationId);
+        await supabase.from('robots').update({
+          messages_count: (robot.messages_count || 0) + 1,
+          last_triggered: new Date().toISOString()
+        }).eq('id', robotConfig.robot_id);
+        return new Response(JSON.stringify({ success: true, action: 'tool_only' }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      
+      // For edit_contact or other non-transfer tools, send safety fallback
+      if (hasEditContact) {
+        responseText = 'Atualizei suas informações! Como posso te ajudar mais?';
+        console.log('[SDR-Robot-Chat] Safety fallback: edit_contact with no text, sending continuity message');
+      } else {
+        responseText = 'Como posso te ajudar?';
+        console.log('[SDR-Robot-Chat] Safety fallback: action taken but no text, sending generic continuity');
+      }
     }
 
     // Split messages if configured
