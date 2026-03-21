@@ -1,55 +1,33 @@
 
 
-## ✅ Corrigir histórico incompleto em conversas abertas
+## Plano: "Logs IA" e Histórico Completo para Suporte
 
-### Problema
-Conversas abertas perdiam histórico porque o sistema usava `messages.length <= 1` para decidir se carregava o histórico completo. Se mensagens chegavam via realtime antes de abrir a conversa, a contagem passava de 1 e o carregamento completo era pulado permanentemente.
+### Problema atual
+- A página **Histórico** filtra por `finalized_by = user.id` — cada atendente vê apenas as próprias finalizações.
+- Não existe uma página dedicada para acompanhar logs de conversas finalizadas por robôs/IA.
 
-### Solução implementada
-- Adicionado flag `historyLoaded: boolean` ao tipo `Conversation`
-- `loadConversationMessages` marca `historyLoaded = true` após carga completa
-- ChatPanel usa `!conversation.historyLoaded` como gatilho (em vez de contagem)
-- `fetchConversations` preserva `historyLoaded` e `messages` ao atualizar metadata
-- Polling incremental só roda quando `historyLoaded === true`
-- Adicionado botão "Recarregar histórico" no menu de ações da conversa
+### O que será feito
 
-## ✅ Handoff Estruturado com Taxonomia (Suporte)
+**1. Alterar Histórico para Suporte ver tudo do departamento**
+- Em `src/pages/History.tsx`, quando o usuário pertence ao departamento Suporte, buscar `conversation_logs` filtrado por `department_id = SUPORTE_DEPARTMENT_ID` em vez de `finalized_by = user.id`.
+- Isso permite que todos do Suporte vejam todas as finalizações do departamento.
 
-### Objetivo
-Implementar handoff inteligente estilo Klarna para o departamento Suporte, com resumo invisível, tags de prioridade e proteções automáticas.
+**2. Criar página "Logs IA" (`/logs-ia`)**
+- Nova página `src/pages/AILogs.tsx` que lista conversas do departamento Suporte finalizadas por robôs (onde `assigned_to_name` contém nomes de robôs ou `finalized_by` é nulo/robô).
+- Filtros: busca por nome/telefone, período, canal, tag de taxonomia.
+- Cada card mostra: nome do contato, canal, tag de taxonomia, resumo invisível (do `handoff_summary` se disponível nos logs), protocolo, e botão para expandir mensagens.
+- Acessível a todos os membros do departamento Suporte.
 
-### Funcionalidades implementadas
+**3. Adicionar rota e navegação**
+- Adicionar rota `/logs-ia` em `src/App.tsx` com `ProtectedRoute`.
+- Adicionar item "Logs IA" no sidebar (`src/components/layout/Sidebar.tsx`) visível apenas para membros do Suporte (com ícone `Bot`).
 
-1. **Handoff com Resumo Invisível**
-   - Campo `handoff_summary` na tabela `conversations`
-   - Exibido no ContactDetails como "📋 Resumo da IA" (caixa amarela)
-   - Gerado automaticamente pela IA ao transferir para humano
+**4. RLS — sem alteração necessária**
+- A tabela `conversation_logs` já possui policy `Department members can view department logs` que permite SELECT quando `department_id` está nos departamentos do usuário. Membros do Suporte já podem ler todos os logs do departamento.
 
-2. **Tags de Taxonomia (5 tags)**
-   - 🔴 ACIDENTE_URGENTE — fura fila, prioridade urgente
-   - 🟠 OPERACIONAL_PENDENTE — bugs, erros técnicos
-   - 🔵 FINANCEIRO_NORMAL — repasses, saques
-   - 🟢 DUVIDA_GERAL — perguntas simples
-   - 🟡 COMERCIAL_B2B — donos de lojas, B2B
-   - Adicionadas automaticamente à conversa na transferência
+### Arquivos envolvidos
+- `src/pages/History.tsx` — alterar query para Suporte
+- `src/pages/AILogs.tsx` — nova página
+- `src/App.tsx` — nova rota
+- `src/components/layout/Sidebar.tsx` — novo item de navegação
 
-3. **Regra do "Não Sei" e Aprendizado**
-   - IA inclui `[NOVO_CONHECIMENTO_NECESSARIO]` no handoff_summary quando não sabe responder
-   - Filtrar no banco por esse texto para atualizar base de conhecimento
-
-4. **Proteção contra Loop**
-   - Após 2 tentativas de solicitar dados, IA transfere automaticamente
-
-5. **Blindagem de Acidentes**
-   - Menções a acidente/colisão/emergência → transferência imediata com tag URGENTE
-
-6. **Procedimento de Pedidos Duplicados**
-   - IA explica que plataforma é passiva/receptora
-
-### Arquivos modificados
-- `src/lib/tagColors.ts` — novas tags de taxonomia
-- `src/types/index.ts` — campo `handoffSummary` no tipo Conversation
-- `src/contexts/AppContext.tsx` — mapear `handoff_summary` do DB
-- `src/components/chat/ContactDetails.tsx` — seção "Resumo da IA"
-- `supabase/functions/robot-chat/index.ts` — structured handoff, loop protection, blindagem
-- Migration: `handoff_summary TEXT` na tabela `conversations`
