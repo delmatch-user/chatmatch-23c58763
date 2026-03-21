@@ -83,6 +83,7 @@ export interface Conversation {
   channelId?: string;
   receiverId?: string;
   historyLoaded?: boolean;
+  handoffSummary?: string;
 }
 
 export interface TransferLog {

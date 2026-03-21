@@ -266,6 +266,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             channel: (conv as any).channel || 'whatsapp',
             whatsappInstanceId: (conv as any).whatsapp_instance_id || undefined,
             protocol: (conv as any).protocol || undefined,
+            handoffSummary: (conv as any).handoff_summary || undefined,
           };
         });
 

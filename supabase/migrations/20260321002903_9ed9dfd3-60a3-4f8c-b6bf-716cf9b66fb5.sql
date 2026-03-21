@@ -1,0 +1,1 @@
+ALTER TABLE public.conversations ADD COLUMN IF NOT EXISTS handoff_summary TEXT DEFAULT NULL;

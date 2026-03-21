@@ -330,6 +330,25 @@ function buildSystemPrompt(config: RobotConfig, availableDepartments?: { id: str
   prompt += `- Mantenha respostas concisas e diretas.\n`;
   prompt += `- Use as ferramentas disponíveis para executar ações quando necessário - não apenas sugira, execute!\n`;
   prompt += `- **REGRA CRÍTICA**: Responda SOMENTE com base nas informações presentes na sua Base de Conhecimento (Instruções, Perguntas e Respostas, Links de Referência e Documentos acima). Se a pergunta do cliente não puder ser respondida com as informações disponíveis na sua base, informe educadamente que não possui essa informação e ofereça transferir para um atendente humano. NUNCA invente, suponha ou alucine informações que não estejam explicitamente na sua base de conhecimento.\n`;
+  prompt += `- **REGRA DE APRENDIZADO**: Quando uma pergunta NÃO puder ser respondida com a base de conhecimento, inclua no campo "handoff_summary" (ao transferir) o texto: [NOVO_CONHECIMENTO_NECESSARIO] - seguido da pergunta original do cliente. Isso nos ajuda a atualizar a base.\n`;
+
+  prompt += `\n## Proteção contra Loop\n`;
+  prompt += `- Se o cliente não fornecer os dados necessários (cidade, nome, etc.) após 2 tentativas de solicitação, peça desculpas e transfira automaticamente para um atendente humano.\n`;
+  prompt += `- Nunca repita a mesma pergunta mais de 2 vezes.\n`;
+
+  prompt += `\n## Blindagem de Acidentes\n`;
+  prompt += `- Se o cliente mencionar acidente, batida, colisão, emergência médica ou qualquer situação de risco físico: NÃO tente dar tutorial ou resolver. Apenas acalme o parceiro com empatia e transfira IMEDIATAMENTE para um humano com a tag "🔴 ACIDENTE_URGENTE".\n`;
+
+  prompt += `\n## Taxonomia de Prioridade (Tags)\n`;
+  prompt += `Ao transferir para humano, SEMPRE classifique o atendimento com UMA das tags abaixo no campo "taxonomy_tag":\n`;
+  prompt += `- 🔴 ACIDENTE_URGENTE – Acidentes, emergências, risco físico. Fura fila.\n`;
+  prompt += `- 🟠 OPERACIONAL_PENDENTE – Bugs no app, erros de código, problemas técnicos.\n`;
+  prompt += `- 🔵 FINANCEIRO_NORMAL – Repasses, saques, questões financeiras.\n`;
+  prompt += `- 🟢 DUVIDA_GERAL – Perguntas simples, dúvidas gerais.\n`;
+  prompt += `- 🟡 COMERCIAL_B2B – Exclusivo para donos de lojas, gerentes, questões B2B.\n`;
+
+  prompt += `\n## Procedimento de Pedidos Duplicados\n`;
+  prompt += `- Nossa plataforma é receptora/passiva. Se houver pedidos duplicados, explique que apenas recebemos os dados da origem (iFood/Saipos/etc). O erro de duplicidade é da plataforma de origem.\n`;
 
   if (availableRobots && availableRobots.length > 0) {
     prompt += `\n## Regras de Triagem Contextual\n`;
@@ -403,9 +422,24 @@ function buildOpenAITools(config: RobotConfig, availableDepartments?: { id: stri
             message_to_client: {
               type: "string",
               description: "Mensagem para informar o cliente que será transferido"
+            },
+            handoff_summary: {
+              type: "string",
+              description: "Resumo invisível para o atendente. Inclua: quem é o cliente, o problema, dados coletados e contexto relevante. Se a dúvida não estava na base de conhecimento, inclua: [NOVO_CONHECIMENTO_NECESSARIO] - pergunta original"
+            },
+            taxonomy_tag: {
+              type: "string",
+              description: "Tag de prioridade para classificar o atendimento",
+              enum: [
+                "🔴 ACIDENTE_URGENTE",
+                "🟠 OPERACIONAL_PENDENTE",
+                "🔵 FINANCEIRO_NORMAL",
+                "🟢 DUVIDA_GERAL",
+                "🟡 COMERCIAL_B2B"
+              ]
             }
           },
-          required: ["reason", "message_to_client"]
+          required: ["reason", "message_to_client", "handoff_summary", "taxonomy_tag"]
         }
       }
     });
@@ -428,11 +462,15 @@ function buildOpenAITools(config: RobotConfig, availableDepartments?: { id: stri
             },
             reason: {
               type: "string",
-              description: "OBRIGATÓRIO: Resumo detalhado da triagem/conversa até o momento. Inclua: o que o cliente quer, dados já coletados (nome, cidade, tipo de problema, etc.) e a necessidade específica. Exemplo: 'Cliente João de Uberlândia, entregador, está com problema no login do app. Já tentou reinstalar sem sucesso. Precisa de suporte técnico para reset de senha.'"
+              description: "OBRIGATÓRIO: Resumo detalhado da triagem/conversa até o momento. Inclua: o que o cliente quer, dados já coletados (nome, cidade, tipo de problema, etc.) e a necessidade específica."
             },
             message_to_client: {
               type: "string",
               description: "Mensagem para informar o cliente sobre a transferência"
+            },
+            handoff_summary: {
+              type: "string",
+              description: "Resumo invisível para o agente de destino. Inclua: quem é o cliente, o problema, dados coletados e contexto. Se a dúvida não estava na base, inclua: [NOVO_CONHECIMENTO_NECESSARIO] - pergunta"
             }
           },
           required: ["robot_name", "reason", "message_to_client"]
@@ -1357,6 +1395,12 @@ async function handleAutomaticMode(body: {
       }
       
       else if (functionName === 'transfer_to_human') {
+        const taxonomyTag = args.taxonomy_tag || '🟢 DUVIDA_GERAL';
+        const handoffSummary = args.handoff_summary || args.reason || '';
+        
+        // Determinar prioridade baseada na tag
+        const isUrgent = taxonomyTag.includes('ACIDENTE_URGENTE');
+        
         // Colocar na fila para atendente humano
         await supabase
           .from('conversations')
@@ -1365,16 +1409,34 @@ async function handleAutomaticMode(body: {
             assigned_to_robot: null,
             assigned_to: null,
             wait_time: 0,
-            robot_transferred: true, // Flag para evitar re-captura por robô
+            robot_transferred: true,
+            handoff_summary: handoffSummary,
+            priority: isUrgent ? 'urgent' : undefined,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           })
           .eq('id', conversationId);
         
+        // Adicionar tag de taxonomia à conversa
+        const { data: convTagsData } = await supabase
+          .from('conversations')
+          .select('tags')
+          .eq('id', conversationId)
+          .single();
+        
+        const currentConvTags: string[] = convTagsData?.tags || [];
+        if (!currentConvTags.includes(taxonomyTag)) {
+          currentConvTags.push(taxonomyTag);
+          await supabase
+            .from('conversations')
+            .update({ tags: currentConvTags })
+            .eq('id', conversationId);
+        }
+        
         // Mensagem de sistema no chat
         await supabase.from('messages').insert({
           conversation_id: conversationId,
-          content: `${robot.name} transferiu para atendimento humano`,
+          content: `${robot.name} transferiu para atendimento humano [${taxonomyTag}]`,
           sender_name: 'SYSTEM',
           sender_id: null,
           message_type: 'system',
@@ -1387,7 +1449,7 @@ async function handleAutomaticMode(body: {
           .insert({
             conversation_id: conversationId,
             from_robot_id: robotId,
-            reason: args.reason
+            reason: `${args.reason}\n\n---\nResumo: ${handoffSummary}\nTag: ${taxonomyTag}`
           });
         
         aiResponse = args.message_to_client || 'Vou transferir você para um atendente humano. Por favor, aguarde um momento!';
@@ -1405,14 +1467,16 @@ async function handleAutomaticMode(body: {
         
         if (targetRobot) {
           // Atualizar conversa para o robô destino
+          const handoffSummaryRobot = args.handoff_summary || args.reason || '';
           await supabase
             .from('conversations')
             .update({
               assigned_to_robot: targetRobot.id,
               assigned_to: null,
               status: 'em_atendimento',
-              robot_transferred: false, // Não marcar como transferred (é robot-to-robot)
-              robot_lock_until: null, // Limpar lock para o novo robô processar
+              robot_transferred: false,
+              robot_lock_until: null,
+              handoff_summary: handoffSummaryRobot || null,
               updated_at: new Date().toISOString()
             })
             .eq('id', conversationId);
