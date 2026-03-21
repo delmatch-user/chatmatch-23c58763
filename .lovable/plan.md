@@ -1,41 +1,21 @@
 
 
-## Plano: Preencher campo Cidade nos leads existentes (Qualificado e Proposta)
+## Plano: Mostrar nome do atendente ao buscar número já em atendimento
 
-### Contexto
-Encontrei **23 leads** nos stages "Qualificado" e "Proposta" sem cidade preenchida. Analisei as mensagens do Arthur em cada conversa e identifiquei a cidade mencionada na simulação em **21 deles**. Apenas 2 leads (Aniger e Andre) não tiveram cidade identificável nas mensagens.
+### Problema
+Quando um atendente busca um número que já está em atendimento com outro agente, aparece apenas "Conversa ativa encontrada" — sem informar quem está atendendo. O usuário quer ver: **"Essa conversa está com o Fabio"**.
 
-### Solução
-Executar uma migration SQL para atualizar o campo `city` na tabela `contacts` com base nos dados extraídos das conversas:
+### Alteração
 
-| Lead | Cidade |
-|------|--------|
-| Praia Grande | Praia Grande |
-| felipequimura | São Paulo |
-| Ciceron | São Paulo |
-| rogiriotoledo29 | Barretos |
-| Roberley Alves | Lorena |
-| Cid Monteiro | Piraju |
-| (Cris) amor a cristo | Atibaia |
-| Pedro Toledo | Franca |
-| deisecarvalhocarvalho | Saquarema |
-| Eduardo Alcantara Brecht | Itu |
-| José Carlos | Guaratinguetá |
-| Nelsom | Morro Redondo |
-| ita | Itapetininga |
-| Paulo Jorge Da Conceição | Araraquara |
-| Sergio Nepomuceno | Conselheiro Pena |
-| Adriano | Piracaia |
-| Marli | Pedra Azul |
-| allanmartins190 | Botucatu |
-| Alexandro Dias | João Pessoa |
-| Hélio Francisco Dos Reis | Pitangueiras |
-| José Francisco Lopes | Jaú |
+**Arquivo: `src/components/chat/ConversationList.tsx`** (linhas 317-356)
 
-### Implementação
-- Uma migration SQL com `UPDATE contacts SET city = '...' WHERE id = (SELECT contact_id FROM sdr_deals WHERE id = '...')` para cada lead identificado.
-- Nenhuma alteração de código necessária — o campo `city` já é exibido no pipeline.
+Na verificação de conversa ativa existente:
 
-### Resultado
-Após a migration, os cards desses leads no pipeline mostrarão a cidade com o ícone de MapPin automaticamente.
+1. Alterar o `select` de `'id'` para `'id, assigned_to'`
+2. Após encontrar `activeConv`, verificar `assigned_to`:
+   - Se `assigned_to === user.id` → `toast.info("Você já possui uma conversa ativa com este contato")` e abrir a conversa normalmente
+   - Se `assigned_to` é outro usuário → buscar nome em `profiles` → `toast.warning("Essa conversa está com o Fabio")` e **não abrir/selecionar** a conversa
+   - Se `assigned_to` é `null` (em fila) → `toast.info("Este contato já está na fila de atendimento")` e abrir normalmente
+
+Isso é uma mudança de ~15 linhas no bloco `if (activeConv)`, sem criar tabelas nem alterar outros arquivos.
 
