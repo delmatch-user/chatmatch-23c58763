@@ -102,11 +102,18 @@ export default function History() {
 
       setLoading(true);
       try {
-        const { data, error } = await supabase
+        let query = supabase
           .from('conversation_logs')
-          .select('*')
-          .eq('finalized_by', user.id)
-          .order('finalized_at', { ascending: false });
+          .select('*');
+
+        // Membros do Suporte veem todas as finalizações do departamento
+        if (isSuporteDepartment) {
+          query = query.eq('department_id', SUPORTE_DEPARTMENT_ID);
+        } else {
+          query = query.eq('finalized_by', user.id);
+        }
+
+        const { data, error } = await query.order('finalized_at', { ascending: false });
 
         if (error) throw error;
         const parsedLogs = (data || []).map(log => ({
@@ -122,7 +129,7 @@ export default function History() {
     };
 
     fetchLogs();
-  }, [user]);
+  }, [user, isSuporteDepartment]);
 
   const filteredLogs = logs.filter(log => {
     // Busca por texto (nome, telefone, departamento, protocolo)

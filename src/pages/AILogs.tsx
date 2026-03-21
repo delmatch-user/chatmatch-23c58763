@@ -1,0 +1,439 @@
+import { useState, useEffect } from 'react';
+import { MainLayout } from '@/components/layout/MainLayout';
+import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar as CalendarComponent } from '@/components/ui/calendar';
+import { Search, MessageSquare, Clock, Bot, Instagram, MessageCircle, CalendarIcon, Bike, AlertTriangle } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { MessageAttachment } from '@/components/chat/MessageAttachment';
+import { useApp } from '@/contexts/AppContext';
+import { format, startOfDay, endOfDay, subDays } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+import { getTagColorClasses } from '@/lib/tagColors';
+import { SUPORTE_TAXONOMY_TAGS } from '@/lib/tagColors';
+import { cn } from '@/lib/utils';
+
+interface ConversationLog {
+  id: string;
+  conversation_id: string;
+  contact_name: string;
+  contact_phone: string | null;
+  department_name: string | null;
+  department_id: string | null;
+  assigned_to: string | null;
+  assigned_to_name: string | null;
+  finalized_by: string | null;
+  finalized_by_name: string | null;
+  started_at: string;
+  finalized_at: string;
+  total_messages: number;
+  priority: string;
+  tags: string[];
+  wait_time: number | null;
+  messages: any[];
+  channel?: string | null;
+  contact_notes?: string | null;
+  protocol?: string | null;
+}
+
+const SUPORTE_DEPARTMENT_ID = 'dea51138-49e4-45b0-a491-fb07a5fad479';
+
+type PeriodFilter = 'all' | 'today' | 'yesterday' | 'custom';
+type ChannelFilter = 'all' | 'whatsapp' | 'instagram' | 'machine';
+
+export default function AILogs() {
+  const { user } = useApp();
+  const [logs, setLogs] = useState<ConversationLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedLog, setSelectedLog] = useState<ConversationLog | null>(null);
+  const [showMessages, setShowMessages] = useState(false);
+
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('all');
+  const [channelFilter, setChannelFilter] = useState<ChannelFilter>('all');
+  const [tagFilter, setTagFilter] = useState<string>('all');
+  const [customDateRange, setCustomDateRange] = useState<{ from?: Date; to?: Date }>({});
+
+  useEffect(() => {
+    const fetchLogs = async () => {
+      if (!user) return;
+      setLoading(true);
+      try {
+        // Fetch logs from Suporte department where finalized_by is null (robot) or assigned_to_name matches robot names
+        const { data, error } = await supabase
+          .from('conversation_logs')
+          .select('*')
+          .eq('department_id', SUPORTE_DEPARTMENT_ID)
+          .order('finalized_at', { ascending: false });
+
+        if (error) throw error;
+        
+        // Filter to only robot-handled conversations (finalized_by is null = robot finalized)
+        const robotLogs = (data || []).filter(log => {
+          // Robot-finalized: finalized_by is null, or assigned_to_name suggests a robot
+          return !log.finalized_by || !log.finalized_by_name;
+        });
+
+        const parsedLogs = robotLogs.map(log => ({
+          ...log,
+          messages: Array.isArray(log.messages) ? log.messages : []
+        })) as ConversationLog[];
+        
+        setLogs(parsedLogs);
+      } catch (error) {
+        console.error('Error fetching AI logs:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLogs();
+  }, [user]);
+
+  const filteredLogs = logs.filter(log => {
+    const matchesSearch =
+      log.contact_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      log.contact_phone?.includes(searchTerm) ||
+      log.protocol?.toLowerCase().includes(searchTerm.toLowerCase());
+    if (!matchesSearch) return false;
+
+    if (periodFilter !== 'all') {
+      const finalizedDate = new Date(log.finalized_at);
+      const now = new Date();
+      if (periodFilter === 'today') {
+        if (finalizedDate < startOfDay(now) || finalizedDate > endOfDay(now)) return false;
+      } else if (periodFilter === 'yesterday') {
+        const yesterday = subDays(now, 1);
+        if (finalizedDate < startOfDay(yesterday) || finalizedDate > endOfDay(yesterday)) return false;
+      } else if (periodFilter === 'custom') {
+        if (customDateRange.from && finalizedDate < startOfDay(customDateRange.from)) return false;
+        if (customDateRange.to && finalizedDate > endOfDay(customDateRange.to)) return false;
+      }
+    }
+
+    if (channelFilter !== 'all') {
+      const logChannel = log.contact_notes?.includes('franqueado:') ? 'machine' : (log.channel || 'whatsapp');
+      if (logChannel !== channelFilter) return false;
+    }
+
+    if (tagFilter !== 'all') {
+      if (!log.tags?.includes(tagFilter)) return false;
+    }
+
+    return true;
+  });
+
+  const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+
+  const formatDuration = (startedAt: string, finalizedAt: string) => {
+    const diffMs = new Date(finalizedAt).getTime() - new Date(startedAt).getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 60) return `${diffMins}min`;
+    return `${Math.floor(diffMins / 60)}h ${diffMins % 60}min`;
+  };
+
+  const priorityColors: Record<string, string> = {
+    low: 'bg-muted text-muted-foreground',
+    normal: 'bg-primary/20 text-primary',
+    high: 'bg-warning/20 text-warning',
+    urgent: 'bg-destructive/20 text-destructive',
+  };
+
+  // Extract handoff summary from messages (look for the invisible summary pattern)
+  const getHandoffSummary = (log: ConversationLog): string | null => {
+    // Check tags for taxonomy
+    const taxonomyTag = log.tags?.find(t => SUPORTE_TAXONOMY_TAGS.some(st => t === st));
+    
+    // Look for system messages that might contain handoff info
+    const systemMsg = log.messages?.find((m: any) => 
+      m.content?.includes('[NOVO_CONHECIMENTO_NECESSARIO]') || 
+      m.sender_name === 'Sistema' ||
+      m.message_type === 'system'
+    );
+
+    if (systemMsg) return systemMsg.content;
+    return null;
+  };
+
+  return (
+    <MainLayout title="Logs IA">
+      <div className="h-full flex flex-col gap-3 sm:gap-4 p-4 sm:p-6">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+          <div className="flex items-center gap-2">
+            <Bot className="w-5 h-5 text-primary" />
+            <h2 className="text-lg font-semibold">Logs de Conversas IA</h2>
+          </div>
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por nome, telefone, protocolo..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <Badge variant="secondary" className="text-sm shrink-0 self-start sm:self-auto">
+            {filteredLogs.length} conversas IA
+          </Badge>
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={periodFilter} onValueChange={(v) => setPeriodFilter(v as PeriodFilter)}>
+            <SelectTrigger className="w-[150px] h-9 text-sm">
+              <SelectValue placeholder="Período" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="today">Hoje</SelectItem>
+              <SelectItem value="yesterday">Ontem</SelectItem>
+              <SelectItem value="custom">Personalizado</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {periodFilter === 'custom' && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className={cn("h-9 gap-1 text-sm", !customDateRange.from && "text-muted-foreground")}>
+                  <CalendarIcon className="w-3.5 h-3.5" />
+                  {customDateRange.from
+                    ? customDateRange.to
+                      ? `${format(customDateRange.from, 'dd/MM')} - ${format(customDateRange.to, 'dd/MM')}`
+                      : format(customDateRange.from, 'dd/MM/yyyy')
+                    : 'Selecionar datas'}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <CalendarComponent
+                  mode="range"
+                  selected={customDateRange.from ? { from: customDateRange.from, to: customDateRange.to } : undefined}
+                  onSelect={(range: any) => setCustomDateRange({ from: range?.from, to: range?.to })}
+                  numberOfMonths={1}
+                  className="p-3 pointer-events-auto"
+                />
+              </PopoverContent>
+            </Popover>
+          )}
+
+          <Select value={channelFilter} onValueChange={(v) => setChannelFilter(v as ChannelFilter)}>
+            <SelectTrigger className="w-[140px] h-9 text-sm">
+              <SelectValue placeholder="Canal" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os canais</SelectItem>
+              <SelectItem value="whatsapp">WhatsApp</SelectItem>
+              <SelectItem value="instagram">Instagram</SelectItem>
+              <SelectItem value="machine">Machine</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={tagFilter} onValueChange={setTagFilter}>
+            <SelectTrigger className="w-[200px] h-9 text-sm">
+              <SelectValue placeholder="Tag taxonomia" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas as tags</SelectItem>
+              {SUPORTE_TAXONOMY_TAGS.map(tag => (
+                <SelectItem key={tag} value={tag}>{tag}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Logs list */}
+        <ScrollArea className="flex-1">
+          {loading ? (
+            <div className="flex items-center justify-center h-40">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+            </div>
+          ) : filteredLogs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-40 text-muted-foreground">
+              <Bot className="w-12 h-12 mb-2 opacity-50" />
+              <p>Nenhum log de IA encontrado</p>
+            </div>
+          ) : (
+            <div className="grid gap-3">
+              {filteredLogs.map((log) => {
+                const realChannel = log.contact_notes?.includes('franqueado:') ? 'machine' : (log.channel || 'whatsapp');
+                const taxonomyTag = log.tags?.find(t => SUPORTE_TAXONOMY_TAGS.some(st => t === st));
+                const hasNewKnowledge = log.messages?.some((m: any) => m.content?.includes('[NOVO_CONHECIMENTO_NECESSARIO]'));
+
+                return (
+                  <Card
+                    key={log.id}
+                    className={cn(
+                      "cursor-pointer hover:bg-accent/50 transition-colors",
+                      log.priority === 'urgent' && "border-destructive/50"
+                    )}
+                    onClick={() => { setSelectedLog(log); setShowMessages(true); }}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
+                        <div className="flex items-start gap-3 flex-1 min-w-0">
+                          <div className="relative shrink-0">
+                            <Avatar className="h-10 w-10">
+                              <AvatarFallback className="bg-primary/10 text-primary">
+                                {getInitials(log.contact_name)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="absolute -bottom-1 -right-1">
+                              {realChannel === 'instagram' ? (
+                                <div className="w-5 h-5 rounded-full bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400 flex items-center justify-center">
+                                  <Instagram className="w-3 h-3 text-white" />
+                                </div>
+                              ) : realChannel === 'machine' ? (
+                                <div className="w-5 h-5 rounded-full bg-orange-500 flex items-center justify-center">
+                                  <Bike className="w-3 h-3 text-white" />
+                                </div>
+                              ) : (
+                                <div className="w-5 h-5 rounded-full bg-[#25D366] flex items-center justify-center">
+                                  <MessageSquare className="w-3 h-3 text-white" />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <h3 className="font-medium truncate">{log.contact_name}</h3>
+                              {log.protocol && (
+                                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
+                                  📋 {log.protocol}
+                                </span>
+                              )}
+                              <Badge className={priorityColors[log.priority] || priorityColors.normal}>
+                                {log.priority}
+                              </Badge>
+                              {hasNewKnowledge && (
+                                <Badge variant="outline" className="text-warning border-warning/50 gap-1">
+                                  <AlertTriangle className="w-3 h-3" />
+                                  Novo conhecimento
+                                </Badge>
+                              )}
+                            </div>
+
+                            {/* Taxonomy tag */}
+                            {taxonomyTag && (
+                              <div className="mb-1">
+                                <Badge className={cn("text-xs", getTagColorClasses(taxonomyTag))}>
+                                  {taxonomyTag}
+                                </Badge>
+                              </div>
+                            )}
+
+                            {/* Other tags */}
+                            {log.tags?.filter(t => !SUPORTE_TAXONOMY_TAGS.some(st => t === st)).length > 0 && (
+                              <div className="flex gap-1 flex-wrap mb-1">
+                                {log.tags.filter(t => !SUPORTE_TAXONOMY_TAGS.some(st => t === st)).map(tag => (
+                                  <Badge key={tag} variant="outline" className={cn("text-xs", getTagColorClasses(tag))}>
+                                    {tag}
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
+
+                            <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                              <span className="flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                {format(new Date(log.finalized_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+                              </span>
+                              <span>{formatDuration(log.started_at, log.finalized_at)}</span>
+                              <span className="flex items-center gap-1">
+                                <MessageSquare className="w-3 h-3" />
+                                {log.total_messages} msgs
+                              </span>
+                              {log.assigned_to_name && (
+                                <span className="flex items-center gap-1">
+                                  <Bot className="w-3 h-3" />
+                                  {log.assigned_to_name}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </ScrollArea>
+
+        {/* Messages Dialog */}
+        <Dialog open={showMessages} onOpenChange={setShowMessages}>
+          <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Bot className="w-5 h-5 text-primary" />
+                {selectedLog?.contact_name}
+                {selectedLog?.protocol && (
+                  <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                    {selectedLog.protocol}
+                  </span>
+                )}
+              </DialogTitle>
+            </DialogHeader>
+
+            {selectedLog && (
+              <div className="flex-1 overflow-hidden flex flex-col gap-3">
+                {/* Taxonomy tag and summary */}
+                {selectedLog.tags?.find(t => SUPORTE_TAXONOMY_TAGS.some(st => t === st)) && (
+                  <div className="flex items-center gap-2">
+                    <Badge className={cn("text-sm", getTagColorClasses(selectedLog.tags.find(t => SUPORTE_TAXONOMY_TAGS.some(st => t === st))!))}>
+                      {selectedLog.tags.find(t => SUPORTE_TAXONOMY_TAGS.some(st => t === st))}
+                    </Badge>
+                  </div>
+                )}
+
+                {/* Messages */}
+                <ScrollArea className="flex-1 max-h-[60vh]">
+                  <div className="space-y-3 pr-4">
+                    {selectedLog.messages.map((msg: any, idx: number) => (
+                      <div
+                        key={idx}
+                        className={cn(
+                          "flex flex-col gap-1 max-w-[85%]",
+                          msg.sender_id ? "ml-auto items-end" : "items-start"
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            "rounded-lg px-3 py-2 text-sm",
+                            msg.sender_id
+                              ? "bg-primary text-primary-foreground"
+                              : msg.message_type === 'system'
+                              ? "bg-warning/10 text-warning border border-warning/20 mx-auto text-center max-w-full"
+                              : "bg-muted"
+                          )}
+                        >
+                          <p className="text-xs font-medium mb-0.5 opacity-70">{msg.sender_name}</p>
+                          {msg.message_type === 'image' || msg.message_type === 'file' || msg.message_type === 'audio' ? (
+                            <MessageAttachment content={msg.content} type={msg.message_type} />
+                          ) : (
+                            <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-muted-foreground">
+                          {format(new Date(msg.created_at), "HH:mm", { locale: ptBR })}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+      </div>
+    </MainLayout>
+  );
+}

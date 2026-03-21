@@ -82,6 +82,11 @@ const getNavItems = (queueCount: number, activeConversationsCount: number, inter
 
   items.push({ icon: ContactRound, label: 'Contatos', path: '/contatos' });
 
+  if (showRanking) {
+    // showRanking is true for Suporte members — add Logs IA
+    items.push({ icon: Bot, label: 'Logs IA', path: '/logs-ia' });
+  }
+
   if (isSDR) {
     items.push({ icon: LayoutDashboard, label: 'Comercial', path: '/comercial' });
     items.push({ icon: BarChart3, label: 'Pipeline', path: '/comercial/pipeline' });
