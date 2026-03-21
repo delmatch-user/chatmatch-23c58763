@@ -329,6 +329,7 @@ export type Database = {
           created_at: string
           department_id: string
           external_id: string | null
+          handoff_summary: string | null
           id: string
           last_message_preview: string | null
           priority: Database["public"]["Enums"]["priority_level"]
@@ -350,6 +351,7 @@ export type Database = {
           created_at?: string
           department_id: string
           external_id?: string | null
+          handoff_summary?: string | null
           id?: string
           last_message_preview?: string | null
           priority?: Database["public"]["Enums"]["priority_level"]
@@ -371,6 +373,7 @@ export type Database = {
           created_at?: string
           department_id?: string
           external_id?: string | null
+          handoff_summary?: string | null
           id?: string
           last_message_preview?: string | null
           priority?: Database["public"]["Enums"]["priority_level"]
