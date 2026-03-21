@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, DollarSign, Loader2, CalendarClock, Tag, Settings, MoreHorizontal, X, FileText, Phone, CheckCircle2, Circle, Trash2, Clock, MessageSquare, RotateCcw } from 'lucide-react';
+import { Plus, Search, DollarSign, Loader2, CalendarClock, Tag, Settings, MoreHorizontal, X, FileText, Phone, CheckCircle2, Circle, Trash2, Clock, MessageSquare, RotateCcw, MapPin } from 'lucide-react';
 import { sdrApi, SDRDeal, SDRPipelineStage, SDRDealActivity } from '@/services/sdrApi';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -165,7 +165,10 @@ export default function SDRPipelinePage() {
                           </span>
                         </div>
                         <h4 className="font-semibold text-sm mb-0.5 leading-tight">{deal.title}</h4>
-                        <p className="text-[10px] text-muted-foreground mb-2">{deal.company}</p>
+                        <p className="text-[10px] text-muted-foreground mb-1">{deal.company}</p>
+                        {deal.contactCity && (
+                          <p className="text-[10px] text-muted-foreground mb-2 flex items-center gap-1"><MapPin className="w-2.5 h-2.5 text-primary" />{deal.contactCity}</p>
+                        )}
                         {deal.tags.length > 0 && (
                           <div className="flex items-center gap-1.5 mb-2 flex-wrap">
                             {deal.tags.map(tag => (<span key={tag} className={`text-[9px] px-1.5 py-0.5 rounded flex items-center gap-1 border ${getTagColorClasses(tag)}`}><Tag className="w-2.5 h-2.5" />{tag}</span>))}
@@ -213,6 +216,15 @@ export default function SDRPipelinePage() {
                     <div>
                       <p className="text-sm font-medium">{selectedDeal.contactName}</p>
                       <p className="text-xs text-muted-foreground">{selectedDeal.contactPhone}</p>
+                    </div>
+                  </div>
+                )}
+                {selectedDeal.contactCity && (
+                  <div className="p-3 rounded-lg bg-secondary/50 flex items-center gap-3">
+                    <MapPin className="w-4 h-4 text-primary" />
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-0.5">Cidade</p>
+                      <p className="text-sm font-medium">{selectedDeal.contactCity}</p>
                     </div>
                   </div>
                 )}

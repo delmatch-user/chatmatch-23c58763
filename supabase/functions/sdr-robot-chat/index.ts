@@ -850,6 +850,7 @@ serve(async (req) => {
               name: { type: "string", description: "Novo nome (opcional)" },
               email: { type: "string", description: "Email (opcional)" },
               notes: { type: "string", description: "Observações (opcional)" },
+              city: { type: "string", description: "Cidade do lead (opcional). Use quando o lead informar sua cidade." },
               message_to_client: { type: "string", description: "Mensagem/resposta/simulação que será enviada ao cliente após atualizar os dados. OBRIGATÓRIO." }
             },
             required: ["message_to_client"]
@@ -1123,6 +1124,7 @@ serve(async (req) => {
             if (args.name) { updateData.name = args.name; updateData.name_edited = true; }
             if (args.email) updateData.email = args.email;
             if (args.notes) updateData.notes = args.notes;
+            if (args.city) updateData.city = args.city;
             if (Object.keys(updateData).length > 0) {
               await supabase.from('contacts').update(updateData).eq('id', convData.contact_id);
               console.log(`[SDR-Robot-Chat] Contact updated:`, updateData);
