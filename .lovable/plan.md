@@ -1,31 +1,46 @@
 
 
-## Plano: Sincronizar Dashboard com o Sistema de Chat
+## Plano: Corrigir Robô SDR Não Enviando Simulação
 
-### Problemas Identificados
+### Problema Raiz
 
-1. **TMA/TME sem filtro de data no banco** — `fetchTimeMetrics` busca TODOS os `conversation_logs` sem filtrar por hoje nem por `reset_at IS NULL`. Isso pode bater no limite de 1000 linhas do Supabase e retornar dados antigos/resetados.
+Nos logs, o Arthur (robô SDR) chama a ferramenta `edit_contact` para anotar informações do lead (ex: "interesse em Praia Grande"), mas a IA retorna **somente tool calls sem texto**. O código atual trata isso como erro ("Empty response") e para — nunca envia a simulação ao cliente.
 
-2. **"Finalizadas" conta do lugar errado** — Usa `conversations.filter(c => c.status === 'finalizada')`, mas conversas finalizadas são deletadas da tabela `conversations` e movidas para `conversation_logs`. O valor será sempre ~0.
-
-3. **Gráfico "Atividade por Hora" filtra client-side** — Busca ALL logs e filtra por `startedAt >= today` no JavaScript. Com muitos logs, o limite de 1000 linhas omite dados recentes.
+Isso acontece porque o código não implementa o **loop de tool calls** padrão da OpenAI/Gemini: após processar tool calls, é preciso enviar os resultados de volta à IA para que ela gere a resposta final.
 
 ### Solução
 
-Alterar `src/pages/admin/AdminDashboard.tsx`:
+Alterar `supabase/functions/sdr-robot-chat/index.ts`:
 
-**1. `fetchTimeMetrics` — adicionar filtros de banco**
-- Query de logs online: adicionar `.is('reset_at', null)` e `.gte('started_at', today.toISOString())`
-- Query de todos logs (gráfico): adicionar `.gte('started_at', today.toISOString())` para filtrar no banco em vez de client-side
-- Remover filtro client-side `if (logDate >= today)` que fica redundante
+**1. Marcar `edit_contact` e `manage_labels` como `actionTaken`**
+- Atualmente só `advance_lead_stage` e `transfer_to_human` setam `actionTaken = true`
+- Adicionar `actionTaken = true` para os outros tools também, para não dar erro silencioso
 
-**2. "Finalizadas" — contar de `conversation_logs`**
-- Adicionar novo state `todayFinalized` e buscar count de `conversation_logs` filtrado por `finalized_at >= today` e `reset_at IS NULL`
-- Usar esse valor no MiniStat "Finalizadas" em vez de `completed`
+**2. Implementar follow-up AI call (tool result loop)**
+Após processar tool calls não-transferência com `responseText` vazio:
+- Montar mensagens com os resultados dos tools (`role: "tool"`)
+- Fazer uma segunda chamada à IA **sem tools** para obter a resposta textual
+- Isso permite que o Arthur execute `edit_contact` E gere a simulação na sequência
 
-**3. Realtime listener — adicionar `profiles` para status online**
-- Adicionar listener de `profiles` para atualizar status online/away em tempo real
+```text
+Fluxo atual (quebrado):
+  Cliente: "Praia Grande"
+  → IA retorna: tool_call(edit_contact) + content: ""
+  → Código processa edit_contact
+  → responseText="" && actionTaken=false → ERRO "Empty response"
+
+Fluxo corrigido:
+  Cliente: "Praia Grande"  
+  → IA retorna: tool_call(edit_contact) + content: ""
+  → Código processa edit_contact
+  → responseText="" → Follow-up call sem tools
+  → IA retorna: "Ótimo! Veja a simulação para Praia Grande..."
+  → Mensagem enviada ao cliente ✅
+```
+
+**3. Não limpar `responseText` quando não há transfer/advance**
+- O bloco `hasTransferTool` (linhas 959-964) já é correto, mas garantir que não afete tool calls de `edit_contact`
 
 ### Arquivo
-- `src/pages/admin/AdminDashboard.tsx`
+- `supabase/functions/sdr-robot-chat/index.ts` — adicionar follow-up call e marcar actionTaken para todos os tools
 
