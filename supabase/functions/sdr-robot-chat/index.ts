@@ -885,11 +885,11 @@ serve(async (req) => {
       model,
       messages: [
         { role: "system", content: systemPrompt },
-        ...conversationHistory,
         ...(lastTransfer?.reason ? [{
           role: "system" as const,
-          content: `## Contexto da Transferência — PRIORIDADE MÁXIMA\nO atendente "${lastTransfer.from_user_name || 'Atendente'}" transferiu esta conversa para você com a seguinte instrução:\n"${lastTransfer.reason}"\nIMPORTANTE: NÃO se apresente novamente. Continue a conversa naturalmente, usando o motivo acima como guia principal para sua próxima resposta.`
+          content: `## CONTEXTO DA TRANSFERÊNCIA — AÇÃO IMEDIATA OBRIGATÓRIA\nO atendente "${lastTransfer.from_user_name || 'Atendente'}" transferiu esta conversa para você com a seguinte instrução:\n"${lastTransfer.reason}"\n\nREGRAS:\n1. NÃO se apresente novamente nem cumprimente como novo atendimento\n2. Aja IMEDIATAMENTE com base no motivo acima — ele é sua prioridade número 1\n3. Se o motivo menciona "simulação", "enviar simulação" ou similar, gere e envie a simulação na sua primeira resposta\n4. Continue a conversa naturalmente a partir do ponto onde o atendente parou`
         }] : []),
+        ...conversationHistory,
       ],
       max_tokens: robot.max_tokens || 500,
       temperature,
