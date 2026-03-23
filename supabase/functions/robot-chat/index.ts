@@ -340,15 +340,15 @@ function buildSystemPrompt(config: RobotConfig, availableDepartments?: { id: str
   prompt += `- Nunca repita a mesma pergunta mais de 2 vezes.\n`;
 
   prompt += `\n## Blindagem de Acidentes\n`;
-  prompt += `- Se o cliente mencionar acidente, batida, colisão, emergência médica ou qualquer situação de risco físico: NÃO tente dar tutorial ou resolver. Apenas acalme o parceiro com empatia e transfira IMEDIATAMENTE para um humano com a tag "🔴 ACIDENTE_URGENTE".\n`;
+  prompt += `- Se o cliente mencionar acidente, batida, colisão, emergência médica ou qualquer situação de risco físico: NÃO tente dar tutorial ou resolver. Apenas acalme o parceiro com empatia e transfira IMEDIATAMENTE para um humano com a tag "Acidente - Urgente".\n`;
 
   prompt += `\n## Taxonomia de Prioridade (Tags)\n`;
   prompt += `Ao transferir para humano, SEMPRE classifique o atendimento com UMA das tags abaixo no campo "taxonomy_tag":\n`;
-  prompt += `- 🔴 ACIDENTE_URGENTE – Acidentes, emergências, risco físico. Fura fila.\n`;
-  prompt += `- 🟠 OPERACIONAL_PENDENTE – Bugs no app, erros de código, problemas técnicos.\n`;
-  prompt += `- 🔵 FINANCEIRO_NORMAL – Repasses, saques, questões financeiras.\n`;
-  prompt += `- 🟢 DUVIDA_GERAL – Perguntas simples, dúvidas gerais.\n`;
-  prompt += `- 🟡 COMERCIAL_B2B – Exclusivo para donos de lojas, gerentes, questões B2B.\n`;
+  prompt += `- Acidente - Urgente – Acidentes, emergências, risco físico. Fura fila.\n`;
+  prompt += `- Operacional - Pendente – Bugs no app, erros de código, problemas técnicos.\n`;
+  prompt += `- Financeiro - Normal – Repasses, saques, questões financeiras.\n`;
+  prompt += `- Duvida - Geral – Perguntas simples, dúvidas gerais.\n`;
+  prompt += `- Comercial - B2B – Exclusivo para donos de lojas, gerentes, questões B2B.\n`;
 
   prompt += `\n## Procedimento de Pedidos Duplicados\n`;
   prompt += `- Nossa plataforma é receptora/passiva. Se houver pedidos duplicados, explique que apenas recebemos os dados da origem (iFood/Saipos/etc). O erro de duplicidade é da plataforma de origem.\n`;
@@ -434,11 +434,11 @@ function buildOpenAITools(config: RobotConfig, availableDepartments?: { id: stri
               type: "string",
               description: "Tag de prioridade para classificar o atendimento",
               enum: [
-                "🔴 ACIDENTE_URGENTE",
-                "🟠 OPERACIONAL_PENDENTE",
-                "🔵 FINANCEIRO_NORMAL",
-                "🟢 DUVIDA_GERAL",
-                "🟡 COMERCIAL_B2B"
+                "Acidente - Urgente",
+                "Operacional - Pendente",
+                "Financeiro - Normal",
+                "Duvida - Geral",
+                "Comercial - B2B"
               ]
             }
           },
@@ -1423,11 +1423,11 @@ async function handleAutomaticMode(body: {
       }
       
       else if (functionName === 'transfer_to_human') {
-        const taxonomyTag = args.taxonomy_tag || '🟢 DUVIDA_GERAL';
+        const taxonomyTag = args.taxonomy_tag || 'Duvida - Geral';
         const handoffSummary = args.handoff_summary || args.reason || '';
         
         // Determinar prioridade baseada na tag
-        const isUrgent = taxonomyTag.includes('ACIDENTE_URGENTE');
+        const isUrgent = taxonomyTag.includes('Acidente - Urgente');
         
         // Colocar na fila para atendente humano
         const updatePayload: Record<string, unknown> = {
