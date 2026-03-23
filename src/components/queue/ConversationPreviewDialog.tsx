@@ -144,7 +144,6 @@ export function ConversationPreviewDialog({
     }
   }, [open, conversation?.id, refetchConversations]);
 
-  const scrollViewportRef = useRef<HTMLDivElement>(null);
 
   // Scroll to bottom on open
   const scrollToBottom = useCallback(() => {
