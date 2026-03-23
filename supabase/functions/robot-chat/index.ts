@@ -324,8 +324,10 @@ function buildSystemPrompt(config: RobotConfig, availableDepartments?: { id: str
   if (config.tools.editContact) {
     prompt += `- **edit_contact**: Use para atualizar informações do contato (nome, email, notas) quando o cliente fornecer esses dados.\n`;
   }
+  if ((config.tools as any).canFinalize) {
+    prompt += `- **finalize_conversation**: Use quando você resolver COMPLETAMENTE o problema do cliente e ele confirmar que está tudo certo. Envie uma mensagem de despedida e finalize o atendimento.\n`;
+  }
   
-  prompt += `\n## Diretrizes de Comportamento\n`;
   prompt += `- Seja cordial e profissional em todas as interações.\n`;
   prompt += `- Responda de forma clara e objetiva.\n`;
   prompt += `- Mantenha respostas concisas e diretas.\n`;
