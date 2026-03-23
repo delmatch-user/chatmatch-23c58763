@@ -2,6 +2,9 @@ import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { Conversation } from '@/types';
+import { SUPORTE_TAXONOMY_TAGS } from '@/lib/tagColors';
+
+const SUPORTE_DEPARTMENT_ID = 'dea51138-49e4-45b0-a491-fb07a5fad479';
 
 export function useConversations() {
   const [loading, setLoading] = useState(false);
