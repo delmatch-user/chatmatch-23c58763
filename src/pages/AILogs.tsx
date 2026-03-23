@@ -10,14 +10,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
-import { Search, MessageSquare, Clock, Bot, Instagram, CalendarIcon, Bike, AlertTriangle } from 'lucide-react';
+import { Search, MessageSquare, Clock, Bot, Instagram, CalendarIcon, Bike, AlertTriangle, FileText, Loader2, Copy, Download } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useApp } from '@/contexts/AppContext';
+import { useAuth } from '@/hooks/useAuth';
 import { format, startOfDay, endOfDay, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { getTagColorClasses } from '@/lib/tagColors';
 import { SUPORTE_TAXONOMY_TAGS } from '@/lib/tagColors';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 interface ConversationLog {
   id: string;
