@@ -532,6 +532,30 @@ function buildOpenAITools(config: RobotConfig, availableDepartments?: { id: stri
     });
   }
 
+  if ((config.tools as any).canFinalize) {
+    tools.push({
+      type: "function",
+      function: {
+        name: "finalize_conversation",
+        description: "Finalizar o atendimento quando o problema do cliente foi completamente resolvido e ele confirmou que está tudo certo",
+        parameters: {
+          type: "object",
+          properties: {
+            farewell_message: {
+              type: "string",
+              description: "Mensagem de despedida cordial para enviar ao cliente antes de encerrar"
+            },
+            resolution_summary: {
+              type: "string",
+              description: "Resumo breve do que foi resolvido neste atendimento"
+            }
+          },
+          required: ["farewell_message", "resolution_summary"]
+        }
+      }
+    });
+  }
+
   return tools;
 }
 
@@ -1287,7 +1311,7 @@ async function handleAutomaticMode(body: {
     
     // Limpar content da IA quando há tool calls de transferência para evitar duplicação
     hasTransferTool = toolCalls.some((tc: any) => 
-      ['transfer_to_department', 'transfer_to_human', 'transfer_to_robot'].includes(tc.function.name)
+      ['transfer_to_department', 'transfer_to_human', 'transfer_to_robot', 'finalize_conversation'].includes(tc.function.name)
     );
     if (hasTransferTool) {
       aiResponse = '';
