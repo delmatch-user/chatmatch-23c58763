@@ -389,9 +389,15 @@ export default function AILogs() {
                                   📋 {log.protocol}
                                 </span>
                               )}
-                              <Badge className={priorityColors[log.priority] || priorityColors.normal}>
-                                {log.priority}
-                              </Badge>
+                              {taxonomyTag ? (
+                                <Badge className={cn("text-xs", getTagColorClasses(taxonomyTag))}>
+                                  {taxonomyTag}
+                                </Badge>
+                              ) : (
+                                <Badge className={priorityColors[log.priority] || priorityColors.normal}>
+                                  {log.priority}
+                                </Badge>
+                              )}
                               {hasNewKnowledge && (
                                 <Badge variant="outline" className="text-warning border-warning/50 gap-1">
                                   <AlertTriangle className="w-3 h-3" />
@@ -399,15 +405,6 @@ export default function AILogs() {
                                 </Badge>
                               )}
                             </div>
-
-                            {/* Taxonomy tag */}
-                            {taxonomyTag && (
-                              <div className="mb-1">
-                                <Badge className={cn("text-xs", getTagColorClasses(taxonomyTag))}>
-                                  {taxonomyTag}
-                                </Badge>
-                              </div>
-                            )}
 
                             {/* Other tags */}
                             {log.tags?.filter(t => !SUPORTE_TAXONOMY_TAGS.some(st => t === st)).length > 0 && (
