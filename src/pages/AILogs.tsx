@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
-import { Search, MessageSquare, Clock, Bot, Instagram, CalendarIcon, Bike, AlertTriangle, FileText, Loader2, Copy, Download } from 'lucide-react';
+import { Search, MessageSquare, Clock, Bot, Instagram, CalendarIcon, Bike, AlertTriangle, FileText, Loader2, Copy, Download, Check } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/hooks/useAuth';
@@ -20,6 +20,51 @@ import { getTagColorClasses, getTagDotColor, LEGACY_TAG_MAP } from '@/lib/tagCol
 import { SUPORTE_TAXONOMY_TAGS } from '@/lib/tagColors';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+
+function renderMarkdown(text: string): string {
+  let html = text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/^---$/gm, '<hr />')
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/^\|(.+)\|$/gm, (match, content) => {
+      const cells = content.split('|').map((c: string) => c.trim());
+      if (cells.every((c: string) => /^[-:]+$/.test(c))) return '<!--table-sep-->';
+      const tag = 'td';
+      return '<tr>' + cells.map((c: string) => `<${tag}>${c}</${tag}>`).join('') + '</tr>';
+    });
+
+  html = html.replace(/((<tr>.*<\/tr>\n?)+)/g, (block) => {
+    const clean = block.replace(/<!--table-sep-->\n?/g, '');
+    const withTh = clean.replace(/<tr>(.*?)<\/tr>/, (_, inner) =>
+      '<thead><tr>' + inner.replace(/<td>/g, '<th>').replace(/<\/td>/g, '</th>') + '</tr></thead>'
+    );
+    return '<table>' + withTh + '</table>';
+  });
+
+  html = html.replace(/^(\d+)\.\s+(.+)$/gm, '<oli>$2</oli>');
+  html = html.replace(/((<oli>.*<\/oli>\n?)+)/g, (block) =>
+    '<ol>' + block.replace(/<\/?oli>/g, (t) => t.replace('oli', 'li')) + '</ol>'
+  );
+
+  html = html.replace(/^[\-\*]\s+(.+)$/gm, '<uli>$1</uli>');
+  html = html.replace(/((<uli>.*<\/uli>\n?)+)/g, (block) =>
+    '<ul>' + block.replace(/<\/?uli>/g, (t) => t.replace('uli', 'li')) + '</ul>'
+  );
+
+  html = html.split('\n').map(line => {
+    const trimmed = line.trim();
+    if (!trimmed) return '';
+    if (/^<(h[1-6]|ul|ol|li|table|thead|tr|th|td|hr|p|div|blockquote)/.test(trimmed)) return trimmed;
+    return `<p>${trimmed}</p>`;
+  }).join('\n');
+
+  return html;
+}
 
 interface ConversationLog {
   id: string;
@@ -89,35 +134,37 @@ export default function AILogs() {
     }
   };
 
+  const [reportCopied, setReportCopied] = useState(false);
+
   const copyReport = () => {
     navigator.clipboard.writeText(reportResult);
+    setReportCopied(true);
     toast.success('Relatório copiado!');
+    setTimeout(() => setReportCopied(false), 2000);
   };
 
   const downloadReportPdf = async () => {
     const html2pdf = (await import('html2pdf.js')).default;
     const container = document.createElement('div');
-    container.style.width = '800px';
-    container.style.padding = '32px';
-    container.style.fontFamily = 'sans-serif';
-    container.style.fontSize = '13px';
-    container.style.lineHeight = '1.6';
-    container.style.color = '#1a1a1a';
-    
-    // Simple markdown to HTML
-    const htmlContent = reportResult
-      .replace(/^## (.*$)/gm, '<h2 style="margin-top:20px;font-size:16px;font-weight:bold;">$1</h2>')
-      .replace(/^### (.*$)/gm, '<h3 style="margin-top:14px;font-size:14px;font-weight:bold;">$1</h3>')
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/^- (.*$)/gm, '<li style="margin-left:16px;">$1</li>')
-      .replace(/^(\d+)\. (.*$)/gm, '<li style="margin-left:16px;">$2</li>')
-      .replace(/\n/g, '<br/>');
-    
-    container.innerHTML = `<h1 style="font-size:20px;margin-bottom:8px;">Relatório IA - Suporte</h1>
-      <p style="color:#666;margin-bottom:16px;">Período: ${reportPeriod} dias | IA: ${reportAgent === 'all' ? 'Todas' : reportAgent} | Gerado em ${format(new Date(), 'dd/MM/yyyy HH:mm')}</p>
-      <hr style="margin-bottom:16px;"/>
-      ${htmlContent}`;
-    
+    container.innerHTML = `
+      <div style="font-family: Arial, sans-serif; padding: 32px; color: #1a1a1a; font-size: 13px; line-height: 1.7;">
+        <h1 style="font-size: 20px; margin-bottom: 4px;">Relatório IA - Motivos de Contato (Suporte)</h1>
+        <p style="color: #666; font-size: 12px; margin-bottom: 16px;">Período: ${reportPeriod} dias | IA: ${reportAgent === 'all' ? 'Todas' : reportAgent} | Gerado em ${format(new Date(), 'dd/MM/yyyy HH:mm')}</p>
+        <hr style="margin-bottom: 16px; border-color: #e5e5e5;" />
+        <style>
+          h1 { font-size: 20px; font-weight: bold; margin-top: 20px; margin-bottom: 8px; }
+          h2 { font-size: 16px; font-weight: bold; margin-top: 18px; margin-bottom: 6px; }
+          h3 { font-size: 14px; font-weight: bold; margin-top: 14px; margin-bottom: 4px; }
+          p { margin-bottom: 4px; }
+          ul, ol { margin-left: 20px; margin-bottom: 8px; }
+          li { margin-bottom: 2px; }
+          table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 12px; }
+          th, td { border: 1px solid #d1d5db; padding: 6px 10px; text-align: left; }
+          th { background: #f3f4f6; font-weight: 600; }
+          hr { border: none; border-top: 1px solid #e5e5e5; margin: 12px 0; }
+        </style>
+        ${renderMarkdown(reportResult)}
+      </div>`;
     document.body.appendChild(container);
     await html2pdf().set({
       margin: [10, 10],
@@ -535,17 +582,31 @@ export default function AILogs() {
 
         {/* Report Dialog */}
         <Dialog open={showReport} onOpenChange={setShowReport}>
-          <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <FileText className="w-5 h-5 text-primary" />
-                Relatório de Atendimentos IA
-              </DialogTitle>
+          <DialogContent className="max-w-3xl h-[85vh] flex flex-col overflow-hidden">
+            <DialogHeader className="pb-3 border-b">
+              <div className="flex items-center justify-between">
+                <DialogTitle className="flex items-center gap-2">
+                  <Bot className="w-5 h-5 text-primary" />
+                  Relatório IA - Motivos de Contato (Suporte)
+                </DialogTitle>
+                {reportResult && (
+                  <div className="flex gap-1.5">
+                    <Button size="sm" variant="outline" onClick={copyReport} className="gap-1.5 h-8 text-xs">
+                      {reportCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      {reportCopied ? 'Copiado' : 'Copiar'}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={downloadReportPdf} className="gap-1.5 h-8 text-xs">
+                      <Download className="w-3.5 h-3.5" />
+                      Exportar PDF
+                    </Button>
+                  </div>
+                )}
+              </div>
             </DialogHeader>
 
-            <div className="flex flex-wrap items-center gap-3 pb-3 border-b">
+            <div className="flex items-center gap-3 py-3 border-b">
               <Select value={reportPeriod} onValueChange={setReportPeriod}>
-                <SelectTrigger className="w-[140px] h-9 text-sm">
+                <SelectTrigger className="w-[130px] h-9 text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -556,7 +617,7 @@ export default function AILogs() {
               </Select>
 
               <Select value={reportAgent} onValueChange={setReportAgent}>
-                <SelectTrigger className="w-[160px] h-9 text-sm">
+                <SelectTrigger className="w-[150px] h-9 text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -568,45 +629,25 @@ export default function AILogs() {
               </Select>
 
               <Button size="sm" onClick={generateReport} disabled={reportLoading} className="gap-1.5">
-                {reportLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                {reportLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bot className="w-4 h-4" />}
                 {reportLoading ? 'Gerando...' : 'Gerar Relatório'}
               </Button>
-
-              {reportResult && (
-                <div className="flex gap-1.5 ml-auto">
-                  <Button size="sm" variant="outline" onClick={copyReport} className="gap-1">
-                    <Copy className="w-3.5 h-3.5" />
-                    Copiar
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={downloadReportPdf} className="gap-1">
-                    <Download className="w-3.5 h-3.5" />
-                    PDF
-                  </Button>
-                </div>
-              )}
             </div>
 
-            <ScrollArea className="flex-1 max-h-[60vh]">
+            <ScrollArea className="flex-1 min-h-0">
               {reportLoading ? (
                 <div className="flex flex-col items-center justify-center h-40 gap-3">
                   <Loader2 className="w-8 h-8 animate-spin text-primary" />
                   <p className="text-sm text-muted-foreground">Analisando conversas com IA...</p>
                 </div>
               ) : reportResult ? (
-                <div className="prose prose-sm dark:prose-invert max-w-none pr-4 whitespace-pre-wrap">
-                  {reportResult.split('\n').map((line, i) => {
-                    if (line.startsWith('## ')) return <h2 key={i} className="text-base font-bold mt-4 mb-2">{line.replace('## ', '')}</h2>;
-                    if (line.startsWith('### ')) return <h3 key={i} className="text-sm font-semibold mt-3 mb-1">{line.replace('### ', '')}</h3>;
-                    if (line.startsWith('- ')) return <li key={i} className="ml-4 text-sm">{line.replace('- ', '').replace(/\*\*(.*?)\*\*/g, '$1')}</li>;
-                    if (line.match(/^\d+\. /)) return <li key={i} className="ml-4 text-sm list-decimal">{line.replace(/^\d+\. /, '').replace(/\*\*(.*?)\*\*/g, '$1')}</li>;
-                    if (line.trim() === '---') return <hr key={i} className="my-3" />;
-                    if (line.trim() === '') return <br key={i} />;
-                    return <p key={i} className="text-sm mb-1" dangerouslySetInnerHTML={{ __html: line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />;
-                  })}
-                </div>
+                <div
+                  className="prose prose-sm dark:prose-invert max-w-none pr-4 [&_table]:w-full [&_table]:border-collapse [&_th]:border [&_th]:border-border [&_th]:px-3 [&_th]:py-1.5 [&_th]:bg-muted [&_th]:text-left [&_th]:text-xs [&_th]:font-semibold [&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-1.5 [&_td]:text-xs"
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(reportResult) }}
+                />
               ) : (
                 <div className="flex flex-col items-center justify-center h-40 text-muted-foreground">
-                  <FileText className="w-12 h-12 mb-2 opacity-50" />
+                  <Bot className="w-12 h-12 mb-2 opacity-50" />
                   <p className="text-sm">Selecione os filtros e clique em "Gerar Relatório"</p>
                 </div>
               )}
