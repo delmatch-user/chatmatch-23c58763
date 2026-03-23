@@ -50,6 +50,7 @@ type PeriodFilter = 'all' | 'today' | 'yesterday' | 'custom';
 type ChannelFilter = 'all' | 'whatsapp' | 'instagram' | 'machine';
 
 export default function AILogs() {
+  const { isAdmin, isSupervisor } = useAuth();
   const { user } = useApp();
   const [logs, setLogs] = useState<ConversationLog[]>([]);
   const [loading, setLoading] = useState(true);
