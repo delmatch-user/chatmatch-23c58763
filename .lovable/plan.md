@@ -1,25 +1,22 @@
 
 
-## Plano: Sincronizar cores das tags em todos os componentes
+## Plano: Melhorar scroll e separação de mensagens no ConversationPreviewDialog
 
 ### Problema
-Os componentes `QueueCard.tsx` e `ConversationList.tsx` usam classes CSS hardcoded para apenas 3 tags (`urgente`, `novo`, `retorno`), ignorando completamente as tags de taxonomia do Suporte (`Acidente - Urgente`, `Operacional - Pendente`, etc.). Resultado: as tags aparecem sem cor, como na screenshot.
-
-Os componentes `ContactDetails.tsx`, `AILogs.tsx`, `History.tsx` e `AdminConversationLogs.tsx` já usam `getTagColorClasses()` corretamente.
+O diálogo de preview na fila usa um `div` com `overflow-y-auto` simples, sem a estilização de scroll consistente com o Histórico. As mensagens também não têm separadores de data nem nomes de remetente no lado do contato.
 
 ### Correções
 
-#### 1. `src/components/queue/QueueCard.tsx` (linha ~193-206)
-- Importar `getTagColorClasses` de `@/lib/tagColors`
-- Substituir as classes hardcoded por `getTagColorClasses(tag)` com fallback para as tags antigas (`urgente`, `novo`, `retorno`)
+**Arquivo:** `src/components/queue/ConversationPreviewDialog.tsx`
 
-#### 2. `src/components/chat/ConversationList.tsx` (linha ~829-841)
-- Importar `getTagColorClasses` de `@/lib/tagColors`
-- Substituir as classes hardcoded por `getTagColorClasses(tag)` com o mesmo fallback
+1. **Substituir div de scroll pelo componente `ScrollArea`** (já importado mas não usado na área de mensagens) — trocar o `div ref={scrollRef}` por `ScrollArea` com altura adequada para garantir scrollbar estilizada.
 
-#### 3. `src/lib/tagColors.ts`
-- Adicionar as tags simples `urgente`, `novo`, `retorno` ao `TAG_COLOR_MAP` para manter compatibilidade com conversas que usam essas tags legadas
+2. **Adicionar separadores de data** entre mensagens de dias diferentes (padrão "Hoje", "Ontem", "dd/MM/yyyy"), igual ao Histórico e ao ChatPanel.
+
+3. **Mostrar nome do remetente** nas mensagens do contato (lado esquerdo) para paridade com as mensagens de agente/robô (lado direito) que já exibem `senderName`.
+
+4. **Ajustar scroll ref** para funcionar com `ScrollArea` (usar ref no viewport interno).
 
 ### Resultado
-Todas as telas (fila, lista de conversas, detalhes do contato, logs IA, histórico) exibirão as tags com cores consistentes, refletindo corretamente as prioridades definidas pelos robôs.
+O preview terá scrollbar estilizada, separação visual por datas e identificação clara de quem enviou cada mensagem — consistente com a tela de Histórico.
 
