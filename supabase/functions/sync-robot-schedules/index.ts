@@ -633,7 +633,7 @@ Deno.serve(async (req) => {
           const robotTools = robotData?.tools as Record<string, boolean> | null;
 
           // Só auto-finalizar se o robô tem a flag finalize_conversations ativa
-          if (!robotTools?.finalize_conversations) {
+          if (!robotTools?.canFinalize) {
             console.log(`[auto-finalize-robot] Robô ${robotName} não tem permissão de finalizar. Pulando conversa ${conv.id}`);
             continue;
           }
