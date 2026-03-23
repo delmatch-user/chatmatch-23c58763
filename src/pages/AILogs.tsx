@@ -63,6 +63,72 @@ export default function AILogs() {
   const [tagFilter, setTagFilter] = useState<string>('all');
   const [customDateRange, setCustomDateRange] = useState<{ from?: Date; to?: Date }>({});
 
+  // Report state
+  const [showReport, setShowReport] = useState(false);
+  const [reportPeriod, setReportPeriod] = useState<string>('30');
+  const [reportAgent, setReportAgent] = useState<string>('all');
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportResult, setReportResult] = useState<string>('');
+
+  const canSeeReport = isAdmin || isSupervisor;
+
+  const generateReport = async () => {
+    setReportLoading(true);
+    setReportResult('');
+    try {
+      const { data, error } = await supabase.functions.invoke('ai-logs-report', {
+        body: { period: parseInt(reportPeriod), agentName: reportAgent },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setReportResult(data.report || 'Erro ao gerar relatório.');
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao gerar relatório');
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
+  const copyReport = () => {
+    navigator.clipboard.writeText(reportResult);
+    toast.success('Relatório copiado!');
+  };
+
+  const downloadReportPdf = async () => {
+    const html2pdf = (await import('html2pdf.js')).default;
+    const container = document.createElement('div');
+    container.style.width = '800px';
+    container.style.padding = '32px';
+    container.style.fontFamily = 'sans-serif';
+    container.style.fontSize = '13px';
+    container.style.lineHeight = '1.6';
+    container.style.color = '#1a1a1a';
+    
+    // Simple markdown to HTML
+    const htmlContent = reportResult
+      .replace(/^## (.*$)/gm, '<h2 style="margin-top:20px;font-size:16px;font-weight:bold;">$1</h2>')
+      .replace(/^### (.*$)/gm, '<h3 style="margin-top:14px;font-size:14px;font-weight:bold;">$1</h3>')
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/^- (.*$)/gm, '<li style="margin-left:16px;">$1</li>')
+      .replace(/^(\d+)\. (.*$)/gm, '<li style="margin-left:16px;">$2</li>')
+      .replace(/\n/g, '<br/>');
+    
+    container.innerHTML = `<h1 style="font-size:20px;margin-bottom:8px;">Relatório IA - Suporte</h1>
+      <p style="color:#666;margin-bottom:16px;">Período: ${reportPeriod} dias | IA: ${reportAgent === 'all' ? 'Todas' : reportAgent} | Gerado em ${format(new Date(), 'dd/MM/yyyy HH:mm')}</p>
+      <hr style="margin-bottom:16px;"/>
+      ${htmlContent}`;
+    
+    document.body.appendChild(container);
+    await html2pdf().set({
+      margin: [10, 10],
+      filename: `relatorio-ia-${reportPeriod}d-${format(new Date(), 'yyyyMMdd')}.pdf`,
+      html2canvas: { scale: 2, width: 800 },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+    }).from(container).save();
+    document.body.removeChild(container);
+  };
+
   useEffect(() => {
     const fetchLogs = async () => {
       if (!user) return;
