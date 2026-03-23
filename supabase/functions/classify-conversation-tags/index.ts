@@ -54,20 +54,23 @@ serve(async (req) => {
       if (error) throw error;
       logsToClassify = data || [];
     } else {
+      // Fetch logs that don't have any taxonomy tag yet
+      // We need to fetch more and filter client-side since Supabase doesn't support NOT array overlap
       const { data, error } = await supabase
         .from('conversation_logs')
         .select('id, messages, tags, contact_name')
         .eq('department_id', SUPORTE_DEPARTMENT_ID)
         .not('finalized_by', 'is', null)
         .order('finalized_at', { ascending: false })
-        .limit(limit);
+        .limit(500); // Fetch more to find untagged ones
 
       if (error) throw error;
 
+      // Filter out logs that already have a taxonomy tag, then take the limit
       logsToClassify = (data || []).filter(log => {
         const tags = log.tags || [];
         return !tags.some((t: string) => TAXONOMY_TAGS.includes(t));
-      });
+      }).slice(0, limit);
     }
 
     if (logsToClassify.length === 0) {
