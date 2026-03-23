@@ -251,6 +251,12 @@ export default function AILogs() {
           <Badge variant="secondary" className="text-sm shrink-0 self-start sm:self-auto">
             {filteredLogs.length} conversas IA
           </Badge>
+          {canSeeReport && (
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShowReport(true)}>
+              <FileText className="w-4 h-4" />
+              Relatório
+            </Button>
+          )}
         </div>
 
         {/* Filters */}
