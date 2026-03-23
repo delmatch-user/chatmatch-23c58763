@@ -13,7 +13,7 @@ import { Conversation, Message } from '@/types';
 import { cn } from '@/lib/utils';
 import { extractRealPhone, formatPhoneForDisplay, getContactDisplayName, getInstagramDisplayHandle } from '@/lib/phoneUtils';
 import { getTagColorClasses } from '@/lib/tagColors';
-import { format } from 'date-fns';
+import { format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { AudioPlayer } from '@/components/chat/AudioPlayer';
 import { supabase } from '@/integrations/supabase/client';
