@@ -204,7 +204,7 @@ export default function AdminDashboard() {
         setAvgWaitTime(0);
       }
 
-      // Gerar dados por hora para o gráfico (já filtrado no banco)
+      // Gerar dados por hora para o gráfico (logs finalizados + conversas ativas)
       const hourlyStats: Record<number, { conversations: number; resolved: number }> = {};
       for (let i = 0; i < 24; i++) {
         hourlyStats[i] = { conversations: 0, resolved: 0 };
@@ -219,6 +219,19 @@ export default function AdminDashboard() {
               hourlyStats[hour].resolved++;
             }
           }
+        });
+      }
+
+      // Incluir conversas ativas (ainda não finalizadas) no gráfico
+      const { data: activeConvs } = await supabase
+        .from('conversations')
+        .select('created_at')
+        .gte('created_at', todayISO);
+
+      if (activeConvs && activeConvs.length > 0) {
+        activeConvs.forEach(conv => {
+          const hour = new Date(conv.created_at).getHours();
+          hourlyStats[hour].conversations++;
         });
       }
 
