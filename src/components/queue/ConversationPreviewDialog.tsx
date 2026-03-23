@@ -353,8 +353,8 @@ export function ConversationPreviewDialog({
         </DialogHeader>
 
         {/* Messages */}
-        <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto pr-2">
-          <div className="py-4 space-y-3">
+        <ScrollArea className="flex-1 min-h-0 max-h-[45vh]" viewportRef={scrollViewportRef}>
+          <div className="py-4 px-3 space-y-3">
             {isLoadingMessages ? (
               <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground">
                 <Loader2 className="w-5 h-5 animate-spin" />
@@ -365,66 +365,82 @@ export function ConversationPreviewDialog({
                 Nenhuma mensagem ainda
               </div>
             ) : (
-              (realMessages || conversation.messages).map((message) => {
+              (realMessages || conversation.messages).map((message, index, arr) => {
                 const isSystemMessage = (message.type as string) === 'system' || message.senderName === 'SYSTEM';
                 const isFromContact = !message.senderId || message.senderId === 'contact';
                 const messageTime = message.timestamp instanceof Date 
                   ? message.timestamp 
                   : new Date(message.timestamp);
 
-                if (isSystemMessage) {
-                  return (
-                    <div key={message.id} className="flex justify-center my-2">
-                      <span className="text-xs text-muted-foreground bg-muted/60 rounded-full px-4 py-1.5 border border-border/50">
-                        {format(messageTime, 'HH:mm', { locale: ptBR })} · {message.content}
-                      </span>
-                    </div>
-                  );
-                }
+                // Date separator
+                const prevMessage = index > 0 ? arr[index - 1] : null;
+                const prevTime = prevMessage 
+                  ? (prevMessage.timestamp instanceof Date ? prevMessage.timestamp : new Date(prevMessage.timestamp))
+                  : null;
+                const showDateSeparator = !prevTime || !isSameDay(messageTime, prevTime);
 
                 return (
-                  <div
-                    key={message.id}
-                    className={cn(
-                      "flex",
-                      isFromContact ? "justify-start" : "justify-end"
+                  <div key={message.id}>
+                    {showDateSeparator && (
+                      <div className="flex items-center justify-center my-3">
+                        <div className="h-px flex-1 bg-border" />
+                        <span className="text-[11px] text-muted-foreground bg-background px-3 font-medium">
+                          {formatDateLabel(messageTime)}
+                        </span>
+                        <div className="h-px flex-1 bg-border" />
+                      </div>
                     )}
-                  >
-                    <div
-                      className={cn(
-                        "max-w-[75%] px-3 py-2 rounded-lg text-sm",
-                        message.deleted
-                          ? "bg-destructive/20 border border-destructive/40"
-                          : isFromContact 
-                            ? "bg-muted text-foreground rounded-bl-sm" 
-                            : "bg-primary text-primary-foreground rounded-br-sm"
-                      )}
-                    >
-                      {!isFromContact && !message.deleted && (
-                        <p className="text-xs font-medium opacity-80 mb-1">
-                          {message.senderName}
-                        </p>
-                      )}
-                      {message.deleted ? (
-                        <p className="text-sm italic text-destructive line-through">
-                          🚫 Esta mensagem foi apagada
-                        </p>
-                      ) : (
-                        renderMessageContent(message)
-                      )}
-                      <p className={cn(
-                        "text-[10px] mt-1",
-                        isFromContact ? "text-muted-foreground" : "opacity-70"
-                      )}>
-                        {format(messageTime, 'HH:mm', { locale: ptBR })}
-                      </p>
-                    </div>
+
+                    {isSystemMessage ? (
+                      <div className="flex justify-center my-2">
+                        <span className="text-xs text-muted-foreground bg-muted/60 rounded-full px-4 py-1.5 border border-border/50">
+                          {format(messageTime, 'HH:mm', { locale: ptBR })} · {message.content}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className={cn("flex", isFromContact ? "justify-start" : "justify-end")}>
+                        <div
+                          className={cn(
+                            "max-w-[75%] px-3 py-2 rounded-lg text-sm",
+                            message.deleted
+                              ? "bg-destructive/20 border border-destructive/40"
+                              : isFromContact 
+                                ? "bg-muted text-foreground rounded-bl-sm" 
+                                : "bg-primary text-primary-foreground rounded-br-sm"
+                          )}
+                        >
+                          {!message.deleted && (
+                            <p className={cn(
+                              "text-xs font-medium mb-1",
+                              isFromContact ? "text-muted-foreground" : "opacity-80"
+                            )}>
+                              {isFromContact 
+                                ? getContactDisplayName(conversation.contact.name, conversation.contact.phone, conversation.contact.notes)
+                                : message.senderName}
+                            </p>
+                          )}
+                          {message.deleted ? (
+                            <p className="text-sm italic text-destructive line-through">
+                              🚫 Esta mensagem foi apagada
+                            </p>
+                          ) : (
+                            renderMessageContent(message)
+                          )}
+                          <p className={cn(
+                            "text-[10px] mt-1",
+                            isFromContact ? "text-muted-foreground" : "opacity-70"
+                          )}>
+                            {format(messageTime, 'HH:mm', { locale: ptBR })}
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })
             )}
           </div>
-        </div>
+        </ScrollArea>
 
         {/* Footer */}
         <div className="border-t border-border pt-4 flex items-center justify-between">
