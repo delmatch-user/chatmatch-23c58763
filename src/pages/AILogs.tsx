@@ -470,37 +470,59 @@ export default function AILogs() {
 
                 {/* Messages */}
                 <ScrollArea className="flex-1 max-h-[60vh]">
-                  <div className="space-y-3 pr-4">
-                    {selectedLog.messages.map((msg: any, idx: number) => (
-                      <div
-                        key={idx}
-                        className={cn(
-                          "flex flex-col gap-1 max-w-[85%]",
-                          msg.sender_id ? "ml-auto items-end" : "items-start"
-                        )}
-                      >
-                        <div
-                          className={cn(
-                            "rounded-lg px-3 py-2 text-sm",
-                            msg.sender_id
-                              ? "bg-primary text-primary-foreground"
-                              : msg.message_type === 'system'
-                              ? "bg-warning/10 text-warning border border-warning/20 mx-auto text-center max-w-full"
-                              : "bg-muted"
-                          )}
-                        >
-                          <p className="text-xs font-medium mb-0.5 opacity-70">{msg.sender_name}</p>
-                          {msg.message_type === 'image' || msg.message_type === 'file' || msg.message_type === 'audio' ? (
-                            <p className="text-xs italic opacity-70">[{msg.message_type}]</p>
-                          ) : (
-                            <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-                          )}
+                  <div className="space-y-3 pr-4 py-2">
+                    {selectedLog.messages.map((msg: any, idx: number) => {
+                      const senderId = msg.sender_id || msg.senderId;
+                      const senderName = msg.sender_name || msg.senderName || '';
+                      const msgType = msg.message_type || msg.type;
+                      const msgTime = msg.created_at || msg.timestamp;
+                      
+                      const isSystemMessage = msgType === 'system' || senderName === 'SYSTEM' || senderName === '[SISTEMA]';
+                      const isRobot = senderId === 'robot' || senderName.includes('[ROBOT]') || senderName.includes('(IA)');
+                      const isUUID = senderId && /^[0-9a-f]{8}-/.test(senderId);
+                      const isFromContact = senderId === 'contact' || (!senderId && !isRobot && !isUUID && !isSystemMessage);
+
+                      if (isSystemMessage) {
+                        return (
+                          <div key={idx} className="flex justify-center my-2">
+                            <span className="text-xs text-muted-foreground bg-muted/60 rounded-full px-4 py-1.5 border border-border/50">
+                              {msgTime && format(new Date(msgTime), 'HH:mm', { locale: ptBR })} · {msg.content}
+                            </span>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div key={idx} className={cn("flex", isFromContact ? "justify-start" : "justify-end")}>
+                          <div
+                            className={cn(
+                              "max-w-[80%] px-4 py-2 rounded-2xl text-sm",
+                              isFromContact
+                                ? "bg-muted text-foreground rounded-bl-md"
+                                : "bg-primary text-primary-foreground rounded-br-md"
+                            )}
+                          >
+                            <p className={cn(
+                              "text-xs font-medium mb-1",
+                              isFromContact ? "text-muted-foreground" : "opacity-80"
+                            )}>
+                              {senderName}
+                            </p>
+                            {msgType === 'image' || msgType === 'file' || msgType === 'audio' || msgType === 'video' || msgType === 'document' ? (
+                              <p className="text-xs italic opacity-70">[{msgType}]</p>
+                            ) : (
+                              <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                            )}
+                            <p className={cn(
+                              "text-[10px] mt-1",
+                              isFromContact ? "text-muted-foreground" : "opacity-70"
+                            )}>
+                              {msgTime && format(new Date(msgTime), 'HH:mm', { locale: ptBR })}
+                            </p>
+                          </div>
                         </div>
-                        <span className="text-[10px] text-muted-foreground">
-                          {format(new Date(msg.created_at), "HH:mm", { locale: ptBR })}
-                        </span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </ScrollArea>
               </div>
