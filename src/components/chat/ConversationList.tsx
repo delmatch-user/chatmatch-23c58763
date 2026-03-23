@@ -8,6 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Badge } from '@/components/ui/badge';
 import { Conversation, ConversationStatus } from '@/types';
 import { cn } from '@/lib/utils';
+import { getTagColorClasses } from '@/lib/tagColors';
 import { extractRealPhone, formatPhoneForDisplay, getContactDisplayName, phoneMatchesBr, getInstagramDisplayHandle } from '@/lib/phoneUtils';
 import { useApp } from '@/contexts/AppContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -831,9 +832,7 @@ export function ConversationList({
                           key={tag}
                           className={cn(
                             "text-[10px] px-1.5 py-0.5 rounded-full",
-                            tag === 'urgente' && "tag-urgent",
-                            tag === 'novo' && "tag-new",
-                            tag === 'retorno' && "tag-return"
+                            getTagColorClasses(tag)
                           )}
                         >
                           {tag}
