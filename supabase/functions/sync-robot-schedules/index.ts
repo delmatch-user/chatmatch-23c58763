@@ -627,11 +627,18 @@ Deno.serve(async (req) => {
 
           if (lastMsg.created_at > robotCutoff) continue; // ainda dentro do prazo
 
-          console.log(`[auto-finalize-robot] Finalizando conversa ${conv.id} (última msg do robô: ${lastMsg.created_at}, cliente não respondeu)`);
-
-          // Buscar nome do robô
-          const { data: robotData } = await supabase.from("robots").select("name").eq("id", conv.assigned_to_robot!).maybeSingle();
+          // Buscar dados do robô (nome + tools)
+          const { data: robotData } = await supabase.from("robots").select("name, tools").eq("id", conv.assigned_to_robot!).maybeSingle();
           const robotName = robotData?.name || "IA";
+          const robotTools = robotData?.tools as Record<string, boolean> | null;
+
+          // Só auto-finalizar se o robô tem a flag finalize_conversations ativa
+          if (!robotTools?.finalize_conversations) {
+            console.log(`[auto-finalize-robot] Robô ${robotName} não tem permissão de finalizar. Pulando conversa ${conv.id}`);
+            continue;
+          }
+
+          console.log(`[auto-finalize-robot] Finalizando conversa ${conv.id} (última msg do robô: ${lastMsg.created_at}, cliente não respondeu)`);
 
           // Buscar contato
           const { data: contactR } = await supabase.from("contacts").select("name, phone, notes, channel").eq("id", conv.contact_id).maybeSingle();
