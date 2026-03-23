@@ -1,26 +1,62 @@
 
 
-## Plano: Padronizar relatório do Logs IA com o padrão do AdminConversationLogs
+## Plano: Substituir tags "normal" por taxonomia e automatizar classificação na finalização humana
 
-### Problema
-O diálogo de relatório no `AILogs.tsx` (linhas 536-615) usa renderização manual linha-a-linha (`split('\n').map(...)`) que não suporta tabelas, e tem layout/estilo diferentes do padrão já implementado no `AdminConversationLogs.tsx`.
+### O que será feito
 
-### Correção
+**1. Atualizar 50 últimas conversas de atendentes humanos (one-time)**
+Criar e executar uma edge function `classify-conversation-tags` que:
+- Busca as 50 últimas `conversation_logs` do departamento Suporte onde `finalized_by IS NOT NULL` (humano) e tags não contêm nenhuma tag de taxonomia
+- Analisa o conteúdo das mensagens de cada conversa usando IA (Gemini Flash) em batch
+- Classifica cada conversa em uma das 5 tags: `Acidente - Urgente`, `Operacional - Pendente`, `Financeiro - Normal`, `Duvida - Geral`, `Comercial - B2B`
+- Atualiza `tags` e `priority` de cada log
 
-**Arquivo: `src/pages/AILogs.tsx`**
+**2. Automatizar classificação na finalização por humano**
+No `useConversations.tsx`, após criar o log em `finalizeConversation`:
+- Verificar se o departamento é Suporte
+- Se a conversa já tem uma tag de taxonomia (veio da triagem do robô), manter
+- Se não tem, chamar a edge function `classify-conversation-tags` passando o ID do log recém-criado para classificar assincronamente (fire-and-forget, não bloqueia o atendente)
 
-1. **Importar `renderMarkdown`** do `AdminConversationLogs` — ou melhor, copiar a função `renderMarkdown` para o `AILogs.tsx` (já que não está exportada como utilitário separado)
+**3. Atualizar History.tsx**
+- Substituir o badge de `priority` (normal/urgent) pelo badge de taxonomy tag, igual ao que já foi feito no AILogs.tsx
 
-2. **Substituir o diálogo de relatório** (linhas 536-615) pelo mesmo padrão do `AdminConversationLogs`:
-   - Título: `Relatório IA - Motivos de Contato (Suporte)` com ícone `Bot`
-   - Layout `max-w-3xl h-[85vh] flex flex-col overflow-hidden`
-   - Filtros na mesma linha: período (Select), agente IA (Select), botão "Gerar Relatório"
-   - Botões Copiar e Exportar PDF com o mesmo estilo e lógica de PDF (usando `renderMarkdown` + `html2pdf.js` com estilos inline para PDF)
-   - Área de conteúdo: `dangerouslySetInnerHTML={{ __html: renderMarkdown(report) }}` com as mesmas classes prose
-   - Estado vazio e loading idênticos
+### Arquivos modificados
 
-3. **Manter os filtros existentes** do Logs IA (período + agente IA: Delma, Sebastião, Julia) — apenas mudar a apresentação visual para o padrão
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/classify-conversation-tags/index.ts` | **Novo** - Edge function que classifica logs via IA |
+| `src/hooks/useConversations.tsx` | Após inserir log, chamar classificação assíncrona se Suporte e sem tag |
+| `src/pages/History.tsx` | Trocar badge `priority` por badge de taxonomy tag com cores |
 
-### Resultado
-O relatório do Logs IA terá o mesmo visual, renderização markdown (com suporte a tabelas), e exportação PDF do AdminConversationLogs, mas com os filtros específicos de IA (agente).
+### Detalhes técnicos
+
+**Edge function `classify-conversation-tags`:**
+- Aceita `{ logIds?: string[], batchSize?: number }` 
+- Se `logIds` fornecido: classifica logs específicos
+- Se não: busca últimos 50 logs humanos do Suporte sem tag de taxonomia
+- Para cada log, extrai primeiras mensagens do cliente e resposta, envia para Gemini Flash com prompt de classificação que retorna JSON `{ tag, priority }`
+- Processa em lotes de 10 para eficiência (um prompt com múltiplas conversas)
+- Atualiza cada `conversation_logs` com a tag e priority
+
+**Fluxo na finalização humana:**
+```typescript
+// Após inserir o log com sucesso
+if (conversation.departmentId === SUPORTE_DEPARTMENT_ID) {
+  const hasTaxonomyTag = conversation.tags?.some(t => 
+    SUPORTE_TAXONOMY_TAGS.includes(t)
+  );
+  if (!hasTaxonomyTag) {
+    // Fire-and-forget - não bloqueia
+    supabase.functions.invoke('classify-conversation-tags', {
+      body: { logIds: [newLogId] }
+    });
+  }
+}
+```
+
+**History.tsx - Badge:**
+```typescript
+const taxonomyTag = log.tags?.find(t => SUPORTE_TAXONOMY_TAGS.includes(t));
+// Mostra taxonomy tag colorida se existir, senão fallback para priority
+```
 
