@@ -144,14 +144,26 @@ export function ConversationPreviewDialog({
     }
   }, [open, conversation?.id, refetchConversations]);
 
+  const scrollViewportRef = useRef<HTMLDivElement>(null);
+
   // Scroll to bottom on open
-  useEffect(() => {
-    if (open && scrollRef.current && !isLoadingMessages) {
-      setTimeout(() => {
-        scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-      }, 100);
+  const scrollToBottom = useCallback(() => {
+    if (scrollViewportRef.current) {
+      scrollViewportRef.current.scrollTop = scrollViewportRef.current.scrollHeight;
     }
-  }, [open, isLoadingMessages]);
+  }, []);
+
+  useEffect(() => {
+    if (open && !isLoadingMessages) {
+      setTimeout(scrollToBottom, 100);
+    }
+  }, [open, isLoadingMessages, scrollToBottom]);
+
+  const formatDateLabel = (date: Date) => {
+    if (isToday(date)) return 'Hoje';
+    if (isYesterday(date)) return 'Ontem';
+    return format(date, 'dd/MM/yyyy', { locale: ptBR });
+  };
 
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
