@@ -466,15 +466,6 @@ export default function History() {
                               </span>
                             </div>
 
-                            {log.tags && log.tags.length > 0 && (
-                              <div className="flex gap-1 mt-2">
-                                {log.tags.map((tag, idx) => (
-                                  <Badge key={idx} variant="outline" className={`text-xs ${getTagColorClasses(tag)}`}>
-                                    {tag}
-                                  </Badge>
-                                ))}
-                              </div>
-                            )}
                           </div>
                         </div>
 
