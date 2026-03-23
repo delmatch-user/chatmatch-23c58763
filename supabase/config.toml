@@ -68,3 +68,6 @@ verify_jwt = false
 
 [functions.extract-file-content]
 verify_jwt = false
+
+[functions.classify-conversation-tags]
+verify_jwt = false

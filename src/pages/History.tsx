@@ -17,7 +17,7 @@ import { useApp } from '@/contexts/AppContext';
 import { format, startOfDay, endOfDay, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
-import { getTagColorClasses } from '@/lib/tagColors';
+import { getTagColorClasses, SUPORTE_TAXONOMY_TAGS } from '@/lib/tagColors';
 import { extractCidade } from '@/lib/phoneUtils';
 import { cn } from '@/lib/utils';
 
@@ -412,9 +412,21 @@ export default function History() {
                                   📋 {log.protocol}
                                 </span>
                               )}
-                              <Badge className={priorityColors[log.priority] || priorityColors.normal}>
-                                {log.priority}
-                              </Badge>
+                              {(() => {
+                                const taxonomyTag = log.tags?.find(t => (SUPORTE_TAXONOMY_TAGS as readonly string[]).includes(t));
+                                if (taxonomyTag) {
+                                  return (
+                                    <Badge className={`${getTagColorClasses(taxonomyTag)} border text-xs`}>
+                                      {taxonomyTag}
+                                    </Badge>
+                                  );
+                                }
+                                return (
+                                  <Badge className={priorityColors[log.priority] || priorityColors.normal}>
+                                    {log.priority}
+                                  </Badge>
+                                );
+                              })()}
                             </div>
                             <div className="flex items-center gap-2 flex-wrap mb-2">
                               <span className={cn(
