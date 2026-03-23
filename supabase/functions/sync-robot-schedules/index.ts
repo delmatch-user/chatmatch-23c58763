@@ -590,9 +590,9 @@ Deno.serve(async (req) => {
     // ========== QUARTA VARREDURA: auto-finalização de conversas atendidas por robôs ==========
     let robotAutoFinalizedCount = 0;
 
-    if (afEnabled) {
-      const { data: afMinutesRow2 } = await supabase.from("app_settings").select("value").eq("key", "auto_finalize_minutes").maybeSingle();
-      const afMinutesRobot = parseInt(afMinutesRow2?.value || "10", 10);
+    // Robôs SEMPRE auto-finalizam após 5 min de inatividade do cliente, independente da config global
+    {
+      const afMinutesRobot = 5;
       const robotCutoff = new Date(Date.now() - afMinutesRobot * 60 * 1000).toISOString();
 
       // Buscar conversas em_atendimento com robô atribuído (qualquer departamento)
