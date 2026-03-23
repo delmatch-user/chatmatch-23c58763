@@ -1,25 +1,25 @@
 
 
-## Plano: Adicionar toggle "Finalizar conversas" na UI de configuração de robôs
+## Plano: Renomear tags de taxonomia do Suporte
 
-### Problema
-A flag `canFinalize` existe no backend (`robot-chat` e `sync-robot-schedules`) e no hook `useRobots.tsx`, mas **não há toggle na interface** do admin para ativá-la/desativá-la. Sem isso, o robô nunca terá `canFinalize: true`.
+As tags ainda estão no formato antigo. Aqui está o que será alterado:
 
-### Alteração
+### Arquivo: `src/lib/tagColors.ts`
+Renomear em `SUPORTE_TAXONOMY_TAGS`, `TAG_COLOR_MAP` e `TAG_DOT_COLOR_MAP`:
 
-#### `src/pages/admin/AdminRobos.tsx` — Aba Ferramentas > Funções
+| Atual | Novo |
+|---|---|
+| `🔴 ACIDENTE_URGENTE` | `Acidente - Urgente` |
+| `🟠 OPERACIONAL_PENDENTE` | `Operacional - Pendente` |
+| `🔵 FINANCEIRO_NORMAL` | `Financeiro - Normal` |
+| `🟢 DUVIDA_GERAL` | `Duvida - Geral` |
+| `🟡 COMERCIAL_B2B` | `Comercial - B2B` |
 
-Adicionar um novo bloco de toggle na sub-aba "Funções", após os toggles existentes (ex: após "Editar contato" ou "Gerenciar etiquetas"):
+### Arquivo: `supabase/functions/robot-chat/index.ts`
+Atualizar as referências às tags no prompt do robô e na lógica de classificação.
 
-- Ícone: `CheckCircle` (ou similar) com fundo vermelho/laranja
-- Título: **"Finalizar conversas"**
-- Descrição: "O agente poderá finalizar conversas quando identificar que o problema foi resolvido. Também será usado para auto-finalização por inatividade (quando o cliente não responde)."
-- Switch ligado a `selectedRobot.tools.canFinalize`
-
-Seguindo o mesmo padrão visual dos outros toggles na página.
-
-### Detalhes técnicos
-- Apenas 1 arquivo alterado: `src/pages/admin/AdminRobos.tsx`
-- Mesmo padrão de `Switch` + `setSelectedRobot` já usado nos outros toggles
-- Nenhuma alteração de backend necessária
+### Verificar também
+- `src/pages/AILogs.tsx` (filtro por tag)
+- `src/pages/History.tsx` (se referencia as tags)
+- `supabase/functions/sdr-robot-chat/index.ts` (se usa essas tags)
 
