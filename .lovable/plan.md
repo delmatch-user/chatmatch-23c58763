@@ -1,13 +1,25 @@
 
 
-## Correção: Campo errado na verificação de permissão de finalização
+## Plano: Sincronizar cores das tags em todos os componentes
 
 ### Problema
-Em `supabase/functions/sync-robot-schedules/index.ts` (linha 636), o guard verifica `robotTools?.finalize_conversations`, mas o campo real no objeto `tools` dos robôs se chama `canFinalize`. Resultado: a condição nunca é `true`, e robôs com o toggle ativo também não finalizam — ou, dependendo do fluxo, todos finalizam incorretamente.
+Os componentes `QueueCard.tsx` e `ConversationList.tsx` usam classes CSS hardcoded para apenas 3 tags (`urgente`, `novo`, `retorno`), ignorando completamente as tags de taxonomia do Suporte (`Acidente - Urgente`, `Operacional - Pendente`, etc.). Resultado: as tags aparecem sem cor, como na screenshot.
 
-### Correção
-**Arquivo:** `supabase/functions/sync-robot-schedules/index.ts`
-- Trocar `robotTools?.finalize_conversations` por `robotTools?.canFinalize` na linha 636.
+Os componentes `ContactDetails.tsx`, `AILogs.tsx`, `History.tsx` e `AdminConversationLogs.tsx` já usam `getTagColorClasses()` corretamente.
 
-Isso garante que apenas robôs com o toggle "Finalizar conversas" ativado na UI terão suas conversas auto-finalizadas por inatividade.
+### Correções
+
+#### 1. `src/components/queue/QueueCard.tsx` (linha ~193-206)
+- Importar `getTagColorClasses` de `@/lib/tagColors`
+- Substituir as classes hardcoded por `getTagColorClasses(tag)` com fallback para as tags antigas (`urgente`, `novo`, `retorno`)
+
+#### 2. `src/components/chat/ConversationList.tsx` (linha ~829-841)
+- Importar `getTagColorClasses` de `@/lib/tagColors`
+- Substituir as classes hardcoded por `getTagColorClasses(tag)` com o mesmo fallback
+
+#### 3. `src/lib/tagColors.ts`
+- Adicionar as tags simples `urgente`, `novo`, `retorno` ao `TAG_COLOR_MAP` para manter compatibilidade com conversas que usam essas tags legadas
+
+### Resultado
+Todas as telas (fila, lista de conversas, detalhes do contato, logs IA, histórico) exibirão as tags com cores consistentes, refletindo corretamente as prioridades definidas pelos robôs.
 
