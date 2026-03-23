@@ -10,14 +10,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
-import { Search, MessageSquare, Clock, Bot, Instagram, CalendarIcon, Bike, AlertTriangle } from 'lucide-react';
+import { Search, MessageSquare, Clock, Bot, Instagram, CalendarIcon, Bike, AlertTriangle, FileText, Loader2, Copy, Download } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useApp } from '@/contexts/AppContext';
+import { useAuth } from '@/hooks/useAuth';
 import { format, startOfDay, endOfDay, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { getTagColorClasses } from '@/lib/tagColors';
 import { SUPORTE_TAXONOMY_TAGS } from '@/lib/tagColors';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 interface ConversationLog {
   id: string;
@@ -48,6 +50,7 @@ type PeriodFilter = 'all' | 'today' | 'yesterday' | 'custom';
 type ChannelFilter = 'all' | 'whatsapp' | 'instagram' | 'machine';
 
 export default function AILogs() {
+  const { isAdmin, isSupervisor } = useAuth();
   const { user } = useApp();
   const [logs, setLogs] = useState<ConversationLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,6 +62,72 @@ export default function AILogs() {
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>('all');
   const [tagFilter, setTagFilter] = useState<string>('all');
   const [customDateRange, setCustomDateRange] = useState<{ from?: Date; to?: Date }>({});
+
+  // Report state
+  const [showReport, setShowReport] = useState(false);
+  const [reportPeriod, setReportPeriod] = useState<string>('30');
+  const [reportAgent, setReportAgent] = useState<string>('all');
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportResult, setReportResult] = useState<string>('');
+
+  const canSeeReport = isAdmin || isSupervisor;
+
+  const generateReport = async () => {
+    setReportLoading(true);
+    setReportResult('');
+    try {
+      const { data, error } = await supabase.functions.invoke('ai-logs-report', {
+        body: { period: parseInt(reportPeriod), agentName: reportAgent },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setReportResult(data.report || 'Erro ao gerar relatório.');
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao gerar relatório');
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
+  const copyReport = () => {
+    navigator.clipboard.writeText(reportResult);
+    toast.success('Relatório copiado!');
+  };
+
+  const downloadReportPdf = async () => {
+    const html2pdf = (await import('html2pdf.js')).default;
+    const container = document.createElement('div');
+    container.style.width = '800px';
+    container.style.padding = '32px';
+    container.style.fontFamily = 'sans-serif';
+    container.style.fontSize = '13px';
+    container.style.lineHeight = '1.6';
+    container.style.color = '#1a1a1a';
+    
+    // Simple markdown to HTML
+    const htmlContent = reportResult
+      .replace(/^## (.*$)/gm, '<h2 style="margin-top:20px;font-size:16px;font-weight:bold;">$1</h2>')
+      .replace(/^### (.*$)/gm, '<h3 style="margin-top:14px;font-size:14px;font-weight:bold;">$1</h3>')
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/^- (.*$)/gm, '<li style="margin-left:16px;">$1</li>')
+      .replace(/^(\d+)\. (.*$)/gm, '<li style="margin-left:16px;">$2</li>')
+      .replace(/\n/g, '<br/>');
+    
+    container.innerHTML = `<h1 style="font-size:20px;margin-bottom:8px;">Relatório IA - Suporte</h1>
+      <p style="color:#666;margin-bottom:16px;">Período: ${reportPeriod} dias | IA: ${reportAgent === 'all' ? 'Todas' : reportAgent} | Gerado em ${format(new Date(), 'dd/MM/yyyy HH:mm')}</p>
+      <hr style="margin-bottom:16px;"/>
+      ${htmlContent}`;
+    
+    document.body.appendChild(container);
+    await html2pdf().set({
+      margin: [10, 10],
+      filename: `relatorio-ia-${reportPeriod}d-${format(new Date(), 'yyyyMMdd')}.pdf`,
+      html2canvas: { scale: 2, width: 800 },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+    }).from(container).save();
+    document.body.removeChild(container);
+  };
 
   useEffect(() => {
     const fetchLogs = async () => {
@@ -182,6 +251,12 @@ export default function AILogs() {
           <Badge variant="secondary" className="text-sm shrink-0 self-start sm:self-auto">
             {filteredLogs.length} conversas IA
           </Badge>
+          {canSeeReport && (
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShowReport(true)}>
+              <FileText className="w-4 h-4" />
+              Relatório
+            </Button>
+          )}
         </div>
 
         {/* Filters */}
@@ -430,6 +505,87 @@ export default function AILogs() {
                 </ScrollArea>
               </div>
             )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Report Dialog */}
+        <Dialog open={showReport} onOpenChange={setShowReport}>
+          <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-primary" />
+                Relatório de Atendimentos IA
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="flex flex-wrap items-center gap-3 pb-3 border-b">
+              <Select value={reportPeriod} onValueChange={setReportPeriod}>
+                <SelectTrigger className="w-[140px] h-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="7">7 dias</SelectItem>
+                  <SelectItem value="15">15 dias</SelectItem>
+                  <SelectItem value="30">30 dias</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={reportAgent} onValueChange={setReportAgent}>
+                <SelectTrigger className="w-[160px] h-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as IAs</SelectItem>
+                  <SelectItem value="Delma">Delma</SelectItem>
+                  <SelectItem value="Sebastião">Sebastião</SelectItem>
+                  <SelectItem value="Julia">Julia</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Button size="sm" onClick={generateReport} disabled={reportLoading} className="gap-1.5">
+                {reportLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                {reportLoading ? 'Gerando...' : 'Gerar Relatório'}
+              </Button>
+
+              {reportResult && (
+                <div className="flex gap-1.5 ml-auto">
+                  <Button size="sm" variant="outline" onClick={copyReport} className="gap-1">
+                    <Copy className="w-3.5 h-3.5" />
+                    Copiar
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={downloadReportPdf} className="gap-1">
+                    <Download className="w-3.5 h-3.5" />
+                    PDF
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            <ScrollArea className="flex-1 max-h-[60vh]">
+              {reportLoading ? (
+                <div className="flex flex-col items-center justify-center h-40 gap-3">
+                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                  <p className="text-sm text-muted-foreground">Analisando conversas com IA...</p>
+                </div>
+              ) : reportResult ? (
+                <div className="prose prose-sm dark:prose-invert max-w-none pr-4 whitespace-pre-wrap">
+                  {reportResult.split('\n').map((line, i) => {
+                    if (line.startsWith('## ')) return <h2 key={i} className="text-base font-bold mt-4 mb-2">{line.replace('## ', '')}</h2>;
+                    if (line.startsWith('### ')) return <h3 key={i} className="text-sm font-semibold mt-3 mb-1">{line.replace('### ', '')}</h3>;
+                    if (line.startsWith('- ')) return <li key={i} className="ml-4 text-sm">{line.replace('- ', '').replace(/\*\*(.*?)\*\*/g, '$1')}</li>;
+                    if (line.match(/^\d+\. /)) return <li key={i} className="ml-4 text-sm list-decimal">{line.replace(/^\d+\. /, '').replace(/\*\*(.*?)\*\*/g, '$1')}</li>;
+                    if (line.trim() === '---') return <hr key={i} className="my-3" />;
+                    if (line.trim() === '') return <br key={i} />;
+                    return <p key={i} className="text-sm mb-1" dangerouslySetInnerHTML={{ __html: line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />;
+                  })}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-40 text-muted-foreground">
+                  <FileText className="w-12 h-12 mb-2 opacity-50" />
+                  <p className="text-sm">Selecione os filtros e clique em "Gerar Relatório"</p>
+                </div>
+              )}
+            </ScrollArea>
           </DialogContent>
         </Dialog>
       </div>
