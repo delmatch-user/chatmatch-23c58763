@@ -1328,8 +1328,8 @@ export default function AdminRobos() {
                           <div className="bg-muted/30 rounded-lg p-4">
                             <div className="flex items-start justify-between">
                               <div className="flex items-start gap-3">
-                                <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center">
-                                  <CheckCircle2 className="w-4 h-4 text-red-600" />
+                                <div className="w-8 h-8 rounded-lg bg-destructive/20 flex items-center justify-center">
+                                  <CheckCircle2 className="w-4 h-4 text-destructive" />
                                 </div>
                                 <div className="flex-1">
                                   <h4 className="font-medium text-sm flex items-center gap-1">
