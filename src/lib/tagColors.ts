@@ -26,6 +26,10 @@ const TAG_COLOR_MAP: Record<string, string> = {
   '🔵 FINANCEIRO_NORMAL': 'bg-blue-500/20 text-blue-400 border-blue-500/30',
   '🟢 DUVIDA_GERAL': 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
   '🟡 COMERCIAL_B2B': 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+  // Tags legadas simples
+  'urgente': 'bg-red-500/20 text-red-400 border-red-500/30',
+  'novo': 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+  'retorno': 'bg-amber-500/20 text-amber-400 border-amber-500/30',
 };
 
 const TAG_DOT_COLOR_MAP: Record<string, string> = {

@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Conversation, Message } from '@/types';
 import { cn } from '@/lib/utils';
+import { getTagColorClasses } from '@/lib/tagColors';
 import { extractRealPhone, formatPhoneForDisplay, getContactDisplayName, extractInstagramUsername } from '@/lib/phoneUtils';
 import { ConversationPreviewDialog } from './ConversationPreviewDialog';
 
@@ -197,9 +198,7 @@ export function QueueCard({ conversation, onAssume, canPreview = false }: QueueC
                 key={tag}
                 className={cn(
                   "text-xs px-2 py-0.5 rounded-full",
-                  tag === 'urgente' && "tag-urgent",
-                  tag === 'novo' && "tag-new",
-                  tag === 'retorno' && "tag-return"
+                  getTagColorClasses(tag)
                 )}
               >
                 {tag}
