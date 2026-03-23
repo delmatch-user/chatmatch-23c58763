@@ -507,6 +507,87 @@ export default function AILogs() {
             )}
           </DialogContent>
         </Dialog>
+
+        {/* Report Dialog */}
+        <Dialog open={showReport} onOpenChange={setShowReport}>
+          <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-primary" />
+                Relatório de Atendimentos IA
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="flex flex-wrap items-center gap-3 pb-3 border-b">
+              <Select value={reportPeriod} onValueChange={setReportPeriod}>
+                <SelectTrigger className="w-[140px] h-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="7">7 dias</SelectItem>
+                  <SelectItem value="15">15 dias</SelectItem>
+                  <SelectItem value="30">30 dias</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={reportAgent} onValueChange={setReportAgent}>
+                <SelectTrigger className="w-[160px] h-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as IAs</SelectItem>
+                  <SelectItem value="Delma">Delma</SelectItem>
+                  <SelectItem value="Sebastião">Sebastião</SelectItem>
+                  <SelectItem value="Julia">Julia</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Button size="sm" onClick={generateReport} disabled={reportLoading} className="gap-1.5">
+                {reportLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                {reportLoading ? 'Gerando...' : 'Gerar Relatório'}
+              </Button>
+
+              {reportResult && (
+                <div className="flex gap-1.5 ml-auto">
+                  <Button size="sm" variant="outline" onClick={copyReport} className="gap-1">
+                    <Copy className="w-3.5 h-3.5" />
+                    Copiar
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={downloadReportPdf} className="gap-1">
+                    <Download className="w-3.5 h-3.5" />
+                    PDF
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            <ScrollArea className="flex-1 max-h-[60vh]">
+              {reportLoading ? (
+                <div className="flex flex-col items-center justify-center h-40 gap-3">
+                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                  <p className="text-sm text-muted-foreground">Analisando conversas com IA...</p>
+                </div>
+              ) : reportResult ? (
+                <div className="prose prose-sm dark:prose-invert max-w-none pr-4 whitespace-pre-wrap">
+                  {reportResult.split('\n').map((line, i) => {
+                    if (line.startsWith('## ')) return <h2 key={i} className="text-base font-bold mt-4 mb-2">{line.replace('## ', '')}</h2>;
+                    if (line.startsWith('### ')) return <h3 key={i} className="text-sm font-semibold mt-3 mb-1">{line.replace('### ', '')}</h3>;
+                    if (line.startsWith('- ')) return <li key={i} className="ml-4 text-sm">{line.replace('- ', '').replace(/\*\*(.*?)\*\*/g, '$1')}</li>;
+                    if (line.match(/^\d+\. /)) return <li key={i} className="ml-4 text-sm list-decimal">{line.replace(/^\d+\. /, '').replace(/\*\*(.*?)\*\*/g, '$1')}</li>;
+                    if (line.trim() === '---') return <hr key={i} className="my-3" />;
+                    if (line.trim() === '') return <br key={i} />;
+                    return <p key={i} className="text-sm mb-1" dangerouslySetInnerHTML={{ __html: line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />;
+                  })}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-40 text-muted-foreground">
+                  <FileText className="w-12 h-12 mb-2 opacity-50" />
+                  <p className="text-sm">Selecione os filtros e clique em "Gerar Relatório"</p>
+                </div>
+              )}
+            </ScrollArea>
+          </DialogContent>
+        </Dialog>
       </div>
     </MainLayout>
   );
