@@ -39,6 +39,7 @@ export interface RobotTools {
   editContact: boolean;
   typingIndicator: boolean;
   splitByLineBreak: boolean;
+  canFinalize: boolean;
 }
 
 export type RobotChannel = 'whatsapp' | 'instagram' | 'machine';
