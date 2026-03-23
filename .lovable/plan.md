@@ -1,37 +1,41 @@
-## Plano: Botão de Relatório IA na página Logs IA
 
-### O que será feito
 
-Adicionar um botão "Relatório" na página Logs IA, visível apenas para admins e supervisores do Suporte. Ao clicar, abre um dialog com filtros de período (7/15/30 dias) e por IA atendente (Delma, Sebastião, Julia). O relatório gerado pela IA mostrará as principais causas de contato e as soluções/respostas dadas.
+## Plano: Permitir que robôs (Julia/Sebastião) finalizem conversas por inatividade
 
-### Alterações
+### Problema atual
+A auto-finalização em `sync-robot-schedules` filtra `.is("assigned_to_robot", null)` — ou seja, **ignora** conversas atendidas por robôs. Julia e Sebastião nunca conseguem finalizar conversas mesmo quando o cliente para de responder.
 
-#### 1. Nova Edge Function: `supabase/functions/ai-logs-report/index.ts`
+### Solução
 
-- Recebe `{ period: 7|15|30, agentName?: string }` via POST
-- Busca `conversation_logs` do departamento Suporte onde `finalized_by IS NULL` (robô)
-- Se `agentName` fornecido, filtra por `assigned_to_name = agentName`
-- Envia para Lovable AI com prompt focado em:
-  - Principais causas/motivos de contato dos clientes (motoboys/estabelecimentos)
-  - Principais respostas/soluções dadas pela IA para cada problema
-- Retorna relatório markdown
+Duas frentes: (A) auto-finalização por inatividade no `sync-robot-schedules` e (B) ferramenta de finalização no `robot-chat` para quando o robô identifica que resolveu.
 
-#### 2. Alteração: `src/pages/AILogs.tsx`
+---
 
-- Importar `useAuth` para checar `isAdmin` e `isSupervisor`
-- Adicionar estado para dialog de relatório, período selecionado, agente selecionado, loading e resultado
-- No header, ao lado do badge "X conversas IA", adicionar botão "Relatório" (ícone `FileText`) — condicional a `isAdmin || isSupervisor`
-- Dialog com:
-  - Select de período: 7 dias, 15 dias, 30 dias
-  - Select de IA atendente: Todas, Delma, Sebastião, Julia
-  - Botão "Gerar Relatório"
-  - Área de resultado renderizando o markdown retornado
-  - Botão copiar relatório  
-  Botão de Download Relatorio em PDF
+#### 1. `supabase/functions/sync-robot-schedules/index.ts` — Nova varredura para robôs
 
-### Detalhes Técnicos
+Após a terceira varredura existente (auto-finalização humana), adicionar uma **quarta varredura** dedicada a conversas com robô:
 
-- Edge function usa `SUPABASE_SERVICE_ROLE_KEY` para bypass RLS
-- Prompt da IA será em português, focado em categorizar causas e soluções
-- Modelo: `google/gemini-2.5-flash`
-- Autenticação via JWT no header
+- Buscar conversas `em_atendimento` onde `assigned_to_robot IS NOT NULL` (no departamento configurado)
+- Mesma lógica de inatividade: última mensagem (não-sistema) enviada pelo robô (`sender_id IS NOT NULL`) + `created_at` anterior ao cutoff (6 min fixo ou usar o mesmo `afMinutes`)
+- Enviar protocolo, salvar `conversation_logs` com `finalized_by_name: "[AUTO-IA]"`, deletar mensagens e conversa
+- Buscar nome do robô em `robots` para `assigned_to_name`
+
+#### 2. `supabase/functions/robot-chat/index.ts` — Nova tool `finalize_conversation`
+
+Adicionar uma ferramenta que o robô pode chamar quando identifica que o problema foi resolvido:
+
+- Tool `finalize_conversation` com parâmetros: `farewell_message` (mensagem de despedida ao cliente) e `resolution_summary` (resumo do que foi resolvido)
+- Na execução: enviar `farewell_message` ao cliente via canal, inserir mensagem de protocolo, salvar `conversation_logs`, deletar mensagens e conversa
+- Adicionar ao prompt do sistema uma instrução: "Quando você resolver completamente o problema do cliente e ele confirmar que está tudo certo, use `finalize_conversation` para encerrar o atendimento"
+
+#### 3. Configuração na tabela `robots`
+
+Usar o campo `tools` (jsonb) existente para adicionar uma flag `canFinalize: true`. No `buildOpenAITools`, só incluir a tool `finalize_conversation` se `config.tools.canFinalize` estiver ativo.
+
+### Detalhes técnicos
+
+- A varredura de robôs no sync reutiliza a mesma lógica de protocolo/log/deleção já existente
+- O tempo de inatividade para robôs será o mesmo configurado em `app_settings` (`auto_finalize_minutes`)
+- A tool `finalize_conversation` segue o mesmo padrão das outras tools (transfer, labels, etc.)
+- Atualizar `defaultTools` em `useRobots.tsx` para incluir `canFinalize: false` por padrão
+
