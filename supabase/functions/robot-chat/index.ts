@@ -550,9 +550,14 @@ function buildOpenAITools(config: RobotConfig, availableDepartments?: { id: stri
             resolution_summary: {
               type: "string",
               description: "Resumo breve do que foi resolvido neste atendimento"
+            },
+            taxonomy_tag: {
+              type: "string",
+              description: "Tag de classificação do atendimento baseada no assunto da conversa",
+              enum: ["Acidente - Urgente", "Operacional - Pendente", "Financeiro - Normal", "Duvida - Geral", "Comercial - B2B"]
             }
           },
-          required: ["farewell_message", "resolution_summary"]
+          required: ["farewell_message", "resolution_summary", "taxonomy_tag"]
         }
       }
     });
@@ -1617,8 +1622,9 @@ async function handleAutomaticMode(body: {
         // Finalizar conversa pelo robô quando o problema foi resolvido
         const farewellMessage = args.farewell_message || 'Obrigado pelo contato! Estamos à disposição.';
         const resolutionSummary = args.resolution_summary || '';
+        const taxonomyTag = args.taxonomy_tag || 'Duvida - Geral';
         
-        console.log(`[Robot-Chat Auto] Finalizando conversa ${conversationId}. Resumo: ${resolutionSummary}`);
+        console.log(`[Robot-Chat Auto] Finalizando conversa ${conversationId}. Resumo: ${resolutionSummary}. Tag: ${taxonomyTag}`);
 
         // Enviar mensagem de despedida ao cliente
         if (conversationChannel === 'machine') {
@@ -1649,6 +1655,18 @@ async function handleAutomaticMode(body: {
         const { data: convProto } = await supabase.from('conversations')
           .select('protocol, contact_id, department_id, tags, priority, channel, whatsapp_instance_id, created_at')
           .eq('id', conversationId).single();
+
+        // Adicionar taxonomy_tag à conversa
+        if (convProto) {
+          const updatedTags = [...(convProto.tags || [])];
+          if (!updatedTags.includes(taxonomyTag)) {
+            updatedTags.push(taxonomyTag);
+          }
+          const updatedPriority = taxonomyTag === 'Acidente - Urgente' ? 'urgent' : (convProto.priority || 'normal');
+          await supabase.from('conversations').update({ tags: updatedTags, priority: updatedPriority }).eq('id', conversationId);
+          convProto.tags = updatedTags;
+          convProto.priority = updatedPriority;
+        }
 
         if (convProto?.protocol) {
           // Buscar template de protocolo

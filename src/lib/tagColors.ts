@@ -1,5 +1,14 @@
 export const PREDEFINED_TAGS = ['Cardápio Digital', 'Estabelecimento', 'Motoboy', 'Lead'] as const;
 
+// Mapa de tags novas → tags legadas para filtro retrocompatível
+export const LEGACY_TAG_MAP: Record<string, string> = {
+  'Acidente - Urgente': '🔴 ACIDENTE_URGENTE',
+  'Operacional - Pendente': '🟠 OPERACIONAL_PENDENTE',
+  'Financeiro - Normal': '🔵 FINANCEIRO_NORMAL',
+  'Duvida - Geral': '🟢 DUVIDA_GERAL',
+  'Comercial - B2B': '🟡 COMERCIAL_B2B',
+};
+
 // Tags de taxonomia exclusivas do departamento Suporte
 export const SUPORTE_TAXONOMY_TAGS = [
   'Acidente - Urgente',
