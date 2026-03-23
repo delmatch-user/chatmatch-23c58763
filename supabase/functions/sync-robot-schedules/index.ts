@@ -587,8 +587,180 @@ Deno.serve(async (req) => {
 
     console.log(`[auto-finalize] Total finalizadas: ${autoFinalizedCount}`);
 
+    // ========== QUARTA VARREDURA: auto-finalização de conversas atendidas por robôs ==========
+    let robotAutoFinalizedCount = 0;
+
+    if (afEnabled) {
+      const { data: afMinutesRow2 } = await supabase.from("app_settings").select("value").eq("key", "auto_finalize_minutes").maybeSingle();
+      const afMinutesRobot = parseInt(afMinutesRow2?.value || "10", 10);
+      const robotCutoff = new Date(Date.now() - afMinutesRobot * 60 * 1000).toISOString();
+
+      // Buscar conversas em_atendimento com robô atribuído (qualquer departamento)
+      const { data: robotConvs, error: robotConvErr } = await supabase
+        .from("conversations")
+        .select("id, contact_id, department_id, assigned_to_robot, tags, priority, channel, whatsapp_instance_id, created_at, protocol")
+        .eq("status", "em_atendimento")
+        .not("assigned_to_robot", "is", null)
+        .is("assigned_to", null);
+
+      if (robotConvErr) {
+        console.error("[auto-finalize-robot] Erro ao buscar conversas:", robotConvErr.message);
+      } else if (robotConvs && robotConvs.length > 0) {
+        console.log(`[auto-finalize-robot] Candidatas: ${robotConvs.length}`);
+
+        for (const conv of robotConvs) {
+          // Buscar última mensagem da conversa (exceto sistema)
+          const { data: lastMsg } = await supabase
+            .from("messages")
+            .select("created_at, sender_id, sender_name")
+            .eq("conversation_id", conv.id)
+            .neq("message_type", "system")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (!lastMsg) continue;
+
+          // Só finalizar se a última msg é do ROBÔ (sender_name contém [ROBOT])
+          const isRobotMsg = lastMsg.sender_name?.includes("[ROBOT]") || lastMsg.sender_name?.includes("(IA)");
+          if (!isRobotMsg) continue; // última msg é do cliente, não finalizar
+
+          if (lastMsg.created_at > robotCutoff) continue; // ainda dentro do prazo
+
+          console.log(`[auto-finalize-robot] Finalizando conversa ${conv.id} (última msg do robô: ${lastMsg.created_at}, cliente não respondeu)`);
+
+          // Buscar nome do robô
+          const { data: robotData } = await supabase.from("robots").select("name").eq("id", conv.assigned_to_robot!).maybeSingle();
+          const robotName = robotData?.name || "IA";
+
+          // Buscar contato
+          const { data: contactR } = await supabase.from("contacts").select("name, phone, notes, channel").eq("id", conv.contact_id).maybeSingle();
+
+          // Buscar departamento
+          const { data: deptR } = await supabase.from("departments").select("name").eq("id", conv.department_id).maybeSingle();
+
+          // Enviar protocolo ao cliente
+          if ((conv as any).protocol) {
+            const protocolMessage = protoMsgTemplate.replace(/\\n/g, '\n').replace('{protocolo}', (conv as any).protocol);
+            const senderDisplayName = `${robotName} - ${deptR?.name || 'Suporte'}`;
+
+            try {
+              const contactChannel = contactR?.channel || conv.channel || 'whatsapp';
+
+              if (contactChannel === 'instagram') {
+                const { data: igConn } = await supabase
+                  .from("whatsapp_connections")
+                  .select("phone_number_id, waba_id")
+                  .eq("connection_type", "instagram")
+                  .eq("department_id", conv.department_id)
+                  .in("status", ["connected", "active"])
+                  .limit(1)
+                  .maybeSingle();
+                if (igConn) {
+                  const cleanRecipientId = (contactR?.phone || '').replace('ig:', '');
+                  await supabase.functions.invoke("instagram-send", {
+                    body: { page_id: igConn.waba_id, recipient_id: cleanRecipientId, message: protocolMessage, type: "text" }
+                  });
+                }
+              } else if (contactChannel === 'machine') {
+                await supabase.functions.invoke("machine-send", {
+                  body: { conversationId: conv.id, message: protocolMessage, senderName: senderDisplayName }
+                });
+              } else {
+                const { data: waConn } = await supabase
+                  .from("whatsapp_connections")
+                  .select("connection_type, phone_number_id")
+                  .eq("department_id", conv.department_id)
+                  .in("status", ["connected", "active"])
+                  .limit(1)
+                  .maybeSingle();
+                if (waConn?.connection_type === 'meta_api') {
+                  await supabase.functions.invoke("meta-whatsapp-send", {
+                    body: { phone_number_id: waConn.phone_number_id, to: contactR?.phone, message: protocolMessage, type: "text" }
+                  });
+                } else {
+                  await supabase.functions.invoke("baileys-proxy", {
+                    body: { action: "send", instanceId: conv.whatsapp_instance_id || waConn?.phone_number_id, to: contactR?.phone, message: protocolMessage, type: "text" }
+                  });
+                }
+              }
+              console.log(`[auto-finalize-robot] Protocolo ${(conv as any).protocol} enviado ao cliente`);
+            } catch (protoErr: any) {
+              console.error(`[auto-finalize-robot] Erro ao enviar protocolo:`, protoErr.message);
+            }
+          }
+
+          // Inserir mensagem de sistema
+          await supabase.from("messages").insert({
+            conversation_id: conv.id,
+            sender_id: null,
+            sender_name: "[SISTEMA]",
+            content: `Conversa finalizada automaticamente por inatividade do cliente (atendida por ${robotName}).${(conv as any).protocol ? ` Protocolo: ${(conv as any).protocol}` : ''}`,
+            message_type: "system",
+            status: "sent",
+          });
+
+          // Buscar todas as mensagens
+          const { data: allMsgsR } = await supabase
+            .from("messages")
+            .select("id, content, sender_name, sender_id, message_type, created_at, status, delivery_status, external_id")
+            .eq("conversation_id", conv.id)
+            .order("created_at", { ascending: true });
+
+          const messagesJsonR = (allMsgsR || []).map(m => ({
+            id: m.id, content: m.content, sender_name: m.sender_name, sender_id: m.sender_id,
+            message_type: m.message_type, created_at: m.created_at, status: m.status,
+            delivery_status: m.delivery_status, external_id: m.external_id,
+          }));
+
+          // Salvar conversation_log
+          const { error: logErrR } = await supabase.from("conversation_logs").insert({
+            conversation_id: conv.id,
+            contact_name: contactR?.name || "Desconhecido",
+            contact_phone: contactR?.phone || null,
+            contact_notes: contactR?.notes || null,
+            department_id: conv.department_id,
+            department_name: deptR?.name || null,
+            assigned_to: null,
+            assigned_to_name: robotName,
+            finalized_by: null,
+            finalized_by_name: "[AUTO-IA]",
+            messages: messagesJsonR,
+            total_messages: messagesJsonR.length,
+            started_at: conv.created_at,
+            tags: conv.tags || [],
+            priority: conv.priority || "normal",
+            channel: conv.channel || "whatsapp",
+            whatsapp_instance_id: conv.whatsapp_instance_id || null,
+            agent_status_at_finalization: "auto_finalized_robot",
+            protocol: (conv as any).protocol || null,
+          });
+
+          if (logErrR) {
+            console.error(`[auto-finalize-robot] Erro ao salvar log para ${conv.id}:`, logErrR.message);
+            continue;
+          }
+
+          // Deletar mensagens e conversa
+          await supabase.from("messages").delete().eq("conversation_id", conv.id);
+          const { error: delErrR } = await supabase.from("conversations").delete().eq("id", conv.id);
+
+          if (delErrR) {
+            console.error(`[auto-finalize-robot] Erro ao deletar conversa ${conv.id}:`, delErrR.message);
+          } else {
+            console.log(`[auto-finalize-robot] Conversa ${conv.id} finalizada com sucesso`);
+            robotAutoFinalizedCount++;
+          }
+        }
+      } else {
+        console.log("[auto-finalize-robot] Nenhuma conversa candidata.");
+      }
+    }
+
+    console.log(`[auto-finalize-robot] Total finalizadas: ${robotAutoFinalizedCount}`);
+
     return new Response(
-      JSON.stringify({ updated: syncCount, assigned: assignedCount, retried: retriedCount, autoFinalized: autoFinalizedCount }),
+      JSON.stringify({ updated: syncCount, assigned: assignedCount, retried: retriedCount, autoFinalized: autoFinalizedCount, robotAutoFinalized: robotAutoFinalizedCount }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error: unknown) {

@@ -39,6 +39,7 @@ export interface RobotTools {
   editContact: boolean;
   typingIndicator: boolean;
   splitByLineBreak: boolean;
+  canFinalize: boolean;
 }
 
 export type RobotChannel = 'whatsapp' | 'instagram' | 'machine';
@@ -88,6 +89,7 @@ export const defaultTools: RobotTools = {
   editContact: false,
   typingIndicator: true,
   splitByLineBreak: false,
+  canFinalize: false,
 };
 
 interface DbRobot {

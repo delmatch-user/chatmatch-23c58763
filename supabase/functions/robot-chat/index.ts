@@ -36,6 +36,7 @@ interface RobotConfig {
     editContact: boolean;
     typingIndicator: boolean;
     splitByLineBreak: boolean;
+    canFinalize?: boolean;
   };
 }
 
@@ -323,8 +324,10 @@ function buildSystemPrompt(config: RobotConfig, availableDepartments?: { id: str
   if (config.tools.editContact) {
     prompt += `- **edit_contact**: Use para atualizar informações do contato (nome, email, notas) quando o cliente fornecer esses dados.\n`;
   }
+  if ((config.tools as any).canFinalize) {
+    prompt += `- **finalize_conversation**: Use quando você resolver COMPLETAMENTE o problema do cliente e ele confirmar que está tudo certo. Envie uma mensagem de despedida e finalize o atendimento.\n`;
+  }
   
-  prompt += `\n## Diretrizes de Comportamento\n`;
   prompt += `- Seja cordial e profissional em todas as interações.\n`;
   prompt += `- Responda de forma clara e objetiva.\n`;
   prompt += `- Mantenha respostas concisas e diretas.\n`;
@@ -526,6 +529,30 @@ function buildOpenAITools(config: RobotConfig, availableDepartments?: { id: stri
               description: "Observações adicionais sobre o contato (opcional)"
             }
           }
+        }
+      }
+    });
+  }
+
+  if ((config.tools as any).canFinalize) {
+    tools.push({
+      type: "function",
+      function: {
+        name: "finalize_conversation",
+        description: "Finalizar o atendimento quando o problema do cliente foi completamente resolvido e ele confirmou que está tudo certo",
+        parameters: {
+          type: "object",
+          properties: {
+            farewell_message: {
+              type: "string",
+              description: "Mensagem de despedida cordial para enviar ao cliente antes de encerrar"
+            },
+            resolution_summary: {
+              type: "string",
+              description: "Resumo breve do que foi resolvido neste atendimento"
+            }
+          },
+          required: ["farewell_message", "resolution_summary"]
         }
       }
     });
@@ -1035,6 +1062,7 @@ async function handleAutomaticMode(body: {
       editContact: robot.tools?.editContact ?? false,
       typingIndicator: robot.tools?.typingIndicator ?? true,
       splitByLineBreak: robot.tools?.splitByLineBreak ?? false,
+      canFinalize: robot.tools?.canFinalize ?? false,
     }
   };
 
@@ -1286,7 +1314,7 @@ async function handleAutomaticMode(body: {
     
     // Limpar content da IA quando há tool calls de transferência para evitar duplicação
     hasTransferTool = toolCalls.some((tc: any) => 
-      ['transfer_to_department', 'transfer_to_human', 'transfer_to_robot'].includes(tc.function.name)
+      ['transfer_to_department', 'transfer_to_human', 'transfer_to_robot', 'finalize_conversation'].includes(tc.function.name)
     );
     if (hasTransferTool) {
       aiResponse = '';
@@ -1583,6 +1611,129 @@ async function handleAutomaticMode(body: {
             console.log(`[Robot-Chat Auto] Contato atualizado:`, Object.keys(updateData));
           }
         }
+      }
+      
+      else if (functionName === 'finalize_conversation') {
+        // Finalizar conversa pelo robô quando o problema foi resolvido
+        const farewellMessage = args.farewell_message || 'Obrigado pelo contato! Estamos à disposição.';
+        const resolutionSummary = args.resolution_summary || '';
+        
+        console.log(`[Robot-Chat Auto] Finalizando conversa ${conversationId}. Resumo: ${resolutionSummary}`);
+
+        // Enviar mensagem de despedida ao cliente
+        if (conversationChannel === 'machine') {
+          const senderName = robotConfig.tools.sendAgentName ? robot.name : 'Atendente';
+          await sendViaMachine(conversationId, farewellMessage, senderName);
+        } else if (contactPhone) {
+          const formattedFarewell = robotConfig.tools.sendAgentName
+            ? `*${robot.name}*: ${farewellMessage}`
+            : farewellMessage;
+          if (connectionType === 'meta_api' && phoneNumberId) {
+            await sendViaMetaApi(phoneNumberId, contactPhone, formattedFarewell);
+          } else {
+            await sendViaBaileys(contactPhone, contactJid, formattedFarewell, phoneNumberId);
+          }
+        }
+
+        // Salvar mensagem de despedida no DB
+        await supabase.from('messages').insert({
+          conversation_id: conversationId,
+          content: farewellMessage,
+          sender_name: `${robot.name} [ROBOT]`,
+          sender_id: null,
+          message_type: 'text',
+          status: 'sent'
+        });
+
+        // Enviar protocolo se existir
+        const { data: convProto } = await supabase.from('conversations')
+          .select('protocol, contact_id, department_id, tags, priority, channel, whatsapp_instance_id, created_at')
+          .eq('id', conversationId).single();
+
+        if (convProto?.protocol) {
+          // Buscar template de protocolo
+          const { data: afProtoMsgRow } = await supabase.from('app_settings').select('value').eq('key', 'auto_finalize_protocol_message').maybeSingle();
+          const defaultProtoMsg = '📋 *Protocolo de Atendimento*\nSeu número de protocolo é: *{protocolo}*\nGuarde este número para futuras referências.\nAgradecemos pelo contato! 😊';
+          const protoMsgTemplate = afProtoMsgRow?.value || defaultProtoMsg;
+          const protocolMessage = protoMsgTemplate.replace(/\\n/g, '\n').replace('{protocolo}', convProto.protocol);
+          try {
+            if (conversationChannel === 'machine') {
+              await sendViaMachine(conversationId, protocolMessage, robot.name);
+            } else if (contactPhone) {
+              if (connectionType === 'meta_api' && phoneNumberId) {
+                await sendViaMetaApi(phoneNumberId, contactPhone, protocolMessage);
+              } else {
+                await sendViaBaileys(contactPhone, contactJid, protocolMessage, phoneNumberId);
+              }
+            }
+          } catch (protoErr: any) {
+            console.error(`[Robot-Chat Auto] Erro ao enviar protocolo:`, protoErr.message);
+          }
+        }
+
+        // Inserir mensagem de sistema
+        await supabase.from('messages').insert({
+          conversation_id: conversationId,
+          sender_id: null,
+          sender_name: '[SISTEMA]',
+          content: `Conversa finalizada por ${robot.name} (IA). Resumo: ${resolutionSummary}${convProto?.protocol ? `. Protocolo: ${convProto.protocol}` : ''}`,
+          message_type: 'system',
+          status: 'sent',
+        });
+
+        // Buscar contato
+        const { data: contactFinalize } = await supabase.from('contacts')
+          .select('name, phone, notes').eq('id', convProto?.contact_id || '').maybeSingle();
+
+        // Buscar departamento
+        const { data: deptFinalize } = await supabase.from('departments')
+          .select('name').eq('id', convProto?.department_id || '').maybeSingle();
+
+        // Buscar todas as mensagens
+        const { data: allMsgsFinalize } = await supabase.from('messages')
+          .select('id, content, sender_name, sender_id, message_type, created_at, status, delivery_status, external_id')
+          .eq('conversation_id', conversationId)
+          .order('created_at', { ascending: true });
+
+        const messagesJsonFinalize = (allMsgsFinalize || []).map(m => ({
+          id: m.id, content: m.content, sender_name: m.sender_name, sender_id: m.sender_id,
+          message_type: m.message_type, created_at: m.created_at, status: m.status,
+          delivery_status: m.delivery_status, external_id: m.external_id,
+        }));
+
+        // Salvar conversation_log
+        await supabase.from('conversation_logs').insert({
+          conversation_id: conversationId,
+          contact_name: contactFinalize?.name || 'Desconhecido',
+          contact_phone: contactFinalize?.phone || null,
+          contact_notes: contactFinalize?.notes || null,
+          department_id: convProto?.department_id,
+          department_name: deptFinalize?.name || null,
+          assigned_to: null,
+          assigned_to_name: robot.name,
+          finalized_by: null,
+          finalized_by_name: `${robot.name} (IA)`,
+          messages: messagesJsonFinalize,
+          total_messages: messagesJsonFinalize.length,
+          started_at: convProto?.created_at,
+          tags: convProto?.tags || [],
+          priority: convProto?.priority || 'normal',
+          channel: convProto?.channel || 'whatsapp',
+          whatsapp_instance_id: convProto?.whatsapp_instance_id || null,
+          agent_status_at_finalization: 'finalized_by_robot',
+          protocol: convProto?.protocol || null,
+        });
+
+        // Deletar mensagens e conversa
+        await supabase.from('messages').delete().eq('conversation_id', conversationId);
+        await supabase.from('conversations').delete().eq('id', conversationId);
+
+        aiResponse = ''; // Já enviamos a despedida
+        skipSending = true;
+        actionTaken = true;
+        
+        console.log(`[Robot-Chat Auto] Conversa ${conversationId} finalizada pelo robô ${robot.name}`);
+        break;
       }
       
     }
