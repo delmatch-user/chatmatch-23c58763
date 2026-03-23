@@ -16,7 +16,7 @@ import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/hooks/useAuth';
 import { format, startOfDay, endOfDay, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { getTagColorClasses } from '@/lib/tagColors';
+import { getTagColorClasses, getTagDotColor, LEGACY_TAG_MAP } from '@/lib/tagColors';
 import { SUPORTE_TAXONOMY_TAGS } from '@/lib/tagColors';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -192,7 +192,8 @@ export default function AILogs() {
     }
 
     if (tagFilter !== 'all') {
-      if (!log.tags?.includes(tagFilter)) return false;
+      const legacyTag = LEGACY_TAG_MAP[tagFilter];
+      if (!log.tags?.some(t => t === tagFilter || t === legacyTag)) return false;
     }
 
     return true;
@@ -316,7 +317,12 @@ export default function AILogs() {
             <SelectContent>
               <SelectItem value="all">Todas as tags</SelectItem>
               {SUPORTE_TAXONOMY_TAGS.map(tag => (
-                <SelectItem key={tag} value={tag}>{tag}</SelectItem>
+                <SelectItem key={tag} value={tag}>
+                  <span className="flex items-center gap-2">
+                    <span className={cn("w-2.5 h-2.5 rounded-full shrink-0", getTagDotColor(tag))} />
+                    {tag}
+                  </span>
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
