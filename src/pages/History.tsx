@@ -412,21 +412,6 @@ export default function History() {
                                   📋 {log.protocol}
                                 </span>
                               )}
-                              {(() => {
-                                const taxonomyTag = log.tags?.find(t => (SUPORTE_TAXONOMY_TAGS as readonly string[]).includes(t));
-                                if (taxonomyTag) {
-                                  return (
-                                    <Badge className={`${getTagColorClasses(taxonomyTag)} border text-xs`}>
-                                      {taxonomyTag}
-                                    </Badge>
-                                  );
-                                }
-                                return (
-                                  <Badge className={priorityColors[log.priority] || priorityColors.normal}>
-                                    {log.priority}
-                                  </Badge>
-                                );
-                              })()}
                             </div>
                             <div className="flex items-center gap-2 flex-wrap mb-2">
                               <span className={cn(
@@ -444,6 +429,21 @@ export default function History() {
                                   📍 {cidade}
                                 </span>
                               )}
+                              {(() => {
+                                const taxonomyTag = log.tags?.find(t => (SUPORTE_TAXONOMY_TAGS as readonly string[]).includes(t));
+                                if (taxonomyTag) {
+                                  return (
+                                    <Badge className={`${getTagColorClasses(taxonomyTag)} border text-xs`}>
+                                      {taxonomyTag}
+                                    </Badge>
+                                  );
+                                }
+                                return (
+                                  <Badge className={priorityColors[log.priority] || priorityColors.normal}>
+                                    {log.priority}
+                                  </Badge>
+                                );
+                              })()}
                             </div>
                             
                             <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
