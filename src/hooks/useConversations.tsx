@@ -91,13 +91,26 @@ export function useConversations() {
           protocol,
         };
 
-        const { error: logError } = await supabase
+        const { data: insertedLog, error: logError } = await supabase
           .from('conversation_logs')
-          .insert([logData]);
+          .insert([logData])
+          .select('id')
+          .single();
 
         if (logError) {
           console.error('Error saving conversation log:', logError);
           // Continue even if log fails - we still want to finalize
+        } else if (insertedLog && conversation.departmentId === SUPORTE_DEPARTMENT_ID) {
+          // Auto-classify if Suporte department and no taxonomy tag yet
+          const hasTaxonomyTag = conversation.tags?.some(t =>
+            (SUPORTE_TAXONOMY_TAGS as readonly string[]).includes(t)
+          );
+          if (!hasTaxonomyTag) {
+            // Fire-and-forget - don't block the agent
+            supabase.functions.invoke('classify-conversation-tags', {
+              body: { logIds: [insertedLog.id] }
+            }).catch(err => console.error('Auto-classify error:', err));
+          }
         }
       } else {
         // No conversation data, just fetch protocol for simple finalization
