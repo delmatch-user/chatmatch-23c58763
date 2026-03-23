@@ -1,13 +1,17 @@
 
 
-## Plano: Remover tags duplicadas no History.tsx
-
-### Problema
-A tag de taxonomia aparece duas vezes no card: uma vez no cabeçalho (linha 416-421) e outra na seção de tags inferior (linhas 469-476).
+## Plano: Padronizar layout de tags no AILogs.tsx com o History.tsx
 
 ### Correção
 
-**Arquivo: `src/pages/History.tsx`**
+**Arquivo: `src/pages/AILogs.tsx`**
 
-Remover o bloco inferior de tags (linhas 469-477) que renderiza `log.tags.map(...)`. A tag superior já exibe a taxonomia corretamente no lugar certo.
+Mover a tag de taxonomia/priority da linha do título (linhas 439-447) para uma nova linha abaixo, junto com canal e cidade, seguindo o padrão do History.tsx:
+
+1. **Remover** o badge de taxonomia/priority da div do título (linhas 439-447)
+2. **Adicionar** uma nova div `flex items-center gap-2 flex-wrap mb-2` entre o título e as outras tags, contendo:
+   - Badge do canal (channelLabel com cores por tipo)
+   - Cidade (se machine, extraída do contact_notes)
+   - Badge de taxonomia tag / fallback priority
+3. Manter o badge "Novo conhecimento" na linha do título
 
