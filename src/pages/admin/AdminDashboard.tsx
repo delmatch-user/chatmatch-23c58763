@@ -370,6 +370,8 @@ export default function AdminDashboard() {
         { event: '*', schema: 'public', table: 'conversations' },
         () => {
           refetchConversations();
+          fetchTimeMetrics();
+          fetchAgentRanking();
           setLastUpdate(new Date());
         }
       )
