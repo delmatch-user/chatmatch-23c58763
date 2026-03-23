@@ -1,21 +1,37 @@
+## Plano: Botão de Relatório IA na página Logs IA
 
+### O que será feito
 
-## Plano: Mostrar nome do atendente ao buscar número já em atendimento
+Adicionar um botão "Relatório" na página Logs IA, visível apenas para admins e supervisores do Suporte. Ao clicar, abre um dialog com filtros de período (7/15/30 dias) e por IA atendente (Delma, Sebastião, Julia). O relatório gerado pela IA mostrará as principais causas de contato e as soluções/respostas dadas.
 
-### Problema
-Quando um atendente busca um número que já está em atendimento com outro agente, aparece apenas "Conversa ativa encontrada" — sem informar quem está atendendo. O usuário quer ver: **"Essa conversa está com o Fabio"**.
+### Alterações
 
-### Alteração
+#### 1. Nova Edge Function: `supabase/functions/ai-logs-report/index.ts`
 
-**Arquivo: `src/components/chat/ConversationList.tsx`** (linhas 317-356)
+- Recebe `{ period: 7|15|30, agentName?: string }` via POST
+- Busca `conversation_logs` do departamento Suporte onde `finalized_by IS NULL` (robô)
+- Se `agentName` fornecido, filtra por `assigned_to_name = agentName`
+- Envia para Lovable AI com prompt focado em:
+  - Principais causas/motivos de contato dos clientes (motoboys/estabelecimentos)
+  - Principais respostas/soluções dadas pela IA para cada problema
+- Retorna relatório markdown
 
-Na verificação de conversa ativa existente:
+#### 2. Alteração: `src/pages/AILogs.tsx`
 
-1. Alterar o `select` de `'id'` para `'id, assigned_to'`
-2. Após encontrar `activeConv`, verificar `assigned_to`:
-   - Se `assigned_to === user.id` → `toast.info("Você já possui uma conversa ativa com este contato")` e abrir a conversa normalmente
-   - Se `assigned_to` é outro usuário → buscar nome em `profiles` → `toast.warning("Essa conversa está com o Fabio")` e **não abrir/selecionar** a conversa
-   - Se `assigned_to` é `null` (em fila) → `toast.info("Este contato já está na fila de atendimento")` e abrir normalmente
+- Importar `useAuth` para checar `isAdmin` e `isSupervisor`
+- Adicionar estado para dialog de relatório, período selecionado, agente selecionado, loading e resultado
+- No header, ao lado do badge "X conversas IA", adicionar botão "Relatório" (ícone `FileText`) — condicional a `isAdmin || isSupervisor`
+- Dialog com:
+  - Select de período: 7 dias, 15 dias, 30 dias
+  - Select de IA atendente: Todas, Delma, Sebastião, Julia
+  - Botão "Gerar Relatório"
+  - Área de resultado renderizando o markdown retornado
+  - Botão copiar relatório  
+  Botão de Download Relatorio em PDF
 
-Isso é uma mudança de ~15 linhas no bloco `if (activeConv)`, sem criar tabelas nem alterar outros arquivos.
+### Detalhes Técnicos
 
+- Edge function usa `SUPABASE_SERVICE_ROLE_KEY` para bypass RLS
+- Prompt da IA será em português, focado em categorizar causas e soluções
+- Modelo: `google/gemini-2.5-flash`
+- Autenticação via JWT no header
