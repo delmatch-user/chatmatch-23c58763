@@ -1650,6 +1650,10 @@ async function handleAutomaticMode(body: {
           .eq('id', conversationId).single();
 
         if (convProto?.protocol) {
+          // Buscar template de protocolo
+          const { data: afProtoMsgRow } = await supabase.from('app_settings').select('value').eq('key', 'auto_finalize_protocol_message').maybeSingle();
+          const defaultProtoMsg = '📋 *Protocolo de Atendimento*\nSeu número de protocolo é: *{protocolo}*\nGuarde este número para futuras referências.\nAgradecemos pelo contato! 😊';
+          const protoMsgTemplate = afProtoMsgRow?.value || defaultProtoMsg;
           const protocolMessage = protoMsgTemplate.replace(/\\n/g, '\n').replace('{protocolo}', convProto.protocol);
           try {
             if (conversationChannel === 'machine') {
