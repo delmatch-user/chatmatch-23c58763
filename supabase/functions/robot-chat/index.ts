@@ -36,6 +36,7 @@ interface RobotConfig {
     editContact: boolean;
     typingIndicator: boolean;
     splitByLineBreak: boolean;
+    canFinalize?: boolean;
   };
 }
 
