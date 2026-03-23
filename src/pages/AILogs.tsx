@@ -16,8 +16,8 @@ import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/hooks/useAuth';
 import { format, startOfDay, endOfDay, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { getTagColorClasses, getTagDotColor, LEGACY_TAG_MAP } from '@/lib/tagColors';
-import { SUPORTE_TAXONOMY_TAGS } from '@/lib/tagColors';
+import { getTagColorClasses, getTagDotColor, LEGACY_TAG_MAP, SUPORTE_TAXONOMY_TAGS } from '@/lib/tagColors';
+import { extractCidade } from '@/lib/phoneUtils';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -436,15 +436,6 @@ export default function AILogs() {
                                   📋 {log.protocol}
                                 </span>
                               )}
-                              {taxonomyTag ? (
-                                <Badge className={cn("text-xs", getTagColorClasses(taxonomyTag))}>
-                                  {taxonomyTag}
-                                </Badge>
-                              ) : (
-                                <Badge className={priorityColors[log.priority] || priorityColors.normal}>
-                                  {log.priority}
-                                </Badge>
-                              )}
                               {hasNewKnowledge && (
                                 <Badge variant="outline" className="text-warning border-warning/50 gap-1">
                                   <AlertTriangle className="w-3 h-3" />
@@ -453,16 +444,40 @@ export default function AILogs() {
                               )}
                             </div>
 
-                            {/* Other tags */}
-                            {log.tags?.filter(t => !SUPORTE_TAXONOMY_TAGS.some(st => t === st)).length > 0 && (
-                              <div className="flex gap-1 flex-wrap mb-1">
-                                {log.tags.filter(t => !SUPORTE_TAXONOMY_TAGS.some(st => t === st)).map(tag => (
-                                  <Badge key={tag} variant="outline" className={cn("text-xs", getTagColorClasses(tag))}>
-                                    {tag}
-                                  </Badge>
-                                ))}
-                              </div>
-                            )}
+                            <div className="flex items-center gap-2 flex-wrap mb-2">
+                              <span className={cn(
+                                "text-xs px-2 py-0.5 rounded-full font-medium",
+                                realChannel === 'instagram'
+                                  ? "bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-pink-400"
+                                  : realChannel === 'machine'
+                                  ? "bg-orange-500/20 text-orange-400"
+                                  : "bg-[#25D366]/20 text-[#25D366]"
+                              )}>
+                                {realChannel === 'instagram' ? 'Instagram' : realChannel === 'machine' ? 'Machine' : 'WhatsApp'}
+                              </span>
+                              {(() => {
+                                const cidade = extractCidade(log.contact_notes || undefined);
+                                return cidade ? (
+                                  <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-500/20 text-blue-400">
+                                    📍 {cidade}
+                                  </span>
+                                ) : null;
+                              })()}
+                              {taxonomyTag ? (
+                                <Badge className={`${getTagColorClasses(taxonomyTag)} border text-xs`}>
+                                  {taxonomyTag}
+                                </Badge>
+                              ) : (
+                                <Badge className={priorityColors[log.priority] || priorityColors.normal}>
+                                  {log.priority}
+                                </Badge>
+                              )}
+                              {log.tags?.filter(t => !SUPORTE_TAXONOMY_TAGS.some(st => t === st)).map(tag => (
+                                <Badge key={tag} variant="outline" className={cn("text-xs", getTagColorClasses(tag))}>
+                                  {tag}
+                                </Badge>
+                              ))}
+                            </div>
 
                             <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
                               <span className="flex items-center gap-1">
