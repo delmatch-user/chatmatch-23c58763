@@ -1062,6 +1062,7 @@ async function handleAutomaticMode(body: {
       editContact: robot.tools?.editContact ?? false,
       typingIndicator: robot.tools?.typingIndicator ?? true,
       splitByLineBreak: robot.tools?.splitByLineBreak ?? false,
+      canFinalize: robot.tools?.canFinalize ?? false,
     }
   };
 
