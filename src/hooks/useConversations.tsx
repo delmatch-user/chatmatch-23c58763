@@ -2,6 +2,9 @@ import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { Conversation } from '@/types';
+import { SUPORTE_TAXONOMY_TAGS } from '@/lib/tagColors';
+
+const SUPORTE_DEPARTMENT_ID = 'dea51138-49e4-45b0-a491-fb07a5fad479';
 
 export function useConversations() {
   const [loading, setLoading] = useState(false);
@@ -88,13 +91,26 @@ export function useConversations() {
           protocol,
         };
 
-        const { error: logError } = await supabase
+        const { data: insertedLog, error: logError } = await supabase
           .from('conversation_logs')
-          .insert([logData]);
+          .insert([logData])
+          .select('id')
+          .single();
 
         if (logError) {
           console.error('Error saving conversation log:', logError);
           // Continue even if log fails - we still want to finalize
+        } else if (insertedLog && conversation.departmentId === SUPORTE_DEPARTMENT_ID) {
+          // Auto-classify if Suporte department and no taxonomy tag yet
+          const hasTaxonomyTag = conversation.tags?.some(t =>
+            (SUPORTE_TAXONOMY_TAGS as readonly string[]).includes(t)
+          );
+          if (!hasTaxonomyTag) {
+            // Fire-and-forget - don't block the agent
+            supabase.functions.invoke('classify-conversation-tags', {
+              body: { logIds: [insertedLog.id] }
+            }).catch(err => console.error('Auto-classify error:', err));
+          }
         }
       } else {
         // No conversation data, just fetch protocol for simple finalization
