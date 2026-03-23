@@ -88,6 +88,7 @@ export const defaultTools: RobotTools = {
   editContact: false,
   typingIndicator: true,
   splitByLineBreak: false,
+  canFinalize: false,
 };
 
 interface DbRobot {
