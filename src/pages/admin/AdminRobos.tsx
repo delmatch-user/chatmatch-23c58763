@@ -1324,6 +1324,33 @@ export default function AdminRobos() {
                             </div>
                           </div>
 
+                          {/* Finalizar conversas */}
+                          <div className="bg-muted/30 rounded-lg p-4">
+                            <div className="flex items-start justify-between">
+                              <div className="flex items-start gap-3">
+                                <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center">
+                                  <CheckCircle2 className="w-4 h-4 text-red-600" />
+                                </div>
+                                <div className="flex-1">
+                                  <h4 className="font-medium text-sm flex items-center gap-1">
+                                    Finalizar conversas
+                                    <HelpCircle className="w-3 h-3 text-muted-foreground" />
+                                  </h4>
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    O agente poderá finalizar conversas quando identificar que o problema foi resolvido. Também será usado para auto-finalização por inatividade (quando o cliente não responde).
+                                  </p>
+                                </div>
+                              </div>
+                              <Switch
+                                checked={selectedRobot.tools.canFinalize}
+                                onCheckedChange={(checked) => setSelectedRobot({
+                                  ...selectedRobot,
+                                  tools: { ...selectedRobot.tools, canFinalize: checked }
+                                })}
+                              />
+                            </div>
+                          </div>
+
                           {/* Agendar mensagens */}
                           <div className="bg-muted/30 rounded-lg p-4">
                             <div className="flex items-start justify-between">
