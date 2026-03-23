@@ -64,7 +64,7 @@ export function ConversationPreviewDialog({
   onOpenChange,
   onAssume,
 }: ConversationPreviewDialogProps) {
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollViewportRef = useRef<HTMLDivElement>(null);
   const [liveWaitTime, setLiveWaitTime] = useState(0);
   const [isMarkingAsRead, setIsMarkingAsRead] = useState(false);
   const [realMessages, setRealMessages] = useState<Message[] | null>(null);
