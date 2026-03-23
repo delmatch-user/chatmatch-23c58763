@@ -102,7 +102,7 @@ export function ConversationPreviewDialog({
           const mapped: Message[] = data.map((m) => ({
             id: m.id,
             conversationId: m.conversation_id,
-            senderId: m.sender_id || 'contact',
+            senderId: m.sender_id ?? undefined,
             senderName: m.sender_name,
             content: m.content,
             type: m.message_type as Message['type'],
@@ -366,7 +366,10 @@ export function ConversationPreviewDialog({
             ) : (
               (realMessages || conversation.messages).map((message, index, arr) => {
                 const isSystemMessage = (message.type as string) === 'system' || message.senderName === 'SYSTEM';
-                const isFromContact = !message.senderId || message.senderId === 'contact';
+                const senderName = message.senderName || '';
+                const isRobot = message.senderId === 'robot' || senderName.includes('[ROBOT]') || senderName.includes('(IA)');
+                const isUUID = message.senderId && /^[0-9a-f]{8}-/.test(message.senderId);
+                const isFromContact = message.senderId === 'contact' || (!message.senderId && !isRobot && !isUUID);
                 const messageTime = message.timestamp instanceof Date 
                   ? message.timestamp 
                   : new Date(message.timestamp);
