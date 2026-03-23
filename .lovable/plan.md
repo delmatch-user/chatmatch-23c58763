@@ -1,26 +1,23 @@
 
 
-## Plano: Corrigir separação de mensagens enviadas/recebidas no Preview
+## Plano: Padronizar diálogo de mensagens do Logs IA com o Histórico
 
 ### Problema
-O `ConversationPreviewDialog` usa uma lógica simplificada para determinar se a mensagem é do contato: `!message.senderId || message.senderId === 'contact'`. Isso não funciona porque mensagens de robôs podem ter `sender_id` como `'robot'` ou um UUID de atendente — a lógica atual trata tudo que não é exatamente `'contact'` como mensagem do sistema, mas o fallback `|| 'contact'` no mapeamento (linha 105) faz com que mensagens com `sender_id = null` (que podem ser do robô) sejam tratadas como do contato.
-
-O ChatPanel usa uma lógica mais robusta: verifica se o `senderId` pertence a um usuário do sistema (`users.some(u => u.id === msg.senderId)`) e também verifica marcadores como `[ROBOT]` e `(IA)` no `senderName`.
+O diálogo de mensagens em `AILogs.tsx` (linhas 472-505) usa uma lógica simplificada: `msg.sender_id ? ml-auto : items-start`, sem tratar mensagens de sistema nem usar o mesmo layout de bolhas do Histórico. O `ConversationPreviewDialog` já foi corrigido anteriormente.
 
 ### Correção
 
-**Arquivo:** `src/components/queue/ConversationPreviewDialog.tsx`
+**Arquivo:** `src/pages/AILogs.tsx` (linhas 472-505)
 
-1. **Corrigir o mapeamento de `senderId`** — não forçar `'contact'` como fallback quando `sender_id` é null. Manter null/undefined para diferenciação posterior.
+Substituir o bloco de renderização de mensagens para usar o mesmo padrão do `History.tsx`:
 
-2. **Adotar a mesma lógica do ChatPanel** para identificar mensagens do contato vs agente/robô:
-   - Mensagem do contato: `senderId === 'contact'`
-   - Mensagem de robô: `senderName` contém `[ROBOT]` ou `(IA)`, ou `senderId === 'robot'`
-   - Mensagem de agente: qualquer outro `senderId` (UUID)
-   - `isFromContact` = NÃO é robô E NÃO é agente (UUID) — ou seja, `senderId === 'contact'` apenas
-
-3. **Manter o layout visual existente** (esquerda para contato, direita para agente/robô) que já está correto no JSX.
+1. **Extrair campos normalizados** — `senderId`, `senderName`, `msgType`, `msgTimestamp` (suportando ambos os formatos camelCase e snake_case)
+2. **Detectar mensagens de sistema** — `msgType === 'system'` ou `senderName === 'SYSTEM'`/`'[SISTEMA]'` → centralizar com estilo discreto
+3. **Separar contato vs agente/robô** — `isContact = senderId === 'contact' || !senderId` (sem ser system) → esquerda (bg-muted); caso contrário → direita (bg-primary)
+4. **Layout de bolhas** — `max-w-[80%] rounded-2xl px-4 py-2` com `rounded-bl-md` (contato) ou `rounded-br-md` (agente), nome do remetente, conteúdo, e timestamp
+5. **Suporte a mídia** — manter indicadores `[audio]`, `[image]`, `[file]` para tipos de mídia
+6. **ScrollArea** — já está usando `ScrollArea`, manter `flex-1 max-h-[60vh]`
 
 ### Resultado
-Mensagens do cliente aparecerão à esquerda (fundo cinza) e mensagens de robôs/agentes à direita (fundo primário), igual ao ChatPanel e ao screenshot de referência.
+O Logs IA terá o mesmo visual de bolhas separadas (esquerda/direita) com scroll, idêntico ao Histórico e ao Preview da fila.
 
