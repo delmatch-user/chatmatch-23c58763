@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { 
   ChevronDown,
@@ -71,7 +71,7 @@ interface NavItem {
   children?: NavItem[];
 }
 
-const getNavItems = (queueCount: number, activeConversationsCount: number, internalUnreadCount: number, showRanking: boolean, isSDR: boolean): NavItem[] => {
+const getNavItems = (queueCount: number, activeConversationsCount: number, internalUnreadCount: number, showRanking: boolean, isSDR: boolean, unreadAlerts: number = 0): NavItem[] => {
   const items: NavItem[] = [
     { icon: Inbox, label: 'Fila', path: '/fila', badge: queueCount > 0 ? queueCount : undefined },
     { icon: MessageSquare, label: 'Conversas', path: '/conversas', badge: activeConversationsCount > 0 ? activeConversationsCount : undefined },
@@ -86,7 +86,7 @@ const getNavItems = (queueCount: number, activeConversationsCount: number, inter
       { icon: History, label: 'Histórico', path: '/historico' },
       { icon: Trophy, label: 'Ranking', path: '/ranking' },
       { icon: Bot, label: 'Logs IA', path: '/logs-ia' },
-      { icon: Bell, label: 'Alertas', path: '/notificacoes' },
+      { icon: Bell, label: 'Alertas', path: '/notificacoes', badge: unreadAlerts > 0 ? unreadAlerts : undefined, pulse: unreadAlerts > 0 },
     ]});
   } else {
     items.push({ icon: History, label: 'Histórico', path: '/historico' });
