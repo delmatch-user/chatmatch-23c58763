@@ -309,7 +309,8 @@ export default function AdminAIIntegrations() {
                 <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
                   Os robôs utilizam automaticamente o provedor correto com base na inteligência selecionada.
                   Modelos Gemini (Novato, Flash, Pro) usam a API Key do Google, 
-                  e o modelo Maestro usa a API Key da OpenAI. 
+                  o modelo Maestro usa a API Key da OpenAI,
+                  e o modelo Delma Cérebro usa a API Key da Anthropic (Claude). 
                   Configure as chaves aqui e ative os provedores para sincronizar com seus agentes IA.
                 </p>
               </div>
