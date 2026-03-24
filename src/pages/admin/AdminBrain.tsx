@@ -106,8 +106,7 @@ const AdminBrain = () => {
         body: { period: parseInt(period), metricsOnly: true },
       });
       if (error) throw error;
-      const filteredMetrics = { ...data.metrics, agentStats: (data.metrics.agentStats || []).filter((a: AgentStat) => !a.name.toLowerCase().includes('fábio') && !a.name.toLowerCase().includes('fabio') && !a.name.toLowerCase().includes('arthur')) };
-      setMetrics(filteredMetrics);
+      setMetrics(filterMetrics(data.metrics));
       setLastUpdated(new Date());
       if (showToast) toast.success('Métricas atualizadas!');
     } catch (e: any) {
@@ -125,8 +124,7 @@ const AdminBrain = () => {
         body: { period: parseInt(period) },
       });
       if (error) throw error;
-      const filteredMetrics = { ...data.metrics, agentStats: (data.metrics.agentStats || []).filter((a: AgentStat) => !a.name.toLowerCase().includes('fábio') && !a.name.toLowerCase().includes('fabio') && !a.name.toLowerCase().includes('arthur')) };
-      setMetrics(filteredMetrics);
+      setMetrics(filterMetrics(data.metrics));
       setAiAnalysis(data.aiAnalysis);
       setLastUpdated(new Date());
       toast.success('Relatório da Delma gerado!');
