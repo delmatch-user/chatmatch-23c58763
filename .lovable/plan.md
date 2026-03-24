@@ -1,28 +1,46 @@
 
 
-## Plano: Renomear "Operacional - Normal" para "Operacional - Geral"
+## Plano: Normalizar tags no backend (brain-analysis) para eliminar duplicatas
 
-A tag canonica passa a ser **"Operacional - Geral"**. Tanto `OPERACIONAL_PENDENTE` quanto `Operacional - Normal` e `Operacional - Pendente` serao normalizados para esse novo nome.
+### Problema
+A função `brain-analysis` conta tags brutas do banco sem normalizar. O frontend tem `normalizeTopTags` mas o regex de limpeza de emojis pode não capturar todos os caracteres Unicode usados no banco (ex: `◇`, `◈`, variantes de `◆`). Resultado: `OPERACIONAL_PENDENTE` aparece separado de `Operacional - Geral`.
 
-### Mudancas
+### Solução
+Corrigir em dois pontos:
 
-| Arquivo | O que muda |
-|---------|-----------|
-| `src/lib/tagColors.ts` | Trocar `Operacional - Normal` por `Operacional - Geral` em `SUPORTE_TAXONOMY_TAGS`, `TAG_COLOR_MAP`, `TAG_DOT_COLOR_MAP`. Adicionar `Operacional - Normal` e `Operacional - Pendente` ao `TAG_NORMALIZATION` apontando para `Operacional - Geral`. |
-| `src/pages/admin/AdminBrain.tsx` | Trocar `Operacional - Normal` por `Operacional - Geral` no `barColors`. |
-| `supabase/functions/classify-conversation-tags/index.ts` | Trocar `Operacional - Normal` por `Operacional - Geral` em `TAXONOMY_TAGS`, `TAG_TO_PRIORITY` e no prompt do LLM. |
-| `supabase/functions/brain-analysis/index.ts` | Trocar `Operacional - Normal` por `Operacional - Geral` no array `taxonomyTags`. |
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/brain-analysis/index.ts` | Adicionar função `normalizeTag()` no backend e aplicá-la ao contar tags (linha 74), nas tags dos agentes, e nos errorLogs. |
+| `src/lib/tagColors.ts` | Melhorar o regex de limpeza para capturar qualquer caractere não-alfanumérico/espaço no início da tag, garantindo robustez. |
 
-### Normalizacao
+### Detalhes
 
+**brain-analysis/index.ts — adicionar normalização server-side:**
 ```typescript
-const TAG_NORMALIZATION = {
+// Função de normalização (mesmo mapa do frontend)
+const TAG_NORMALIZATION: Record<string, string> = {
+  'ACIDENTE_URGENTE': 'Acidente - Urgente',
+  'FINANCEIRO_NORMAL': 'Financeiro - Normal',
+  'DUVIDA_GERAL': 'Duvida - Geral',
+  'COMERCIAL_B2B': 'Comercial - B2B',
   'OPERACIONAL_PENDENTE': 'Operacional - Geral',
   'Operacional - Normal': 'Operacional - Geral',
   'Operacional - Pendente': 'Operacional - Geral',
-  // ... demais mapeamentos existentes
 };
+
+function normalizeTag(tag: string): string {
+  const clean = tag.replace(/^[^\w\sÀ-ú-]+\s*/u, '').trim();
+  return TAG_NORMALIZATION[clean] || clean;
+}
 ```
 
-Isso garante que qualquer formato antigo no banco seja exibido como "Operacional - Geral" sem duplicatas.
+Aplicar em: contagem de `tagCounts` (linha 74), `agentStats.tags`, e no `mapErrorLog`.
+
+**tagColors.ts — regex mais robusto:**
+```typescript
+// De: /^[🔴🟡🟢🔵⚪◆◇●○■□▪▫✦✧⬥⬦♦️◈]\s*/
+// Para: /^[^\w\sÀ-ú-]+\s*/u
+```
+
+Isso captura qualquer prefixo de símbolos/emojis sem depender de lista exaustiva de caracteres Unicode.
 
