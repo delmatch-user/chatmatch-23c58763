@@ -1,32 +1,28 @@
 
 
-## Plano: Adicionar "Operacional - Normal" como tag canonica e corrigir mapeamento
+## Plano: Renomear "Operacional - Normal" para "Operacional - Geral"
 
-### Problema
-A tag legada `OPERACIONAL_PENDENTE` esta mapeada incorretamente para `Duvida - Geral`. O usuario quer que ela seja convertida para **"Operacional - Normal"** em todo o sistema, como uma 5a tag de taxonomia.
+A tag canonica passa a ser **"Operacional - Geral"**. Tanto `OPERACIONAL_PENDENTE` quanto `Operacional - Normal` e `Operacional - Pendente` serao normalizados para esse novo nome.
 
 ### Mudancas
 
 | Arquivo | O que muda |
 |---------|-----------|
-| `src/lib/tagColors.ts` | Adicionar `Operacional - Normal` ao `SUPORTE_TAXONOMY_TAGS`. Corrigir mapeamento: `OPERACIONAL_PENDENTE` → `Operacional - Normal`. Adicionar cor laranja no `TAG_COLOR_MAP` e `TAG_DOT_COLOR_MAP`. |
-| `src/pages/admin/AdminBrain.tsx` | Adicionar `Operacional - Normal` ao `barColors` do grafico. |
-| `supabase/functions/classify-conversation-tags/index.ts` | Adicionar `Operacional - Normal` ao `TAXONOMY_TAGS` e `TAG_TO_PRIORITY`. Atualizar prompt do LLM com a 5a categoria. |
-| `supabase/functions/brain-analysis/index.ts` | Adicionar `Operacional - Normal` ao array `taxonomyTags`. |
+| `src/lib/tagColors.ts` | Trocar `Operacional - Normal` por `Operacional - Geral` em `SUPORTE_TAXONOMY_TAGS`, `TAG_COLOR_MAP`, `TAG_DOT_COLOR_MAP`. Adicionar `Operacional - Normal` e `Operacional - Pendente` ao `TAG_NORMALIZATION` apontando para `Operacional - Geral`. |
+| `src/pages/admin/AdminBrain.tsx` | Trocar `Operacional - Normal` por `Operacional - Geral` no `barColors`. |
+| `supabase/functions/classify-conversation-tags/index.ts` | Trocar `Operacional - Normal` por `Operacional - Geral` em `TAXONOMY_TAGS`, `TAG_TO_PRIORITY` e no prompt do LLM. |
+| `supabase/functions/brain-analysis/index.ts` | Trocar `Operacional - Normal` por `Operacional - Geral` no array `taxonomyTags`. |
 
-### Detalhes
+### Normalizacao
 
-**tagColors.ts:**
-- `SUPORTE_TAXONOMY_TAGS` passa de 4 para 5 itens
-- `'OPERACIONAL_PENDENTE': 'Operacional - Normal'` (correcao)
-- Cor: `bg-orange-500/20 text-orange-400 border-orange-500/30`
+```typescript
+const TAG_NORMALIZATION = {
+  'OPERACIONAL_PENDENTE': 'Operacional - Geral',
+  'Operacional - Normal': 'Operacional - Geral',
+  'Operacional - Pendente': 'Operacional - Geral',
+  // ... demais mapeamentos existentes
+};
+```
 
-**classify-conversation-tags (edge function):**
-- Nova categoria no prompt: `"Operacional - Normal" — Problemas operacionais, entregas atrasadas, pedidos incorretos, bugs no app`
-- Prioridade: `normal`
-
-**brain-analysis (edge function):**
-- Adicionar ao array para que apareca nos graficos sem duplicar com o formato legado
-
-Resultado: `OPERACIONAL_PENDENTE` e variantes com emoji serao normalizados para `Operacional - Normal` no frontend, e novas classificacoes usarao esse nome diretamente.
+Isso garante que qualquer formato antigo no banco seja exibido como "Operacional - Geral" sem duplicatas.
 
