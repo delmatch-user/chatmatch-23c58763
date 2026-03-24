@@ -151,9 +151,9 @@ serve(async (req) => {
       return { total: filteredLogs.length, motivos, logs: filteredLogs.map(mapErrorLog) };
     };
 
-    const estabLogs = errorLogs.filter(l => classifyType(l.tags || []) === 'estabelecimento');
-    const motoboyLogs = errorLogs.filter(l => classifyType(l.tags || []) === 'motoboy');
-    const outrosLogs = errorLogs.filter(l => classifyType(l.tags || []) === 'outros');
+    const estabLogs = errorLogs.filter(l => classifyType(l) === 'estabelecimento');
+    const motoboyLogs = errorLogs.filter(l => classifyType(l) === 'motoboy');
+    const outrosLogs = errorLogs.filter(l => classifyType(l) === 'outros');
 
     const errorsByType = {
       estabelecimento: buildTypeGroup(estabLogs),
