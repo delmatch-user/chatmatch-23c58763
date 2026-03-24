@@ -646,7 +646,7 @@ const AdminBrain = () => {
               </Popover>
             )}
 
-            <Button variant="outline" size="icon" onClick={() => fetchMetrics(true)} disabled={loadingMetrics}>
+            <Button variant="outline" size="icon" onClick={() => { fetchMetrics(true); loadAgentLiveStatus(); loadMaturityHistory(); loadReportHistory(); }} disabled={loadingMetrics}>
               <RefreshCw className={cn("w-4 h-4", loadingMetrics && "animate-spin")} />
             </Button>
           </div>
