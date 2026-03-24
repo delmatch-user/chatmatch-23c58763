@@ -1,46 +1,51 @@
 
 
-## Plano: Normalizar tags no backend (brain-analysis) para eliminar duplicatas
+## Plano: Adicionar Claude (Anthropic) como provedor de IA + inteligência "Delma Cérebro"
 
-### Problema
-A função `brain-analysis` conta tags brutas do banco sem normalizar. O frontend tem `normalizeTopTags` mas o regex de limpeza de emojis pode não capturar todos os caracteres Unicode usados no banco (ex: `◇`, `◈`, variantes de `◆`). Resultado: `OPERACIONAL_PENDENTE` aparece separado de `Operacional - Geral`.
+### Resumo
+Adicionar a Anthropic (Claude) como 3º provedor de IA no sistema, com uma nova opção de inteligência **"Delma Cérebro 🧠"** nos robôs que usa o modelo `claude-sonnet-4-20250514`.
 
-### Solução
-Corrigir em dois pontos:
+### Pré-requisito
+- Solicitar ao usuário a configuração do secret `ANTHROPIC_API_KEY` via ferramenta de secrets.
 
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/brain-analysis/index.ts` | Adicionar função `normalizeTag()` no backend e aplicá-la ao contar tags (linha 74), nas tags dos agentes, e nos errorLogs. |
-| `src/lib/tagColors.ts` | Melhorar o regex de limpeza para capturar qualquer caractere não-alfanumérico/espaço no início da tag, garantindo robustez. |
+### Mudanças
 
-### Detalhes
+| Arquivo | O que muda |
+|---------|-----------|
+| **DB Migration** | Inserir novo registro na tabela `ai_providers` para `anthropic` com display_name "Anthropic (Claude)", models `["claude-sonnet-4-20250514","claude-haiku-3-5-20241022"]`, default_model `claude-sonnet-4-20250514`. |
+| **`src/pages/admin/AdminAIIntegrations.tsx`** | Adicionar ícone e secret name para `anthropic` (`ANTHROPIC_API_KEY`), com link para console.anthropic.com. |
+| **`src/pages/admin/AdminRobos.tsx`** | Adicionar opção `{ value: 'cerebro', label: 'Delma Cérebro 🧠', description: 'Máxima inteligência com Claude', model: 'claude-sonnet-4-20250514' }` ao `intelligenceOptions`. |
+| **`supabase/functions/robot-chat/index.ts`** | Atualizar `getModelFromIntelligence` (case `cerebro` → `claude-sonnet-4-20250514`), `isGeminiModel` (sem mudança), criar `isClaudeModel()`, e atualizar `getApiConfig` para retornar URL/key da Anthropic. |
+| **`supabase/functions/sdr-robot-chat/index.ts`** | Mesmas mudanças de `getModelFromIntelligence`, `isClaudeModel`, e `getApiConfig`. |
+| **`supabase/functions/manage-ai-keys/index.ts`** | Adicionar `anthropic: !!Deno.env.get('ANTHROPIC_API_KEY')` no check, e bloco de teste que chama `https://api.anthropic.com/v1/messages` com header `x-api-key`. |
 
-**brain-analysis/index.ts — adicionar normalização server-side:**
+### Detalhes técnicos
+
+**API da Anthropic** usa formato diferente do OpenAI. O endpoint `https://api.anthropic.com/v1/messages` requer:
+- Header `x-api-key` (não Bearer)
+- Header `anthropic-version: 2023-06-01`
+- Body com `model`, `max_tokens`, `messages` (formato compatível com OpenAI)
+
+A resposta retorna `content[0].text` ao invés de `choices[0].message.content`. As funções `robot-chat` e `sdr-robot-chat` precisarão de lógica para adaptar request/response ao formato Anthropic, incluindo tool calling que usa formato próprio.
+
+**Alternativa simplificada**: A Anthropic oferece compatibilidade parcial com OpenAI format. Usaremos a adaptação no código para garantir compatibilidade com tool calling.
+
+**getApiConfig atualizado:**
 ```typescript
-// Função de normalização (mesmo mapa do frontend)
-const TAG_NORMALIZATION: Record<string, string> = {
-  'ACIDENTE_URGENTE': 'Acidente - Urgente',
-  'FINANCEIRO_NORMAL': 'Financeiro - Normal',
-  'DUVIDA_GERAL': 'Duvida - Geral',
-  'COMERCIAL_B2B': 'Comercial - B2B',
-  'OPERACIONAL_PENDENTE': 'Operacional - Geral',
-  'Operacional - Normal': 'Operacional - Geral',
-  'Operacional - Pendente': 'Operacional - Geral',
-};
+function isClaudeModel(intelligence: string): boolean {
+  return intelligence === 'cerebro';
+}
 
-function normalizeTag(tag: string): string {
-  const clean = tag.replace(/^[^\w\sÀ-ú-]+\s*/u, '').trim();
-  return TAG_NORMALIZATION[clean] || clean;
+function getApiConfig(intelligence: string) {
+  if (isGeminiModel(intelligence)) {
+    return { apiUrl: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", apiKey: Deno.env.get("GOOGLE_GEMINI_API_KEY") || '', providerName: 'Google Gemini' };
+  }
+  if (isClaudeModel(intelligence)) {
+    return { apiUrl: "https://api.anthropic.com/v1/messages", apiKey: Deno.env.get("ANTHROPIC_API_KEY") || '', providerName: 'Anthropic Claude', isAnthropic: true };
+  }
+  return { apiUrl: "https://api.openai.com/v1/chat/completions", apiKey: Deno.env.get("OPENAI_API_KEY") || '', providerName: 'OpenAI' };
 }
 ```
 
-Aplicar em: contagem de `tagCounts` (linha 74), `agentStats.tags`, e no `mapErrorLog`.
-
-**tagColors.ts — regex mais robusto:**
-```typescript
-// De: /^[🔴🟡🟢🔵⚪◆◇●○■□▪▫✦✧⬥⬦♦️◈]\s*/
-// Para: /^[^\w\sÀ-ú-]+\s*/u
-```
-
-Isso captura qualquer prefixo de símbolos/emojis sem depender de lista exaustiva de caracteres Unicode.
+**Adaptação de request/response para Anthropic**: Na chamada AI dentro de `handleAutomaticMode`, quando `isClaudeModel`, converter o body para formato Anthropic (separar system prompt de messages, converter tools para formato Anthropic), e na resposta converter `content[0].text` de volta para formato OpenAI-like para que o resto do código funcione sem mudanças.
 
