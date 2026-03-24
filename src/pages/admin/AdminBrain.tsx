@@ -805,7 +805,7 @@ const AdminBrain = () => {
                           <Tooltip
                             contentStyle={{ background: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }}
                             labelStyle={{ color: 'hsl(var(--foreground))' }}
-                            formatter={(value: number, name: string) => [`${value} min`, name === 'tma' ? 'TMA' : 'TME']}
+                            formatter={(value: number, name: string) => [`${value} min`, name]}
                             labelFormatter={(label) => `Dia ${label}`}
                           />
                           <Line type="monotone" dataKey="tma" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 3 }} name="TMA" />
