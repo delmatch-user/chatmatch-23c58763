@@ -1391,6 +1391,89 @@ const AdminBrain = () => {
                   )}
                 </SheetContent>
               </Sheet>
+
+              {/* Agent Notification Modal */}
+              <Dialog open={notifyModalOpen} onOpenChange={(open) => { if (!open) { setNotifyModalOpen(false); setNotifyMessage(''); setNotifyAgent(null); } }}>
+                <DialogContent className="max-w-lg max-h-[90vh] overflow-auto">
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                      <Bell className="w-5 h-5 text-primary" />
+                      Notificar {notifyAgent?.name}
+                    </DialogTitle>
+                    <DialogDescription>Gere um feedback de desempenho com a Delma e envie ao atendente.</DialogDescription>
+                  </DialogHeader>
+
+                  {notifyAgent && metrics && (
+                    <div className="space-y-4">
+                      {/* Metrics summary */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="p-3 rounded-lg bg-secondary/30">
+                          <p className="text-xs text-muted-foreground">Conversas</p>
+                          <p className="text-lg font-bold">{notifyAgent.count}</p>
+                        </div>
+                        <div className="p-3 rounded-lg bg-secondary/30">
+                          <p className="text-xs text-muted-foreground">TMA</p>
+                          <p className="text-lg font-bold">{formatTime(notifyAgent.avgTime)}</p>
+                          <p className="text-[10px] text-muted-foreground">Média do time: {formatTime(metrics.agentStats.reduce((s, a) => s + a.avgTime, 0) / metrics.agentStats.length)}</p>
+                        </div>
+                        <div className="p-3 rounded-lg bg-secondary/30">
+                          <p className="text-xs text-muted-foreground">TME</p>
+                          <p className="text-lg font-bold">{formatTime(notifyAgent.avgWaitTime)}</p>
+                        </div>
+                        <div className="p-3 rounded-lg bg-secondary/30">
+                          <p className="text-xs text-muted-foreground">Resolução</p>
+                          <p className="text-lg font-bold">{notifyAgent.resolutionRate != null ? `${notifyAgent.resolutionRate}%` : '—'}</p>
+                        </div>
+                      </div>
+                      {notifyAgent.topTags.length > 0 && (
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">Top Tags</p>
+                          <div className="flex flex-wrap gap-1">
+                            {notifyAgent.topTags.slice(0, 3).map(([tag, count]) => (
+                              <Badge key={tag} variant="outline" className="text-xs">{tag} ({count})</Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Generate button */}
+                      {!notifyMessage && (
+                        <Button onClick={generateFeedback} disabled={notifyGenerating} className="w-full gap-2">
+                          {notifyGenerating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                          {notifyGenerating ? 'Gerando feedback...' : 'Gerar Feedback com IA'}
+                        </Button>
+                      )}
+
+                      {/* Editable message */}
+                      {notifyMessage && (
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1.5">Mensagem (editável)</p>
+                          <Textarea
+                            value={notifyMessage}
+                            onChange={(e) => setNotifyMessage(e.target.value)}
+                            rows={10}
+                            className="text-sm"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <DialogFooter className="gap-2">
+                    <Button variant="outline" onClick={() => { setNotifyModalOpen(false); setNotifyMessage(''); setNotifyAgent(null); }}>
+                      Cancelar
+                    </Button>
+                    <Button
+                      onClick={sendNotification}
+                      disabled={!notifyMessage.trim() || notifySending}
+                      className="gap-2"
+                    >
+                      {notifySending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Bell className="w-4 h-4" />}
+                      {notifySending ? 'Enviando...' : 'Enviar Notificação'}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </TabsContent>
 
             {/* ======================== KNOWLEDGE TAB ======================== */}
