@@ -105,6 +105,7 @@ function getModelFromIntelligence(intelligence: string): string {
     case 'flash': return 'gemini-2.5-flash';
     case 'pro': return 'gemini-2.5-pro';
     case 'maestro': return 'gpt-4o';
+    case 'cerebro': return 'claude-sonnet-4-20250514';
     default: return 'gemini-2.5-flash-lite';
   }
 }
@@ -113,7 +114,11 @@ function isGeminiModel(intelligence: string): boolean {
   return ['novato', 'flash', 'pro'].includes(intelligence);
 }
 
-function getApiConfig(intelligence: string) {
+function isClaudeModel(intelligence: string): boolean {
+  return intelligence === 'cerebro';
+}
+
+function getApiConfig(intelligence: string): { apiUrl: string; apiKey: string; providerName: string; isAnthropic?: boolean } {
   if (isGeminiModel(intelligence)) {
     return {
       apiUrl: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
@@ -121,11 +126,91 @@ function getApiConfig(intelligence: string) {
       providerName: 'Google Gemini'
     };
   }
+  if (isClaudeModel(intelligence)) {
+    return {
+      apiUrl: "https://api.anthropic.com/v1/messages",
+      apiKey: Deno.env.get("ANTHROPIC_API_KEY") || '',
+      providerName: 'Anthropic Claude',
+      isAnthropic: true
+    };
+  }
   return {
     apiUrl: "https://api.openai.com/v1/chat/completions",
     apiKey: Deno.env.get("OPENAI_API_KEY") || '',
     providerName: 'OpenAI'
   };
+}
+
+// Convert OpenAI-format request to Anthropic format
+function convertToAnthropicRequest(openaiBody: any): any {
+  const messages = openaiBody.messages || [];
+  const systemParts: string[] = [];
+  const userMessages: any[] = [];
+  for (const msg of messages) {
+    if (msg.role === 'system') {
+      systemParts.push(typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content));
+    } else {
+      userMessages.push({ role: msg.role, content: msg.content });
+    }
+  }
+  const merged: any[] = [];
+  for (const msg of userMessages) {
+    if (merged.length > 0 && merged[merged.length - 1].role === msg.role) {
+      merged[merged.length - 1].content += '\n' + (typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content));
+    } else {
+      merged.push({ ...msg });
+    }
+  }
+  if (merged.length === 0 || merged[0].role !== 'user') {
+    merged.unshift({ role: 'user', content: '...' });
+  }
+  const anthropicBody: any = {
+    model: openaiBody.model,
+    max_tokens: openaiBody.max_tokens || 1000,
+    messages: merged,
+  };
+  if (systemParts.length > 0) anthropicBody.system = systemParts.join('\n\n');
+  if (openaiBody.temperature !== undefined) anthropicBody.temperature = openaiBody.temperature;
+  if (openaiBody.tools?.length > 0) {
+    anthropicBody.tools = openaiBody.tools.map((t: any) => ({
+      name: t.function.name,
+      description: t.function.description || '',
+      input_schema: t.function.parameters || { type: 'object', properties: {} },
+    }));
+  }
+  return anthropicBody;
+}
+
+function convertAnthropicResponse(anthropicData: any): any {
+  const content = anthropicData.content || [];
+  let textContent = '';
+  const toolCalls: any[] = [];
+  for (const block of content) {
+    if (block.type === 'text') textContent += block.text;
+    else if (block.type === 'tool_use') {
+      toolCalls.push({
+        id: block.id, type: 'function',
+        function: { name: block.name, arguments: JSON.stringify(block.input) },
+      });
+    }
+  }
+  return {
+    choices: [{ message: { role: 'assistant', content: textContent || null, tool_calls: toolCalls.length > 0 ? toolCalls : undefined }, finish_reason: anthropicData.stop_reason === 'tool_use' ? 'tool_calls' : 'stop' }],
+    usage: anthropicData.usage ? { prompt_tokens: anthropicData.usage.input_tokens, completion_tokens: anthropicData.usage.output_tokens, total_tokens: (anthropicData.usage.input_tokens || 0) + (anthropicData.usage.output_tokens || 0) } : undefined,
+  };
+}
+
+async function fetchAI(apiUrl: string, apiKey: string, body: any, isAnthropic?: boolean): Promise<Response> {
+  if (isAnthropic) {
+    const anthropicBody = convertToAnthropicRequest(body);
+    return fetch(apiUrl, { method: "POST", headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "Content-Type": "application/json" }, body: JSON.stringify(anthropicBody) });
+  }
+  return fetch(apiUrl, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+}
+
+async function parseAIResponse(response: Response, isAnthropic?: boolean): Promise<any> {
+  const data = await response.json();
+  return isAnthropic ? convertAnthropicResponse(data) : data;
 }
 
 async function buildMessageHistory(messages: any[], readImages: boolean, logPrefix = '[SDR-Robot-Chat]'): Promise<any[]> {
