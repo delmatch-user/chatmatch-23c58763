@@ -304,13 +304,9 @@ Seja direta, objetiva e use dados para embasar cada ponto. Responda em portuguê
         console.error("[brain-analysis] GPT-5.2 error:", e);
       }
     }
-      } catch (e) {
-        console.error("[brain-analysis] Anthropic error:", e);
-      }
     }
 
-    // 2. Fallback: Lovable AI gateway
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    // 2. Fallback: Lovable AI with Gemini Flash
     if (!aiAnalysis && LOVABLE_API_KEY) {
       try {
         console.log("[brain-analysis] Fallback para Lovable AI...");
