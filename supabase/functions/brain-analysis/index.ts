@@ -274,11 +274,11 @@ Seja direta, objetiva e use dados para embasar cada ponto. Responda em portuguê
       { role: "user", content: analysisPrompt },
     ];
 
-    // 1. Try Lovable AI with GPT-5.4 (primary for Delma Cérebro)
+    // 1. Try Lovable AI with GPT-5.2 (primary for Delma Cérebro)
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!aiAnalysis && LOVABLE_API_KEY) {
       try {
-        console.log("[brain-analysis] Tentando Lovable AI (GPT-5.4)...");
+        console.log("[brain-analysis] Tentando Lovable AI (GPT-5.2)...");
         const gptResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
           method: "POST",
           headers: {
@@ -286,7 +286,7 @@ Seja direta, objetiva e use dados para embasar cada ponto. Responda em portuguê
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: "openai/gpt-5.4",
+            model: "openai/gpt-5.2",
             messages: aiMessages,
           }),
         });
@@ -294,14 +294,14 @@ Seja direta, objetiva e use dados para embasar cada ponto. Responda em portuguê
         if (gptResp.ok) {
           const gptData = await gptResp.json();
           aiAnalysis = gptData.choices?.[0]?.message?.content || "";
-          providerUsed = "GPT-5.4";
-          console.log("[brain-analysis] GPT-5.4 OK");
+          providerUsed = "GPT-5.2";
+          console.log("[brain-analysis] GPT-5.2 OK");
         } else {
           const errBody = await gptResp.text();
-          console.warn("[brain-analysis] GPT-5.4 falhou:", gptResp.status, errBody);
+          console.warn("[brain-analysis] GPT-5.2 falhou:", gptResp.status, errBody);
         }
       } catch (e) {
-        console.error("[brain-analysis] GPT-5.4 error:", e);
+        console.error("[brain-analysis] GPT-5.2 error:", e);
       }
     }
 
