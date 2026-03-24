@@ -1286,7 +1286,7 @@ async function handleAutomaticMode(body: {
     console.log(`[Robot-Chat Auto] Histórico re-carregado com ${conversationHistory.length} mensagens após agrupamento`);
   }
 
-  const { apiUrl, apiKey, providerName } = getApiConfig(robotConfig.intelligence);
+  const { apiUrl, apiKey, providerName, isAnthropic } = getApiConfig(robotConfig.intelligence);
   
   if (!apiKey) {
     console.error(`[Robot-Chat Auto] API Key não configurada para ${providerName}`);
@@ -1347,19 +1347,12 @@ async function handleAutomaticMode(body: {
   }
   
   // Chamar API com retry automático para 429
-  async function callAIWithRetry(): Promise<Response> {
+  async function callAIWithRetry(): Promise<any> {
     // 1ª tentativa
     console.log(`[Robot-Chat Auto] Chamando ${providerName}...`);
-    const resp1 = await fetch(apiUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(openaiBody),
-    });
+    const resp1 = await fetchAI(apiUrl, apiKey, openaiBody, isAnthropic);
 
-    if (resp1.ok) return resp1;
+    if (resp1.ok) return parseAIResponse(resp1, isAnthropic);
 
     if (resp1.status === 429) {
       const errorText1 = await resp1.text();
@@ -1381,16 +1374,9 @@ async function handleAutomaticMode(body: {
 
       // 2ª tentativa
       console.log(`[Robot-Chat Auto] 2ª tentativa com ${providerName}...`);
-      const resp2 = await fetch(apiUrl, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(openaiBody),
-      });
+      const resp2 = await fetchAI(apiUrl, apiKey, openaiBody, isAnthropic);
 
-      if (resp2.ok) return resp2;
+      if (resp2.ok) return parseAIResponse(resp2, isAnthropic);
 
       // Fallback para Lovable AI
       const lovableKey = Deno.env.get("LOVABLE_API_KEY");
@@ -1407,7 +1393,7 @@ async function handleAutomaticMode(body: {
         });
         if (resp3.ok) {
           console.log(`[Robot-Chat Auto] Fallback Lovable AI bem-sucedido!`);
-          return resp3;
+          return resp3.json();
         }
         const errFallback = await resp3.text();
         console.error(`[Robot-Chat Auto] Fallback Lovable AI também falhou:`, resp3.status, errFallback);
@@ -1425,9 +1411,9 @@ async function handleAutomaticMode(body: {
     throw new Error(`${providerName} API error: ${resp1.status}`);
   }
 
-  let openaiResponse: Response;
+  let openaiData: any;
   try {
-    openaiResponse = await callAIWithRetry();
+    openaiData = await callAIWithRetry();
   } catch (retryErr) {
     console.error(`[Robot-Chat Auto] Erro final após retries:`, retryErr);
     // Limpar lock em caso de erro
@@ -1438,7 +1424,6 @@ async function handleAutomaticMode(body: {
     });
   }
   
-  const openaiData = await openaiResponse.json();
   const choice = openaiData.choices?.[0];
   const toolCalls = choice?.message?.tool_calls;
   let aiResponse = choice?.message?.content || '';
