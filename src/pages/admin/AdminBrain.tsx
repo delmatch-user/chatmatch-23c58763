@@ -70,15 +70,34 @@ const TAG_NORMALIZATION: Record<string, string> = {
   'COMERCIAL_B2B': 'Comercial - B2B',
 };
 
+const normalizeTag = (tag: string): string => {
+  const clean = tag.replace(/^[🔴🟡🟢🔵⚪◆◇●○■□▪▫✦✧⬥⬦♦️◈]\s*/, '').trim();
+  return TAG_NORMALIZATION[clean] || clean;
+};
+
 const normalizeTopTags = (tags: [string, number][]): [string, number][] => {
   const merged: Record<string, number> = {};
   tags.forEach(([tag, count]) => {
-    const clean = tag.replace(/^[🔴🟡🟢🔵⚪]\s*/, '').trim();
-    const normalized = TAG_NORMALIZATION[clean] || clean;
+    const normalized = normalizeTag(tag);
     merged[normalized] = (merged[normalized] || 0) + count;
   });
   return Object.entries(merged).sort((a, b) => b[1] - a[1]) as [string, number][];
 };
+
+const normalizeMotivos = (motivos: Record<string, number>): Record<string, number> => {
+  const merged: Record<string, number> = {};
+  Object.entries(motivos).forEach(([tag, count]) => {
+    const normalized = normalizeTag(tag);
+    merged[normalized] = (merged[normalized] || 0) + count;
+  });
+  return merged;
+};
+
+const normalizeErrorTypeGroup = (group: ErrorTypeGroup): ErrorTypeGroup => ({
+  ...group,
+  motivos: normalizeMotivos(group.motivos),
+  logs: group.logs.map(l => ({ ...l, tags: l.tags.map(normalizeTag) })),
+});
 
 const filterMetrics = (raw: any): BrainMetrics => ({
   ...raw,
@@ -86,6 +105,12 @@ const filterMetrics = (raw: any): BrainMetrics => ({
     !a.name.toLowerCase().includes('fábio') && !a.name.toLowerCase().includes('fabio') && !a.name.toLowerCase().includes('arthur')
   ),
   topTags: normalizeTopTags(raw.topTags || []),
+  errorLogs: (raw.errorLogs || []).map((l: ErrorLog) => ({ ...l, tags: l.tags.map(normalizeTag) })),
+  errorsByType: raw.errorsByType ? {
+    estabelecimento: normalizeErrorTypeGroup(raw.errorsByType.estabelecimento),
+    motoboy: normalizeErrorTypeGroup(raw.errorsByType.motoboy),
+    outros: normalizeErrorTypeGroup(raw.errorsByType.outros),
+  } : undefined,
 });
 
 const AdminBrain = () => {
