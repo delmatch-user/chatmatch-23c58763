@@ -224,11 +224,31 @@ serve(async (req) => {
     const motoboyLogs = errorLogs.filter(l => classifyType(l) === 'motoboy');
     const outrosLogs = errorLogs.filter(l => classifyType(l) === 'outros');
 
-    const errorsByType = {
-      estabelecimento: buildTypeGroup(estabLogs),
-      motoboy: buildTypeGroup(motoboyLogs),
-      outros: buildTypeGroup(outrosLogs),
+    // Build hourly heatmap for errors
+    const buildHourly = (filtered: any[]) => {
+      const hourly: Record<number, number> = {};
+      filtered.forEach(l => {
+        if (l.finalized_at) {
+          const h = new Date(l.finalized_at).getHours();
+          hourly[h] = (hourly[h] || 0) + 1;
+        }
+      });
+      return hourly;
     };
+
+    const errorsByType = {
+      estabelecimento: { ...buildTypeGroup(estabLogs), hourly: buildHourly(estabLogs) },
+      motoboy: { ...buildTypeGroup(motoboyLogs), hourly: buildHourly(motoboyLogs) },
+      outros: { ...buildTypeGroup(outrosLogs), hourly: buildHourly(outrosLogs) },
+    };
+
+    // Previous period error tags for recurrence detection
+    const prevErrorLogs = prev.filter(l =>
+      l.priority === 'urgent' || l.priority === 'high' ||
+      (l.tags || []).some((t: string) => t.toLowerCase().includes('erro') || t.toLowerCase().includes('reclamação'))
+    );
+    const prevErrorTagCounts: Record<string, number> = {};
+    prevErrorLogs.forEach(l => (l.tags || []).forEach((t: string) => { const nt = normalizeTag(t); prevErrorTagCounts[nt] = (prevErrorTagCounts[nt] || 0) + 1; }));
 
     const metrics = {
       period,
@@ -241,11 +261,13 @@ serve(async (req) => {
       aiResolved,
       humanResolved,
       topTags,
+      prevTopTags,
       channelCounts,
       priorityCounts,
       dailyTrends,
       abandonRate,
       abandonedCount,
+      prevErrorTags: prevErrorTagCounts,
       agentStats: Object.entries(agentStats).map(([name, stats]) => {
         const prevS = prevAgentStats[name];
         const topTags = Object.entries(stats.tags).sort((a, b) => b[1] - a[1]).slice(0, 3);
