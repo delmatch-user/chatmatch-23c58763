@@ -149,6 +149,29 @@ export function Sidebar({ className, variant = 'desktop', onNavigate }: SidebarP
   const location = useLocation();
   const navigate = useNavigate();
   const isAdmin = location.pathname.startsWith('/admin');
+  const [unreadAlerts, setUnreadAlerts] = useState(0);
+  
+  // Fetch unread agent notifications count
+  const fetchUnreadAlerts = useCallback(async () => {
+    if (!user?.id) return;
+    const { count, error } = await supabase
+      .from('agent_notifications' as any)
+      .select('*', { count: 'exact', head: true })
+      .eq('agent_id', user.id)
+      .eq('is_read', false);
+    if (!error && count != null) setUnreadAlerts(count);
+  }, [user?.id]);
+
+  useEffect(() => {
+    fetchUnreadAlerts();
+    const channel = supabase
+      .channel('sidebar-alerts')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'agent_notifications' }, () => {
+        fetchUnreadAlerts();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchUnreadAlerts]);
   
   // Verificar se o usuário pertence ao departamento Suporte
   const suporteDeptId = departments.find(d => d.name.toLowerCase() === 'suporte')?.id;
@@ -162,7 +185,7 @@ export function Sidebar({ className, variant = 'desktop', onNavigate }: SidebarP
   const activeConversationsCount = conversations.filter(c => 
     c.status !== 'finalizada' && c.status !== 'em_fila'
   ).length;
-  const navItems = isAdmin ? adminNavItems : getNavItems(queueCount, activeConversationsCount, unreadCount.internalChat, userBelongsToSuport, userBelongsToComercial);
+  const navItems = isAdmin ? adminNavItems : getNavItems(queueCount, activeConversationsCount, unreadCount.internalChat, userBelongsToSuport, userBelongsToComercial, unreadAlerts);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
