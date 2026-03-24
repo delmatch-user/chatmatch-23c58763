@@ -86,7 +86,7 @@ serve(async (req) => {
 
     // Top tags
     const tagCounts: Record<string, number> = {};
-    logs.forEach(l => (l.tags || []).forEach((t: string) => { tagCounts[t] = (tagCounts[t] || 0) + 1; }));
+    logs.forEach(l => (l.tags || []).forEach((t: string) => { const nt = normalizeTag(t); tagCounts[nt] = (tagCounts[nt] || 0) + 1; }));
     const topTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
 
     // Channel breakdown
@@ -110,7 +110,7 @@ serve(async (req) => {
         agentStats[name].totalWait += l.wait_time / 60;
         agentStats[name].waitCount++;
       }
-      (l.tags || []).forEach((t: string) => { agentStats[name].tags[t] = (agentStats[name].tags[t] || 0) + 1; });
+      (l.tags || []).forEach((t: string) => { const nt = normalizeTag(t); agentStats[name].tags[nt] = (agentStats[name].tags[nt] || 0) + 1; });
     });
 
     // Previous period agent stats
