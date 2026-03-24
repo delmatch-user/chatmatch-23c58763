@@ -357,7 +357,7 @@ const AdminBrain = () => {
                   ? mergeMotivos(metrics.errorsByType)
                   : (metrics.errorsByType?.[errorsSubTab as 'estabelecimento' | 'motoboy']?.motivos || {});
                 const chartData = Object.entries(motivos)
-                  .map(([name, value]) => ({ name, value }))
+                  .map(([name, value]) => ({ name, value: value as number }))
                   .sort((a, b) => b.value - a.value);
                 const barColors: Record<string, string> = {
                   'Acidente - Urgente': 'hsl(0, 72%, 51%)',
