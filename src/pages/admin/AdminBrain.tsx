@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Brain, TrendingUp, TrendingDown, Clock, Users, Bot, AlertTriangle, Sparkles, RefreshCw, MessageSquare } from 'lucide-react';
-import MainLayout from '@/components/layout/MainLayout';
+import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -96,8 +96,8 @@ const AdminBrain = () => {
         {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-lg">
-              <Brain className="w-7 h-7 text-white" />
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center shadow-lg">
+              <Brain className="w-7 h-7 text-primary-foreground" />
             </div>
             <div>
               <h1 className="text-2xl font-bold text-foreground">Cérebro</h1>
@@ -281,7 +281,7 @@ const AdminBrain = () => {
                   <div className="flex items-center justify-between">
                     <div>
                       <CardTitle className="flex items-center gap-2">
-                        <Sparkles className="w-5 h-5 text-violet-500" />
+                        <Sparkles className="w-5 h-5 text-primary" />
                         Análise da Delma
                       </CardTitle>
                       <CardDescription>Relatório inteligente gerado por IA com base nos dados do período</CardDescription>
@@ -404,7 +404,7 @@ function KPICard({ title, value, icon: Icon, trend, subtitle }: {
           </div>
         </div>
         {trend && (
-          <div className={cn("flex items-center gap-1 mt-3 text-xs font-medium", trend.isPositive ? "text-green-500" : "text-destructive")}>
+          <div className={cn("flex items-center gap-1 mt-3 text-xs font-medium", trend.isPositive ? "text-success" : "text-destructive")}>
             {trend.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
             <span>{trend.diff}% vs período anterior</span>
           </div>
