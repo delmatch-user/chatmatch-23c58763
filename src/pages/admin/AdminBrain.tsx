@@ -784,18 +784,18 @@ const AdminBrain = () => {
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <div className="h-[300px]">
+                      <div style={{ height: `${Math.max(120, chartData.length * 45 + 40)}px` }}>
                         <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={chartData} layout="vertical" margin={{ left: 20, right: 20 }}>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
-                            <XAxis type="number" className="text-xs" />
+                          <BarChart data={chartData} layout="vertical" margin={{ left: 20, right: 20 }} barSize={24}>
+                            <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" horizontal={false} />
+                            <XAxis type="number" className="text-xs" allowDecimals={false} tick={{ fill: 'hsl(var(--muted-foreground))' }} />
                             <YAxis dataKey="name" type="category" width={150} className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
                             <Tooltip
                               contentStyle={{ background: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }}
                               labelStyle={{ color: 'hsl(var(--foreground))' }}
                               formatter={(value: number, name: string, props: any) => {
                                 const item = chartData.find(d => d.name === props.payload.name);
-                                return [value, item?.recurrent ? `${name} 🔁 Reincidente` : name];
+                                return [`${value} conversas`, item?.recurrent ? `${props.payload.name} 🔁 Reincidente` : props.payload.name];
                               }}
                             />
                             <Bar dataKey="value" radius={[0, 4, 4, 0]}>
