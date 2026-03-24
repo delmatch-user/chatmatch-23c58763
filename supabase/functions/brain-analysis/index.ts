@@ -35,6 +35,33 @@ function formatDateBR(dateStr: string): string {
   return dateStr;
 }
 
+// Helper: fetch ALL rows with pagination (no 1000-row cap)
+async function fetchAllLogs(
+  supabase: any,
+  selectColumns: string,
+  gteDate: string,
+  ltDate: string,
+  useLte: boolean = false,
+) {
+  const PAGE_SIZE = 1000;
+  let allData: any[] = [];
+  let from = 0;
+  while (true) {
+    let query = supabase
+      .from("conversation_logs")
+      .select(selectColumns)
+      .gte("finalized_at", gteDate);
+    query = useLte ? query.lte("finalized_at", ltDate) : query.lt("finalized_at", ltDate);
+    query = query.is("reset_at", null).range(from, from + PAGE_SIZE - 1);
+    const { data, error } = await query;
+    if (error) throw error;
+    allData = allData.concat(data || []);
+    if (!data || data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return allData;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -47,7 +74,6 @@ serve(async (req) => {
 
     const now = new Date();
     
-    // Use explicit date range if provided, otherwise fallback to rolling window
     let effectiveStart: string;
     let effectiveEnd: string;
     let prevStart: string;
@@ -56,7 +82,6 @@ serve(async (req) => {
     if (reqPeriodStart && reqPeriodEnd) {
       effectiveStart = reqPeriodStart;
       effectiveEnd = reqPeriodEnd;
-      // Calculate previous period with same duration
       const startMs = new Date(reqPeriodStart).getTime();
       const endMs = new Date(reqPeriodEnd).getTime();
       const durationMs = endMs - startMs;
@@ -69,30 +94,11 @@ serve(async (req) => {
       prevEnd = effectiveStart;
     }
 
-    // Fetch current period logs
-    const { data: currentLogs, error: logsError } = await supabase
-      .from("conversation_logs")
-      .select("*")
-      .gte("finalized_at", effectiveStart)
-      .lte("finalized_at", effectiveEnd)
-      .is("reset_at", null)
-      .order("finalized_at", { ascending: false })
-      .limit(5000);
-
-    if (logsError) throw logsError;
-
-    // Fetch previous period logs for comparison
-    const { data: prevLogs } = await supabase
-      .from("conversation_logs")
-      .select("started_at, finalized_at, wait_time, assigned_to_name, department_name, tags, priority, channel")
-      .gte("finalized_at", prevStart)
-      .lt("finalized_at", prevEnd)
-      .is("reset_at", null)
-      .limit(5000);
-
-    // Calculate metrics
-    const logs = currentLogs || [];
-    const prev = prevLogs || [];
+    // Fetch ALL logs with pagination (no 1000-row limit)
+    const [logs, prev] = await Promise.all([
+      fetchAllLogs(supabase, "*", effectiveStart, effectiveEnd, true),
+      fetchAllLogs(supabase, "started_at, finalized_at, wait_time, assigned_to_name, department_name, tags, priority, channel", prevStart, prevEnd, false),
+    ]);
 
     const totalConversas = logs.length;
     const prevTotalConversas = prev.length;
