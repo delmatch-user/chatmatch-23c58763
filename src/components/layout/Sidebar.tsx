@@ -78,6 +78,8 @@ const getNavItems = (queueCount: number, activeConversationsCount: number, inter
     { icon: Zap, label: 'Mensagens Rápidas', path: '/mensagens-rapidas' },
   ];
 
+  items.push({ icon: ContactRound, label: 'Contatos', path: '/contatos' });
+
   if (showRanking) {
     items.push({ icon: Shield, label: 'Suporte', path: '/historico', children: [
       { icon: History, label: 'Histórico', path: '/historico' },
@@ -87,8 +89,6 @@ const getNavItems = (queueCount: number, activeConversationsCount: number, inter
   } else {
     items.push({ icon: History, label: 'Histórico', path: '/historico' });
   }
-
-  items.push({ icon: ContactRound, label: 'Contatos', path: '/contatos' });
 
   if (isSDR) {
     items.push({ icon: LayoutDashboard, label: 'Comercial', path: '/comercial', children: [
