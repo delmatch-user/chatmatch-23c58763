@@ -453,6 +453,91 @@ const AdminBrain = () => {
     }
   };
 
+  // Load which agents have been notified in current period
+  const loadAgentNotifications = useCallback(async () => {
+    try {
+      const effectivePeriod = getEffectivePeriod();
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - effectivePeriod);
+      const { data } = await supabase
+        .from('agent_notifications' as any)
+        .select('agent_id, created_at')
+        .gte('created_at', cutoff.toISOString());
+      const notifiedMap: Record<string, boolean> = {};
+      (data || []).forEach((n: any) => { notifiedMap[n.agent_id] = true; });
+      setAgentNotifications(notifiedMap);
+    } catch {}
+  }, [getEffectivePeriod]);
+
+  // Generate feedback via edge function
+  const generateFeedback = async () => {
+    if (!notifyAgent || !metrics) return;
+    setNotifyGenerating(true);
+    try {
+      const teamAvgTma = metrics.agentStats.reduce((s, a) => s + a.avgTime, 0) / metrics.agentStats.length;
+      const teamAvgTme = metrics.agentStats.reduce((s, a) => s + a.avgWaitTime, 0) / metrics.agentStats.length;
+      const { data, error } = await supabase.functions.invoke('brain-agent-feedback', {
+        body: {
+          agentName: notifyAgent.name,
+          agentStats: notifyAgent,
+          teamAvgTma,
+          teamAvgTme,
+          periodLabel: `últimos ${getEffectivePeriod()} dias`,
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setNotifyMessage(data.message || '');
+      toast.success('Feedback gerado pela Delma!');
+    } catch (e: any) {
+      toast.error('Erro ao gerar feedback: ' + (e.message || 'Erro desconhecido'));
+    } finally {
+      setNotifyGenerating(false);
+    }
+  };
+
+  // Send notification
+  const sendNotification = async () => {
+    if (!notifyAgent || !notifyMessage.trim() || !metrics) return;
+    setNotifySending(true);
+    try {
+      // Find agent_id by name from profiles
+      const { data: profileData } = await supabase.from('profiles').select('id').ilike('name', notifyAgent.name).maybeSingle();
+      if (!profileData) throw new Error('Perfil do atendente não encontrado');
+      const { data: authData } = await supabase.auth.getUser();
+      if (!authData?.user) throw new Error('Usuário não autenticado');
+
+      const teamAvgTma = metrics.agentStats.reduce((s, a) => s + a.avgTime, 0) / metrics.agentStats.length;
+      const teamAvgTme = metrics.agentStats.reduce((s, a) => s + a.avgWaitTime, 0) / metrics.agentStats.length;
+
+      const { error } = await supabase.from('agent_notifications' as any).insert({
+        agent_id: profileData.id,
+        sent_by: authData.user.id,
+        period_days: getEffectivePeriod(),
+        metrics: {
+          count: notifyAgent.count,
+          avgTime: notifyAgent.avgTime,
+          avgWaitTime: notifyAgent.avgWaitTime,
+          topTags: notifyAgent.topTags.slice(0, 3),
+          resolutionRate: notifyAgent.resolutionRate,
+          teamAvgTma,
+          teamAvgTme,
+        },
+        message: notifyMessage,
+      });
+      if (error) throw error;
+      toast.success(`Notificação enviada para ${notifyAgent.name}!`);
+      setNotifyModalOpen(false);
+      setNotifyMessage('');
+      setNotifyAgent(null);
+      loadAgentNotifications();
+    } catch (e: any) {
+      toast.error('Erro ao enviar: ' + (e.message || 'Erro desconhecido'));
+    } finally {
+      setNotifySending(false);
+    }
+  };
+
   useEffect(() => {
     fetchMetrics();
   }, [fetchMetrics]);
