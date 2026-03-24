@@ -923,7 +923,173 @@ function mergeMotivos(errorsByType?: { estabelecimento: ErrorTypeGroup; motoboy:
   return merged;
 }
 
-// Managerial insight interface
+// Knowledge tab data computation
+interface KnowledgeTopic { tag: string; count: number; mastered: boolean }
+interface Improvement { text: string; positive: boolean }
+interface Gap { icon: React.ElementType; title: string; description: string; priority: 'high' | 'medium' | 'low' }
+interface NextStep { action: string; reason: string; impact: 'alto' | 'médio' | 'baixo' }
+interface KnowledgeData {
+  masteredCount: number;
+  improvementPct: number;
+  gapCount: number;
+  maturityScore: number;
+  masteredTopics: KnowledgeTopic[];
+  improvements: Improvement[];
+  gaps: Gap[];
+  nextSteps: NextStep[];
+}
+
+function computeKnowledgeData(m: BrainMetrics): KnowledgeData {
+  const total = m.aiResolved + m.humanResolved;
+  const aiPct = total > 0 ? (m.aiResolved / total) * 100 : 0;
+
+  // Error tags frequency
+  const errorTagCounts: Record<string, number> = {};
+  m.errorLogs.forEach(l => l.tags.forEach(t => { errorTagCounts[t] = (errorTagCounts[t] || 0) + 1; }));
+
+  // Mastered topics: tags with high volume but low error presence
+  const masteredTopics: KnowledgeTopic[] = m.topTags.slice(0, 10).map(([tag, count]) => {
+    const errorCount = errorTagCounts[tag] || 0;
+    const errorRatio = count > 0 ? errorCount / count : 0;
+    return { tag, count, mastered: errorRatio < 0.15 && count >= 3 };
+  });
+  const masteredCount = masteredTopics.filter(t => t.mastered).length;
+
+  // Improvement percentage (TMA)
+  const improvementPct = m.prevTma > 0 ? Math.round(((m.prevTma - m.tma) / m.prevTma) * 100) : 0;
+
+  // Gaps: tags frequent in errors
+  const gapTags = Object.entries(errorTagCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const gapCount = gapTags.length;
+
+  // Maturity score
+  const errorPct = m.totalConversas > 0 ? (m.errorLogs.length / m.totalConversas) * 100 : 0;
+  const tmaBonusPct = Math.max(0, Math.min(100, improvementPct > 0 ? improvementPct * 2 : 0));
+  const maturityScore = Math.round(
+    Math.min(100, Math.max(0, (aiPct * 0.4) + (tmaBonusPct * 0.3) + (Math.max(0, 100 - errorPct * 5) * 0.3)))
+  );
+
+  // Improvements
+  const improvements: Improvement[] = [];
+  if (m.prevTma > 0) {
+    const tmaDiff = ((m.tma - m.prevTma) / m.prevTma) * 100;
+    if (Math.abs(tmaDiff) > 5) {
+      improvements.push({
+        text: tmaDiff < 0 ? `TMA reduziu ${Math.round(Math.abs(tmaDiff))}% — atendimentos mais rápidos!` : `TMA subiu ${Math.round(tmaDiff)}% — atendimentos ficaram mais lentos.`,
+        positive: tmaDiff < 0,
+      });
+    }
+  }
+  if (m.prevTme > 0) {
+    const tmeDiff = ((m.tme - m.prevTme) / m.prevTme) * 100;
+    if (Math.abs(tmeDiff) > 10) {
+      improvements.push({
+        text: tmeDiff < 0 ? `Tempo de espera caiu ${Math.round(Math.abs(tmeDiff))}% — fila mais ágil!` : `Tempo de espera subiu ${Math.round(tmeDiff)}% — clientes esperando mais.`,
+        positive: tmeDiff < 0,
+      });
+    }
+  }
+  // Agent improvements
+  m.agentStats
+    .filter(a => a.prevAvgTime > 0 && a.count > 3)
+    .map(a => ({ name: a.name, imp: ((a.prevAvgTime - a.avgTime) / a.prevAvgTime) * 100 }))
+    .filter(a => Math.abs(a.imp) > 10)
+    .sort((a, b) => b.imp - a.imp)
+    .slice(0, 3)
+    .forEach(a => {
+      improvements.push({
+        text: a.imp > 0 ? `${a.name} melhorou TMA em ${Math.round(a.imp)}% 🏆` : `${a.name} piorou TMA em ${Math.round(Math.abs(a.imp))}%`,
+        positive: a.imp > 0,
+      });
+    });
+  if (m.prevTotalConversas > 0) {
+    const volDiff = ((m.totalConversas - m.prevTotalConversas) / m.prevTotalConversas) * 100;
+    if (Math.abs(volDiff) > 10) {
+      improvements.push({
+        text: volDiff > 0 ? `Volume cresceu ${Math.round(volDiff)}% — mais demanda sendo atendida.` : `Volume caiu ${Math.round(Math.abs(volDiff))}% — menos conversas no período.`,
+        positive: volDiff > 0,
+      });
+    }
+  }
+  if (total > 5) {
+    improvements.push({ text: `IA resolvendo ${Math.round(aiPct)}% das conversas (${m.aiResolved} de ${total})`, positive: aiPct > 30 });
+  }
+
+  // Gaps
+  const gaps: Gap[] = [];
+  gapTags.forEach(([tag, count]) => {
+    const pct = m.totalConversas > 0 ? Math.round((count / m.totalConversas) * 100) : 0;
+    gaps.push({
+      icon: AlertTriangle,
+      title: `"${tag}" com ${count} erros`,
+      description: `Aparece em ${pct}% das conversas problemáticas — revisar Q&A e instruções sobre este tema.`,
+      priority: count > 5 ? 'high' : count > 2 ? 'medium' : 'low',
+    });
+  });
+  // Low automation channels
+  Object.entries(m.channelCounts).forEach(([ch, count]) => {
+    if (ch !== 'whatsapp' && count > 3) {
+      gaps.push({
+        icon: MessageSquare,
+        title: `Canal "${ch}" com baixa cobertura`,
+        description: `${count} conversas — verificar se os robôs estão configurados para este canal.`,
+        priority: count > 10 ? 'high' : 'medium',
+      });
+    }
+  });
+  // Agent overload as gap
+  if (m.agentStats.length > 2 && m.totalConversas > 10) {
+    m.agentStats.filter(a => a.count / m.totalConversas > 0.35).forEach(a => {
+      gaps.push({
+        icon: Users,
+        title: `${a.name} sobrecarregado`,
+        description: `Concentra ${Math.round((a.count / m.totalConversas) * 100)}% do volume — IA não está capturando esses temas.`,
+        priority: 'high',
+      });
+    });
+  }
+
+  // Next steps
+  const nextSteps: NextStep[] = [];
+  gapTags.slice(0, 3).forEach(([tag, count]) => {
+    nextSteps.push({
+      action: `Criar Q&A sobre "${tag}"`,
+      reason: `Aparece em ${count} conversas problemáticas — cobrir com automação reduzirá erros.`,
+      impact: count > 5 ? 'alto' : count > 2 ? 'médio' : 'baixo',
+    });
+  });
+  if (total > 5 && aiPct < 30) {
+    nextSteps.push({
+      action: 'Revisar instruções dos robôs',
+      reason: `Apenas ${Math.round(aiPct)}% resolvido por IA — melhorar cobertura das respostas automáticas.`,
+      impact: 'alto',
+    });
+  }
+  // Training recommendations
+  const avgTma = m.agentStats.length > 0 ? m.agentStats.reduce((s, a) => s + a.avgTime * a.count, 0) / Math.max(1, m.agentStats.reduce((s, a) => s + a.count, 0)) : 0;
+  m.agentStats
+    .filter(a => a.avgTime > avgTma * 1.5 && a.count > 3)
+    .slice(0, 2)
+    .forEach(a => {
+      const topTag = a.topTags[0];
+      nextSteps.push({
+        action: `Treinar ${a.name}${topTag ? ` em "${topTag[0]}"` : ''}`,
+        reason: `TMA de ${Math.round(a.avgTime)}min — ${Math.round(a.avgTime / avgTma)}x acima da média da equipe.`,
+        impact: 'médio',
+      });
+    });
+  if (m.tme > 10) {
+    nextSteps.push({
+      action: 'Ativar mais robôs nos horários de pico',
+      reason: `TME em ${Math.round(m.tme)}min — clientes esperam demais na fila.`,
+      impact: 'alto',
+    });
+  }
+
+  return { masteredCount, improvementPct, gapCount, maturityScore, masteredTopics, improvements, gaps, nextSteps };
+}
+
+
 interface ManagerialInsight {
   category: 'volume' | 'performance' | 'automation' | 'alert' | 'team';
   icon: React.ElementType;
