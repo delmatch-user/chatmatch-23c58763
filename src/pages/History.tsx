@@ -19,7 +19,7 @@ import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { getTagColorClasses, SUPORTE_TAXONOMY_TAGS } from '@/lib/tagColors';
 import { extractCidade } from '@/lib/phoneUtils';
-import { cn } from '@/lib/utils';
+import { cn, priorityLabel } from '@/lib/utils';
 
 interface ConversationLog {
   id: string;

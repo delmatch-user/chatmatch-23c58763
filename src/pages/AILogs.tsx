@@ -18,7 +18,7 @@ import { format, startOfDay, endOfDay, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { getTagColorClasses, getTagDotColor, LEGACY_TAG_MAP, SUPORTE_TAXONOMY_TAGS } from '@/lib/tagColors';
 import { extractCidade } from '@/lib/phoneUtils';
-import { cn } from '@/lib/utils';
+import { cn, priorityLabel } from '@/lib/utils';
 import { toast } from 'sonner';
 
 function renderMarkdown(text: string): string {
