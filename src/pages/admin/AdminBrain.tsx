@@ -243,6 +243,16 @@ const AdminBrain = () => {
   const [reportContext, setReportContext] = useState('');
   const [reportFallbackError, setReportFallbackError] = useState('');
 
+  // Maturity score history
+  const [maturityHistory, setMaturityHistory] = useState<Array<{ date: string; score: number }>>([]);
+
+  // Agent live status
+  const [agentLiveStatus, setAgentLiveStatus] = useState<Record<string, { status: string; openConversations: number }>>({});
+
+  // Report scheduling
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [scheduleConfig, setScheduleConfig] = useState<{ type: string; dayOfWeek: number; hourOfDay: number; isActive: boolean }>({ type: 'weekly', dayOfWeek: 1, hourOfDay: 8, isActive: false });
+
   const getEffectivePeriod = useCallback(() => {
     if (period === 'custom' && customDateRange.from && customDateRange.to) {
       return Math.max(1, differenceInDays(customDateRange.to, customDateRange.from) + 1);
