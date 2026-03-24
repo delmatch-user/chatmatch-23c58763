@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Brain, TrendingUp, TrendingDown, Clock, Users, Bot, AlertTriangle, Sparkles, RefreshCw, MessageSquare, Lightbulb, Activity, Store, Bike, BookOpen, Link2, FileText, CheckCircle2, XCircle, Zap, BarChart3, Target, ShieldAlert, Gauge, ArrowUpRight, ArrowDownRight, Minus, GraduationCap, Trophy, AlertCircle, Rocket, CheckSquare, CircleDot, UserX, Star, Wifi, WifiOff, CalendarDays } from 'lucide-react';
+import { Brain, TrendingUp, TrendingDown, Clock, Users, Bot, AlertTriangle, Sparkles, RefreshCw, MessageSquare, Lightbulb, Activity, Store, Bike, BookOpen, Link2, FileText, CheckCircle2, XCircle, Zap, BarChart3, Target, ShieldAlert, Gauge, ArrowUpRight, ArrowDownRight, Minus, GraduationCap, Trophy, AlertCircle, Rocket, CheckSquare, CircleDot, UserX, Star, Wifi, WifiOff, CalendarDays, ChevronDown, ChevronRight, Flame, Repeat2, Filter } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line, PieChart, Pie, Legend } from 'recharts';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -9,6 +9,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { cn, priorityLabel } from '@/lib/utils';
@@ -43,6 +48,7 @@ interface ErrorTypeGroup {
   total: number;
   motivos: Record<string, number>;
   logs: ErrorLog[];
+  hourly?: Record<number, number>;
 }
 
 interface DailyTrend {
@@ -63,6 +69,7 @@ interface BrainMetrics {
   aiResolved: number;
   humanResolved: number;
   topTags: [string, number][];
+  prevTopTags?: [string, number][];
   channelCounts: Record<string, number>;
   priorityCounts: Record<string, number>;
   agentStats: AgentStat[];
@@ -70,14 +77,13 @@ interface BrainMetrics {
   dailyTrends?: DailyTrend[];
   abandonRate?: number;
   abandonedCount?: number;
+  prevErrorTags?: Record<string, number>;
   errorsByType?: {
     estabelecimento: ErrorTypeGroup;
     motoboy: ErrorTypeGroup;
     outros: ErrorTypeGroup;
   };
 }
-
-// normalizeTag is imported from tagColors.ts
 
 const normalizeTopTags = (tags: [string, number][]): [string, number][] => {
   const merged: Record<string, number> = {};
@@ -109,6 +115,7 @@ const filterMetrics = (raw: any): BrainMetrics => ({
     !a.name.toLowerCase().includes('fábio') && !a.name.toLowerCase().includes('fabio') && !a.name.toLowerCase().includes('arthur')
   ),
   topTags: normalizeTopTags(raw.topTags || []),
+  prevTopTags: raw.prevTopTags ? normalizeTopTags(raw.prevTopTags) : undefined,
   errorLogs: (raw.errorLogs || []).map((l: ErrorLog) => ({ ...l, tags: l.tags.map(normalizeTag) })),
   errorsByType: raw.errorsByType ? {
     estabelecimento: normalizeErrorTypeGroup(raw.errorsByType.estabelecimento),
@@ -124,6 +131,85 @@ const CHANNEL_COLORS: Record<string, string> = {
   machine: 'hsl(217, 91%, 60%)',
 };
 
+// Maturity Gauge SVG component
+function MaturityGauge({ score }: { score: number }) {
+  const radius = 70;
+  const cx = 90;
+  const cy = 85;
+  const startAngle = Math.PI;
+  const endAngle = 0;
+  const totalAngle = Math.PI;
+  const scoreAngle = startAngle - (score / 100) * totalAngle;
+
+  const describeArc = (start: number, end: number, r: number) => {
+    const x1 = cx + r * Math.cos(start);
+    const y1 = cy - r * Math.sin(start);
+    const x2 = cx + r * Math.cos(end);
+    const y2 = cy - r * Math.sin(end);
+    const largeArc = start - end > Math.PI ? 1 : 0;
+    return `M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2}`;
+  };
+
+  const needleX = cx + (radius - 10) * Math.cos(scoreAngle);
+  const needleY = cy - (radius - 10) * Math.sin(scoreAngle);
+
+  const scoreColor = score >= 70 ? 'hsl(var(--success))' : score >= 40 ? 'hsl(48, 96%, 53%)' : 'hsl(var(--destructive))';
+
+  return (
+    <svg viewBox="0 0 180 110" className="w-full max-w-[220px] mx-auto">
+      {/* Red zone 0-40 */}
+      <path d={describeArc(Math.PI, Math.PI - 0.4 * Math.PI, radius)} fill="none" stroke="hsl(var(--destructive))" strokeWidth="12" strokeLinecap="round" opacity="0.3" />
+      {/* Yellow zone 40-70 */}
+      <path d={describeArc(Math.PI - 0.4 * Math.PI, Math.PI - 0.7 * Math.PI, radius)} fill="none" stroke="hsl(48, 96%, 53%)" strokeWidth="12" strokeLinecap="round" opacity="0.3" />
+      {/* Green zone 70-100 */}
+      <path d={describeArc(Math.PI - 0.7 * Math.PI, 0, radius)} fill="none" stroke="hsl(var(--success))" strokeWidth="12" strokeLinecap="round" opacity="0.3" />
+      {/* Score arc */}
+      <path
+        d={describeArc(Math.PI, scoreAngle, radius)}
+        fill="none"
+        stroke={scoreColor}
+        strokeWidth="12"
+        strokeLinecap="round"
+        className="transition-all duration-1000"
+      />
+      {/* Needle */}
+      <line x1={cx} y1={cy} x2={needleX} y2={needleY} stroke={scoreColor} strokeWidth="2.5" strokeLinecap="round" />
+      <circle cx={cx} cy={cy} r="4" fill={scoreColor} />
+      {/* Score text */}
+      <text x={cx} y={cy + 2} textAnchor="middle" className="text-2xl font-bold" fill="currentColor" fontSize="22">{score}</text>
+      <text x={cx} y={cy + 16} textAnchor="middle" className="text-xs" fill="hsl(var(--muted-foreground))" fontSize="10">/100</text>
+    </svg>
+  );
+}
+
+// Heatmap component for error hours
+function HourlyHeatmap({ data, label }: { data: Record<number, number>; label: string }) {
+  const maxVal = Math.max(1, ...Object.values(data));
+  const hours = Array.from({ length: 24 }, (_, i) => i);
+
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground mb-2">{label}</p>
+      <div className="flex gap-0.5 flex-wrap">
+        {hours.map(h => {
+          const count = data[h] || 0;
+          const intensity = count / maxVal;
+          return (
+            <div
+              key={h}
+              className="w-6 h-6 rounded-sm flex items-center justify-center text-[9px] border border-border/30 cursor-default"
+              style={{ backgroundColor: count > 0 ? `hsla(var(--destructive) / ${0.15 + intensity * 0.7})` : 'transparent' }}
+              title={`${h}h: ${count} erros`}
+            >
+              {h}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 const AdminBrain = () => {
   const [period, setPeriod] = useState('7');
   const [customDateRange, setCustomDateRange] = useState<{ from?: Date; to?: Date }>({});
@@ -137,12 +223,21 @@ const AdminBrain = () => {
   const [fetchError, setFetchError] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Phase 2 state
+  const [completedSteps, setCompletedSteps] = useState<Record<number, string>>({});
+  const [trainModalOpen, setTrainModalOpen] = useState(false);
+  const [trainModalTag, setTrainModalTag] = useState('');
+  const [trainNote, setTrainNote] = useState('');
+  const [expandedErrors, setExpandedErrors] = useState<Set<string>>(new Set());
+  const [topTagsChannelFilter, setTopTagsChannelFilter] = useState('all');
+  const [groupSimilarTags, setGroupSimilarTags] = useState(false);
+
   const getEffectivePeriod = useCallback(() => {
     if (period === 'custom' && customDateRange.from && customDateRange.to) {
       return Math.max(1, differenceInDays(customDateRange.to, customDateRange.from) + 1);
     }
     if (period === 'today') return 1;
-    if (period === 'yesterday') return 1; // handled separately
+    if (period === 'yesterday') return 1;
     return parseInt(period);
   }, [period, customDateRange]);
 
@@ -246,7 +341,6 @@ const AdminBrain = () => {
   };
   const statusCfg = systemStatusConfig[systemStatus];
 
-  // Period label helper
   const periodLabel = period === 'today' ? 'Hoje' : period === 'yesterday' ? 'Ontem' : period === 'custom' ? 'Personalizado' : `${period} dias`;
 
   // Channel donut data
@@ -256,8 +350,51 @@ const AdminBrain = () => {
     fill: CHANNEL_COLORS[name] || 'hsl(var(--primary))',
   })) : [];
 
-  // Urgent sparkline data (last 7 entries from dailyTrends)
+  // Urgent sparkline data
   const urgentSparkData = metrics?.dailyTrends?.slice(-7).map(d => ({ date: d.date.substring(5), urgent: d.urgent })) || [];
+
+  // Toggle step completion
+  const toggleStep = (idx: number) => {
+    setCompletedSteps(prev => {
+      const next = { ...prev };
+      if (next[idx]) {
+        delete next[idx];
+      } else {
+        next[idx] = new Date().toISOString();
+      }
+      return next;
+    });
+  };
+
+  // Save training note to app_settings
+  const saveTrainNote = async () => {
+    if (!trainNote.trim()) return;
+    try {
+      const entry = { tag: trainModalTag, note: trainNote, date: new Date().toISOString() };
+      const { data: existing } = await supabase.from('app_settings').select('*').eq('key', 'brain_training_log').maybeSingle();
+      const log = existing ? [...JSON.parse(existing.value), entry] : [entry];
+      if (existing) {
+        await supabase.from('app_settings').update({ value: JSON.stringify(log) }).eq('key', 'brain_training_log');
+      } else {
+        await supabase.from('app_settings').insert({ key: 'brain_training_log', value: JSON.stringify(log) });
+      }
+      toast.success(`Treinamento registrado para "${trainModalTag}"`);
+      setTrainModalOpen(false);
+      setTrainNote('');
+    } catch {
+      toast.error('Erro ao salvar treinamento');
+    }
+  };
+
+  // Toggle error card expand
+  const toggleErrorExpand = (id: string) => {
+    setExpandedErrors(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   return (
     <MainLayout>
@@ -278,7 +415,6 @@ const AdminBrain = () => {
             </div>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
-            {/* System status badge */}
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-secondary/50 px-2.5 py-1.5 rounded-md">
               <div className={cn("w-2 h-2 rounded-full", statusCfg.color)} />
               <span>{statusCfg.label}</span>
@@ -356,12 +492,12 @@ const AdminBrain = () => {
               <TabsTrigger value="errors">Erros & Gaps</TabsTrigger>
               <TabsTrigger value="agents">Atendentes</TabsTrigger>
               <TabsTrigger value="knowledge">Conhecimento</TabsTrigger>
+              <TabsTrigger value="top-tags">Top Tags</TabsTrigger>
               <TabsTrigger value="ai-report">Relatório IA</TabsTrigger>
             </TabsList>
 
-            {/* Painel Tab */}
+            {/* ======================== PAINEL TAB ======================== */}
             <TabsContent value="overview" className="space-y-6">
-              {/* KPI Row 1 - Main metrics */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
                 <KPICard title="Total Conversas" value={metrics.totalConversas} icon={MessageSquare} trend={getTrend(metrics.totalConversas, metrics.prevTotalConversas)} />
                 <KPICard title="TMA" value={formatTime(metrics.tma)} icon={Clock} trend={getTrend(metrics.tma, metrics.prevTma, true)} subtitle="Tempo médio de atendimento" />
@@ -378,15 +514,9 @@ const AdminBrain = () => {
                   icon={UserX}
                   subtitle={metrics.abandonedCount != null ? `${metrics.abandonedCount} abandonadas` : undefined}
                 />
-                <KPICard
-                  title="CSAT"
-                  value="—"
-                  icon={Star}
-                  subtitle="Sem dados de avaliação"
-                />
+                <KPICard title="CSAT" value="—" icon={Star} subtitle="Sem dados de avaliação" />
               </div>
 
-              {/* TMA/TME Trend Chart */}
               {metrics.dailyTrends && metrics.dailyTrends.length > 1 && (
                 <Card>
                   <CardHeader>
@@ -401,12 +531,7 @@ const AdminBrain = () => {
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={metrics.dailyTrends} margin={{ left: 0, right: 10, top: 5, bottom: 5 }}>
                           <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
-                          <XAxis
-                            dataKey="date"
-                            className="text-xs"
-                            tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                            tickFormatter={(val) => val.substring(5)} // MM-DD
-                          />
+                          <XAxis dataKey="date" className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} tickFormatter={(val) => val.substring(5)} />
                           <YAxis className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} unit="min" />
                           <Tooltip
                             contentStyle={{ background: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }}
@@ -480,7 +605,7 @@ const AdminBrain = () => {
                       <p className="text-sm text-muted-foreground">Sem tags no período.</p>
                     ) : (
                       <div className="space-y-2">
-                        {metrics.topTags.map(([tag, count]) => {
+                        {metrics.topTags.slice(0, 8).map(([tag, count]) => {
                           const maxCount = metrics.topTags[0][1];
                           const percentage = (count / maxCount) * 100;
                           return (
@@ -502,7 +627,6 @@ const AdminBrain = () => {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Channel Donut Chart */}
                 <Card>
                   <CardHeader><CardTitle className="text-base">Por Canal</CardTitle></CardHeader>
                   <CardContent>
@@ -510,24 +634,11 @@ const AdminBrain = () => {
                       <div className="h-[220px]">
                         <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
-                            <Pie
-                              data={channelDonutData}
-                              cx="50%"
-                              cy="50%"
-                              innerRadius={55}
-                              outerRadius={80}
-                              dataKey="value"
-                              label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                              labelLine={false}
-                            >
-                              {channelDonutData.map((entry, idx) => (
-                                <Cell key={idx} fill={entry.fill} />
-                              ))}
+                            <Pie data={channelDonutData} cx="50%" cy="50%" innerRadius={55} outerRadius={80} dataKey="value"
+                              label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+                              {channelDonutData.map((entry, idx) => (<Cell key={idx} fill={entry.fill} />))}
                             </Pie>
-                            <Tooltip
-                              contentStyle={{ background: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }}
-                              formatter={(value: number, name: string) => [value, name]}
-                            />
+                            <Tooltip contentStyle={{ background: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }} formatter={(value: number, name: string) => [value, name]} />
                             <Legend />
                           </PieChart>
                         </ResponsiveContainer>
@@ -538,7 +649,6 @@ const AdminBrain = () => {
                   </CardContent>
                 </Card>
 
-                {/* Priority with Sparkline */}
                 <Card>
                   <CardHeader><CardTitle className="text-base">Por Prioridade</CardTitle></CardHeader>
                   <CardContent className="space-y-4">
@@ -547,7 +657,6 @@ const AdminBrain = () => {
                         <Badge key={priority} className={cn("text-sm", priorityColors[priority] || 'bg-muted text-muted-foreground')}>{priorityLabel(priority)}: {count}</Badge>
                       ))}
                     </div>
-                    {/* Urgent sparkline */}
                     {urgentSparkData.length > 1 && (
                       <div>
                         <p className="text-xs text-muted-foreground mb-2">Urgentes (últimos 7 dias)</p>
@@ -555,11 +664,7 @@ const AdminBrain = () => {
                           <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={urgentSparkData}>
                               <Line type="monotone" dataKey="urgent" stroke="hsl(var(--destructive))" strokeWidth={2} dot={false} />
-                              <Tooltip
-                                contentStyle={{ background: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', borderRadius: '6px', fontSize: '12px' }}
-                                formatter={(v: number) => [v, 'Urgentes']}
-                                labelFormatter={(l) => l}
-                              />
+                              <Tooltip contentStyle={{ background: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', borderRadius: '6px', fontSize: '12px' }} formatter={(v: number) => [v, 'Urgentes']} labelFormatter={(l) => l} />
                             </LineChart>
                           </ResponsiveContainer>
                         </div>
@@ -570,21 +675,16 @@ const AdminBrain = () => {
               </div>
             </TabsContent>
 
-            {/* Errors Tab */}
+            {/* ======================== ERRORS TAB ======================== */}
             <TabsContent value="errors" className="space-y-6">
               <div className="flex items-center gap-2 flex-wrap">
                 {[
                   { key: 'todos', label: 'Todos', icon: AlertTriangle, count: metrics.errorLogs.length },
                   { key: 'estabelecimento', label: 'Estabelecimento', icon: Store, count: metrics.errorsByType?.estabelecimento.total || 0 },
                   { key: 'motoboy', label: 'Motoboy', icon: Bike, count: metrics.errorsByType?.motoboy.total || 0 },
+                  { key: 'outros', label: 'Outros', icon: AlertCircle, count: metrics.errorsByType?.outros.total || 0 },
                 ].map(tab => (
-                  <Button
-                    key={tab.key}
-                    variant={errorsSubTab === tab.key ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setErrorsSubTab(tab.key)}
-                    className="gap-2"
-                  >
+                  <Button key={tab.key} variant={errorsSubTab === tab.key ? 'default' : 'outline'} size="sm" onClick={() => setErrorsSubTab(tab.key)} className="gap-2">
                     <tab.icon className="w-4 h-4" />
                     {tab.label}
                     <Badge variant="secondary" className="text-xs ml-1">{tab.count}</Badge>
@@ -592,13 +692,19 @@ const AdminBrain = () => {
                 ))}
               </div>
 
+              {/* Top 10 horizontal bars */}
               {(() => {
                 const motivos = errorsSubTab === 'todos'
                   ? mergeMotivos(metrics.errorsByType)
-                  : (metrics.errorsByType?.[errorsSubTab as 'estabelecimento' | 'motoboy']?.motivos || {});
+                  : (metrics.errorsByType?.[errorsSubTab as 'estabelecimento' | 'motoboy' | 'outros']?.motivos || {});
                 const chartData = Object.entries(motivos)
-                  .map(([name, value]) => ({ name, value: value as number }))
-                  .sort((a, b) => b.value - a.value);
+                  .map(([name, value]) => ({
+                    name,
+                    value: value as number,
+                    recurrent: !!(metrics.prevErrorTags && metrics.prevErrorTags[name]),
+                  }))
+                  .sort((a, b) => b.value - a.value)
+                  .slice(0, 10);
                 const barColors: Record<string, string> = {
                   'Acidente - Urgente': 'hsl(0, 72%, 51%)',
                   'Operacional - Geral': 'hsl(25, 95%, 53%)',
@@ -609,14 +715,14 @@ const AdminBrain = () => {
                 return chartData.length > 0 ? (
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-base">Principais Motivos</CardTitle>
+                      <CardTitle className="text-base">Top 10 Motivos de Erro</CardTitle>
                       <CardDescription>
-                        Distribuição das tags de taxonomia nas conversas problemáticas
-                        {errorsSubTab !== 'todos' && ` — ${errorsSubTab === 'estabelecimento' ? 'Estabelecimento' : 'Motoboy'}`}
+                        Distribuição das tags nas conversas problemáticas
+                        {errorsSubTab !== 'todos' && ` — ${errorsSubTab.charAt(0).toUpperCase() + errorsSubTab.slice(1)}`}
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <div className="h-[250px]">
+                      <div className="h-[300px]">
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart data={chartData} layout="vertical" margin={{ left: 20, right: 20 }}>
                             <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
@@ -625,6 +731,10 @@ const AdminBrain = () => {
                             <Tooltip
                               contentStyle={{ background: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }}
                               labelStyle={{ color: 'hsl(var(--foreground))' }}
+                              formatter={(value: number, name: string, props: any) => {
+                                const item = chartData.find(d => d.name === props.payload.name);
+                                return [value, item?.recurrent ? `${name} 🔁 Reincidente` : name];
+                              }}
                             />
                             <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                               {chartData.map((entry, idx) => (
@@ -634,15 +744,27 @@ const AdminBrain = () => {
                           </BarChart>
                         </ResponsiveContainer>
                       </div>
+                      {/* Recurrence badges */}
+                      {chartData.some(d => d.recurrent) && (
+                        <div className="flex flex-wrap gap-2 mt-3">
+                          {chartData.filter(d => d.recurrent).map(d => (
+                            <Badge key={d.name} variant="outline" className="text-xs gap-1 border-warning/30 text-warning">
+                              <Repeat2 className="w-3 h-3" />
+                              {d.name} — Reincidente
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 ) : null;
               })()}
 
+              {/* Expandable error cards */}
               {(() => {
                 const filteredLogs = errorsSubTab === 'todos'
                   ? metrics.errorLogs
-                  : (metrics.errorsByType?.[errorsSubTab as 'estabelecimento' | 'motoboy']?.logs || []);
+                  : (metrics.errorsByType?.[errorsSubTab as 'estabelecimento' | 'motoboy' | 'outros']?.logs || []);
 
                 if (filteredLogs.length === 0) {
                   return (
@@ -657,99 +779,111 @@ const AdminBrain = () => {
                   );
                 }
 
-                const byPriority: Record<string, number> = {};
-                filteredLogs.forEach(l => { byPriority[l.priority] = (byPriority[l.priority] || 0) + 1; });
-
-                const byTag: Record<string, number> = {};
-                filteredLogs.forEach(l => l.tags.forEach(t => { byTag[t] = (byTag[t] || 0) + 1; }));
-                const topErrorTags = Object.entries(byTag).sort((a, b) => b[1] - a[1]).slice(0, 5);
-
-                const byAgent: Record<string, number> = {};
-                filteredLogs.filter(l => l.assigned_to_name).forEach(l => {
-                  byAgent[l.assigned_to_name!] = (byAgent[l.assigned_to_name!] || 0) + 1;
+                // Group by primary tag
+                const byMotivo: Record<string, ErrorLog[]> = {};
+                filteredLogs.forEach(l => {
+                  const motivo = l.tags[0] || 'Sem tag';
+                  if (!byMotivo[motivo]) byMotivo[motivo] = [];
+                  byMotivo[motivo].push(l);
                 });
-                const topErrorAgents = Object.entries(byAgent).sort((a, b) => b[1] - a[1]).slice(0, 5);
-
-                const byChannel: Record<string, number> = {};
-                filteredLogs.forEach(l => { const ch = l.channel || 'whatsapp'; byChannel[ch] = (byChannel[ch] || 0) + 1; });
+                const sortedMotivos = Object.entries(byMotivo).sort((a, b) => b[1].length - a[1].length);
 
                 return (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <AlertTriangle className="w-5 h-5 text-destructive" />
-                        Resumo — Conversas Problemáticas
-                      </CardTitle>
-                      <CardDescription>
-                        {filteredLogs.length} conversa{filteredLogs.length !== 1 ? 's' : ''} com alta prioridade, erros ou reclamações
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-5">
-                      <div>
-                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Por Prioridade</p>
-                        <div className="flex flex-wrap gap-2">
-                          {Object.entries(byPriority).sort((a, b) => b[1] - a[1]).map(([priority, count]) => (
-                            <Badge key={priority} className={cn("text-sm gap-1", priorityColors[priority] || 'bg-muted text-muted-foreground')}>
-                              {priorityLabel(priority)} <span className="font-bold">{count}</span>
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-
-                      {topErrorTags.length > 0 && (
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Principais Tags</p>
-                          <div className="space-y-1.5">
-                            {topErrorTags.map(([tag, count]) => {
-                              const pct = (count / filteredLogs.length) * 100;
-                              return (
-                                <div key={tag} className="flex items-center gap-3">
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center justify-between text-sm mb-0.5">
-                                      <span className="truncate">{tag}</span>
-                                      <span className="text-muted-foreground text-xs ml-2">{count} ({Math.round(pct)}%)</span>
-                                    </div>
-                                    <div className="h-1.5 rounded-full bg-secondary">
-                                      <div className="h-full rounded-full bg-destructive/70 transition-all" style={{ width: `${pct}%` }} />
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-medium text-muted-foreground">
+                        {filteredLogs.length} conversa{filteredLogs.length !== 1 ? 's' : ''} problemática{filteredLogs.length !== 1 ? 's' : ''}
+                      </h3>
+                    </div>
+                    {sortedMotivos.map(([motivo, logs]) => {
+                      const isExpanded = expandedErrors.has(motivo);
+                      const isRecurrent = !!(metrics.prevErrorTags && metrics.prevErrorTags[motivo]);
+                      const priorities = logs.reduce((acc, l) => { acc[l.priority] = (acc[l.priority] || 0) + 1; return acc; }, {} as Record<string, number>);
+                      return (
+                        <Card key={motivo} className="overflow-hidden">
+                          <Collapsible open={isExpanded} onOpenChange={() => toggleErrorExpand(motivo)}>
+                            <CollapsibleTrigger asChild>
+                              <CardHeader className="cursor-pointer hover:bg-secondary/30 transition-colors py-4">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-3">
+                                    {isExpanded ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+                                    <div>
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-semibold text-sm">{motivo}</span>
+                                        {isRecurrent && (
+                                          <Badge variant="outline" className="text-[10px] border-warning/30 text-warning gap-1">
+                                            <Repeat2 className="w-2.5 h-2.5" /> Reincidente
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      <p className="text-xs text-muted-foreground mt-0.5">
+                                        {logs.length} conversa{logs.length !== 1 ? 's' : ''} •{' '}
+                                        {Object.entries(priorities).map(([p, c]) => `${priorityLabel(p)}: ${c}`).join(' • ')}
+                                      </p>
                                     </div>
                                   </div>
+                                  <Badge className={cn("text-xs", logs.length > 5 ? 'bg-destructive/20 text-destructive' : logs.length > 2 ? 'bg-warning/20 text-warning' : 'bg-muted text-muted-foreground')}>
+                                    {logs.length}
+                                  </Badge>
                                 </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {topErrorAgents.length > 0 && (
-                          <div>
-                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Agentes mais envolvidos</p>
-                            <div className="space-y-1">
-                              {topErrorAgents.map(([name, count]) => (
-                                <div key={name} className="flex items-center justify-between text-sm p-1.5 rounded bg-secondary/30">
-                                  <span className="truncate">{name}</span>
-                                  <span className="text-muted-foreground font-medium">{count}</span>
+                              </CardHeader>
+                            </CollapsibleTrigger>
+                            <CollapsibleContent>
+                              <CardContent className="pt-0 pb-4">
+                                <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                                  {logs.slice(0, 20).map(log => (
+                                    <div key={log.id} className="text-xs p-2.5 rounded bg-secondary/30 flex items-center justify-between gap-2">
+                                      <div className="min-w-0">
+                                        <span className="font-medium">{log.contact_name}</span>
+                                        {log.contact_phone && <span className="text-muted-foreground ml-2">{log.contact_phone}</span>}
+                                        {log.assigned_to_name && <span className="text-muted-foreground ml-2">→ {log.assigned_to_name}</span>}
+                                      </div>
+                                      <div className="flex items-center gap-2 shrink-0">
+                                        <Badge className={cn("text-[10px]", priorityColors[log.priority])}>{priorityLabel(log.priority)}</Badge>
+                                        <span className="text-muted-foreground">{log.channel || 'whatsapp'}</span>
+                                      </div>
+                                    </div>
+                                  ))}
                                 </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Por Canal</p>
-                          <div className="flex flex-wrap gap-2">
-                            {Object.entries(byChannel).map(([ch, count]) => (
-                              <Badge key={ch} variant="outline" className="text-sm">{ch}: {count}</Badge>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+                              </CardContent>
+                            </CollapsibleContent>
+                          </Collapsible>
+                        </Card>
+                      );
+                    })}
+                  </div>
                 );
               })()}
+
+              {/* Hourly Heatmap */}
+              {metrics.errorsByType && (errorsSubTab === 'todos' || errorsSubTab !== 'todos') && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Flame className="w-4 h-4 text-destructive" />
+                      Mapa de Calor — Erros por Hora
+                    </CardTitle>
+                    <CardDescription>Concentração de conversas problemáticas ao longo do dia</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {errorsSubTab === 'todos' ? (
+                      <>
+                        <HourlyHeatmap data={metrics.errorsByType.estabelecimento.hourly || {}} label="Estabelecimento" />
+                        <HourlyHeatmap data={metrics.errorsByType.motoboy.hourly || {}} label="Motoboy" />
+                        <HourlyHeatmap data={metrics.errorsByType.outros.hourly || {}} label="Outros" />
+                      </>
+                    ) : (
+                      <HourlyHeatmap
+                        data={(metrics.errorsByType[errorsSubTab as 'estabelecimento' | 'motoboy' | 'outros']?.hourly || {})}
+                        label={errorsSubTab.charAt(0).toUpperCase() + errorsSubTab.slice(1)}
+                      />
+                    )}
+                  </CardContent>
+                </Card>
+              )}
             </TabsContent>
 
-            {/* Agents Tab */}
+            {/* ======================== AGENTS TAB ======================== */}
             <TabsContent value="agents" className="space-y-6">
               {metrics.agentStats.length > 0 && (
                 <Card>
@@ -766,10 +900,7 @@ const AdminBrain = () => {
                           <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
                           <XAxis type="number" className="text-xs" />
                           <YAxis dataKey="name" type="category" width={120} className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
-                          <Tooltip
-                            contentStyle={{ background: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }}
-                            formatter={(value: number) => [`${value} min`, 'TMA']}
-                          />
+                          <Tooltip contentStyle={{ background: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }} formatter={(value: number) => [`${value} min`, 'TMA']} />
                           <Bar dataKey="avgTime" radius={[0, 4, 4, 0]}>
                             {metrics.agentStats.slice(0, 10).map((agent, idx) => {
                               const avgAll = metrics.agentStats.reduce((s, a) => s + a.avgTime, 0) / metrics.agentStats.length;
@@ -853,118 +984,125 @@ const AdminBrain = () => {
               )}
             </TabsContent>
 
-            {/* Knowledge Tab - Learning & Growth View */}
+            {/* ======================== KNOWLEDGE TAB ======================== */}
             <TabsContent value="knowledge" className="space-y-6">
               {(() => {
                 const knowledgeData = computeKnowledgeData(metrics);
                 return (
                   <>
-                    {/* Evolution KPIs */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                      <Card className="border-primary/20">
-                        <CardContent className="pt-5 pb-4">
-                          <div className="flex items-center gap-3 mb-2">
-                            <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
-                              <GraduationCap className="w-5 h-5 text-primary" />
-                            </div>
-                            <div>
-                              <p className="text-2xl font-bold">{knowledgeData.masteredCount}</p>
-                              <p className="text-xs text-muted-foreground">Temas Dominados</p>
-                            </div>
-                          </div>
+                    {/* Maturity Gauge + KPIs */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                      <Card className={cn("lg:col-span-1", knowledgeData.maturityScore >= 70 ? "border-success/20" : knowledgeData.maturityScore >= 40 ? "border-warning/20" : "border-destructive/20")}>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-base flex items-center gap-2">
+                            <Gauge className="w-4 h-4" />
+                            Score de Maturidade
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="flex flex-col items-center">
+                          <MaturityGauge score={knowledgeData.maturityScore} />
+                          <p className="text-xs text-muted-foreground mt-2 text-center">
+                            {knowledgeData.maturityScore >= 70 ? 'Operação madura' : knowledgeData.maturityScore >= 40 ? 'Em evolução' : 'Precisa de atenção'}
+                          </p>
                         </CardContent>
                       </Card>
-                      <Card className={knowledgeData.improvementPct > 0 ? "border-success/20" : "border-warning/20"}>
-                        <CardContent className="pt-5 pb-4">
-                          <div className="flex items-center gap-3 mb-2">
-                            <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center", knowledgeData.improvementPct >= 0 ? "bg-success/10" : "bg-warning/10")}>
-                              {knowledgeData.improvementPct >= 0 ? <TrendingUp className="w-5 h-5 text-success" /> : <TrendingDown className="w-5 h-5 text-warning" />}
+
+                      <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <Card className="border-primary/20">
+                          <CardContent className="pt-5 pb-4">
+                            <div className="flex items-center gap-3 mb-2">
+                              <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
+                                <GraduationCap className="w-5 h-5 text-primary" />
+                              </div>
+                              <div>
+                                <p className="text-2xl font-bold">{knowledgeData.masteredCount}</p>
+                                <p className="text-xs text-muted-foreground">Temas Dominados</p>
+                              </div>
                             </div>
-                            <div>
-                              <p className="text-2xl font-bold">{knowledgeData.improvementPct >= 0 ? '+' : ''}{knowledgeData.improvementPct}%</p>
-                              <p className="text-xs text-muted-foreground">Taxa de Melhoria (TMA)</p>
+                          </CardContent>
+                        </Card>
+                        <Card className={knowledgeData.improvementPct > 0 ? "border-success/20" : "border-warning/20"}>
+                          <CardContent className="pt-5 pb-4">
+                            <div className="flex items-center gap-3 mb-2">
+                              <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center", knowledgeData.improvementPct >= 0 ? "bg-success/10" : "bg-warning/10")}>
+                                {knowledgeData.improvementPct >= 0 ? <TrendingUp className="w-5 h-5 text-success" /> : <TrendingDown className="w-5 h-5 text-warning" />}
+                              </div>
+                              <div>
+                                <p className="text-2xl font-bold">{knowledgeData.improvementPct >= 0 ? '+' : ''}{knowledgeData.improvementPct}%</p>
+                                <p className="text-xs text-muted-foreground">Melhoria TMA</p>
+                              </div>
                             </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                      <Card className="border-warning/20">
-                        <CardContent className="pt-5 pb-4">
-                          <div className="flex items-center gap-3 mb-2">
-                            <div className="w-9 h-9 rounded-lg bg-warning/10 flex items-center justify-center">
-                              <AlertCircle className="w-5 h-5 text-warning" />
+                          </CardContent>
+                        </Card>
+                        <Card className="border-warning/20">
+                          <CardContent className="pt-5 pb-4">
+                            <div className="flex items-center gap-3 mb-2">
+                              <div className="w-9 h-9 rounded-lg bg-warning/10 flex items-center justify-center">
+                                <AlertCircle className="w-5 h-5 text-warning" />
+                              </div>
+                              <div>
+                                <p className="text-2xl font-bold">{knowledgeData.gapCount}</p>
+                                <p className="text-xs text-muted-foreground">Gaps Identificados</p>
+                              </div>
                             </div>
-                            <div>
-                              <p className="text-2xl font-bold">{knowledgeData.gapCount}</p>
-                              <p className="text-xs text-muted-foreground">Gaps Identificados</p>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                      <Card className={cn(knowledgeData.maturityScore >= 70 ? "border-success/20" : knowledgeData.maturityScore >= 40 ? "border-warning/20" : "border-destructive/20")}>
-                        <CardContent className="pt-5 pb-4">
-                          <div className="flex items-center gap-3 mb-2">
-                            <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center",
-                              knowledgeData.maturityScore >= 70 ? "bg-success/10" : knowledgeData.maturityScore >= 40 ? "bg-warning/10" : "bg-destructive/10"
-                            )}>
-                              <Gauge className={cn("w-5 h-5",
-                                knowledgeData.maturityScore >= 70 ? "text-success" : knowledgeData.maturityScore >= 40 ? "text-warning" : "text-destructive"
-                              )} />
-                            </div>
-                            <div>
-                              <p className="text-2xl font-bold">{knowledgeData.maturityScore}<span className="text-sm text-muted-foreground font-normal">/100</span></p>
-                              <p className="text-xs text-muted-foreground">Score de Maturidade</p>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
+                          </CardContent>
+                        </Card>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      {/* What Delma Already Knows */}
+                      {/* Mastered Topics with volume + trend */}
                       <Card>
                         <CardHeader>
                           <CardTitle className="text-base flex items-center gap-2">
                             <CheckCircle2 className="w-4 h-4 text-success" />
                             O que a Delma já Sabe
                           </CardTitle>
-                          <CardDescription>Temas que a Delma domina com boa taxa de resolução</CardDescription>
+                          <CardDescription>Temas com boa taxa de resolução — Volume e tendência</CardDescription>
                         </CardHeader>
                         <CardContent>
                           {knowledgeData.masteredTopics.length === 0 ? (
-                            <p className="text-sm text-muted-foreground text-center py-6">Dados insuficientes para identificar temas dominados.</p>
+                            <p className="text-sm text-muted-foreground text-center py-6">Dados insuficientes.</p>
                           ) : (
                             <div className="space-y-2">
-                              {knowledgeData.masteredTopics.map((topic, i) => (
-                                <div key={i} className="flex items-center justify-between p-2.5 rounded-lg bg-secondary/30">
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <CircleDot className={cn("w-3.5 h-3.5 shrink-0", topic.mastered ? "text-success" : "text-warning")} />
-                                    <span className="text-sm font-medium truncate">{topic.tag}</span>
+                              {knowledgeData.masteredTopics.map((topic, i) => {
+                                const prevCount = metrics.prevTopTags?.find(([t]) => t === topic.tag)?.[1] || 0;
+                                const trendDir = prevCount > 0 ? (topic.count > prevCount ? 'up' : topic.count < prevCount ? 'down' : 'stable') : 'stable';
+                                return (
+                                  <div key={i} className="flex items-center justify-between p-2.5 rounded-lg bg-secondary/30">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <CircleDot className={cn("w-3.5 h-3.5 shrink-0", topic.mastered ? "text-success" : "text-warning")} />
+                                      <span className="text-sm font-medium truncate">{topic.tag}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <span className="text-xs text-muted-foreground font-mono">{topic.count}x</span>
+                                      {trendDir === 'up' && <ArrowUpRight className="w-3.5 h-3.5 text-success" />}
+                                      {trendDir === 'down' && <ArrowDownRight className="w-3.5 h-3.5 text-destructive" />}
+                                      {trendDir === 'stable' && <Minus className="w-3.5 h-3.5 text-muted-foreground" />}
+                                      <Badge className={cn("text-[10px]", topic.mastered ? "bg-success/15 text-success border-success/20" : "bg-warning/15 text-warning border-warning/20")}>
+                                        {topic.mastered ? 'Dominado' : 'Aprendendo'}
+                                      </Badge>
+                                    </div>
                                   </div>
-                                  <div className="flex items-center gap-2 shrink-0">
-                                    <span className="text-xs text-muted-foreground">{topic.count}x</span>
-                                    <Badge className={cn("text-[10px]", topic.mastered ? "bg-success/15 text-success border-success/20" : "bg-warning/15 text-warning border-warning/20")}>
-                                      {topic.mastered ? 'Dominado' : 'Aprendendo'}
-                                    </Badge>
-                                  </div>
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           )}
                         </CardContent>
                       </Card>
 
-                      {/* What Delma Learned (improvements) */}
+                      {/* Improvements */}
                       <Card className="border-primary/20 bg-primary/5">
                         <CardHeader>
                           <CardTitle className="text-base flex items-center gap-2">
                             <Trophy className="w-4 h-4 text-primary" />
                             O que a Delma Aprendeu
                           </CardTitle>
-                          <CardDescription>Evoluções concretas comparando com o período anterior</CardDescription>
+                          <CardDescription>Evoluções vs período anterior</CardDescription>
                         </CardHeader>
                         <CardContent>
                           {knowledgeData.improvements.length === 0 ? (
-                            <p className="text-sm text-muted-foreground text-center py-6">Sem melhorias detectadas no período — dados do período anterior podem ser insuficientes.</p>
+                            <p className="text-sm text-muted-foreground text-center py-6">Sem melhorias detectadas no período.</p>
                           ) : (
                             <div className="space-y-2.5">
                               {knowledgeData.improvements.map((item, i) => (
@@ -983,18 +1121,18 @@ const AdminBrain = () => {
                       </Card>
                     </div>
 
-                    {/* Where Delma Needs to Improve */}
+                    {/* Gaps with Train button + volume */}
                     <Card className="border-warning/20">
                       <CardHeader>
                         <CardTitle className="text-base flex items-center gap-2">
                           <AlertTriangle className="w-4 h-4 text-warning" />
                           Onde a Delma Precisa Melhorar
                         </CardTitle>
-                        <CardDescription>Gaps e áreas que precisam de atenção para evoluir</CardDescription>
+                        <CardDescription>Gaps com volume e ação de treinamento</CardDescription>
                       </CardHeader>
                       <CardContent>
                         {knowledgeData.gaps.length === 0 ? (
-                          <p className="text-sm text-muted-foreground text-center py-6">Nenhum gap significativo encontrado — excelente! 🎉</p>
+                          <p className="text-sm text-muted-foreground text-center py-6">Nenhum gap significativo. 🎉</p>
                         ) : (
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             {knowledgeData.gaps.map((gap, i) => {
@@ -1009,10 +1147,23 @@ const AdminBrain = () => {
                                   <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center shrink-0", priorityStyle)}>
                                     <Icon className="w-4 h-4" />
                                   </div>
-                                  <div className="min-w-0">
+                                  <div className="flex-1 min-w-0">
                                     <p className="text-sm font-medium text-foreground">{gap.title}</p>
                                     <p className="text-xs text-muted-foreground mt-0.5">{gap.description}</p>
                                   </div>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="shrink-0 text-xs gap-1"
+                                    onClick={() => {
+                                      const tagMatch = gap.title.match(/"([^"]+)"/);
+                                      setTrainModalTag(tagMatch ? tagMatch[1] : gap.title);
+                                      setTrainModalOpen(true);
+                                    }}
+                                  >
+                                    <BookOpen className="w-3 h-3" />
+                                    Treinar
+                                  </Button>
                                 </div>
                               );
                             })}
@@ -1021,34 +1172,46 @@ const AdminBrain = () => {
                       </CardContent>
                     </Card>
 
-                    {/* Next Steps - What to Learn */}
+                    {/* Next Steps - Interactive Checklist */}
                     <Card className="border-primary/20">
                       <CardHeader>
                         <CardTitle className="text-base flex items-center gap-2">
                           <Rocket className="w-4 h-4 text-primary" />
                           Próximo Passo — O que Aprender
                         </CardTitle>
-                        <CardDescription>Ações priorizadas por impacto estimado</CardDescription>
+                        <CardDescription>Marque itens como concluídos</CardDescription>
                       </CardHeader>
                       <CardContent>
                         {knowledgeData.nextSteps.length === 0 ? (
                           <p className="text-sm text-muted-foreground text-center py-6">Nenhuma ação prioritária identificada.</p>
                         ) : (
                           <div className="space-y-2">
-                            {knowledgeData.nextSteps.map((step, i) => (
-                              <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors">
-                                <CheckSquare className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm text-foreground">{step.action}</p>
-                                  <p className="text-xs text-muted-foreground mt-0.5">{step.reason}</p>
+                            {knowledgeData.nextSteps.map((step, i) => {
+                              const isDone = !!completedSteps[i];
+                              return (
+                                <div key={i} className={cn("flex items-start gap-3 p-3 rounded-lg transition-colors", isDone ? "bg-success/5 opacity-60" : "bg-secondary/30 hover:bg-secondary/50")}>
+                                  <Checkbox
+                                    checked={isDone}
+                                    onCheckedChange={() => toggleStep(i)}
+                                    className="mt-0.5"
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <p className={cn("text-sm text-foreground", isDone && "line-through")}>{step.action}</p>
+                                    <p className="text-xs text-muted-foreground mt-0.5">{step.reason}</p>
+                                    {isDone && completedSteps[i] && (
+                                      <p className="text-[10px] text-success mt-1">
+                                        ✓ Concluído em {new Date(completedSteps[i]).toLocaleDateString('pt-BR')}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <Badge variant="outline" className={cn("text-[10px] shrink-0",
+                                    step.impact === 'alto' ? 'border-destructive/30 text-destructive' : step.impact === 'médio' ? 'border-warning/30 text-warning' : 'border-muted-foreground/30'
+                                  )}>
+                                    Impacto {step.impact}
+                                  </Badge>
                                 </div>
-                                <Badge variant="outline" className={cn("text-[10px] shrink-0",
-                                  step.impact === 'alto' ? 'border-destructive/30 text-destructive' : step.impact === 'médio' ? 'border-warning/30 text-warning' : 'border-muted-foreground/30'
-                                )}>
-                                  Impacto {step.impact}
-                                </Badge>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                       </CardContent>
@@ -1058,6 +1221,147 @@ const AdminBrain = () => {
               })()}
             </TabsContent>
 
+            {/* ======================== TOP TAGS TAB ======================== */}
+            <TabsContent value="top-tags" className="space-y-6">
+              {/* Filters */}
+              <div className="flex items-center gap-3 flex-wrap">
+                <Select value={topTagsChannelFilter} onValueChange={setTopTagsChannelFilter}>
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue placeholder="Canal" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos os canais</SelectItem>
+                    <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                    <SelectItem value="instagram">Instagram</SelectItem>
+                    <SelectItem value="machine">Machine</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="flex items-center gap-2">
+                  <Switch checked={groupSimilarTags} onCheckedChange={setGroupSimilarTags} />
+                  <span className="text-sm text-muted-foreground">Agrupar similares</span>
+                </div>
+              </div>
+
+              {(() => {
+                // Build tag data with filtering
+                const prevTagMap = new Map<string, number>(metrics.prevTopTags || []);
+                const allPrevTagNames = new Set(prevTagMap.keys());
+
+                // Filter by channel if needed (we don't have per-tag-per-channel data in current metrics, so this is a placeholder label)
+                const tags = metrics.topTags;
+
+                // Apply grouping if enabled (normalize already merges similar)
+                const displayTags = groupSimilarTags
+                  ? tags // already normalized
+                  : tags;
+
+                const maxVal = displayTags.length > 0 ? displayTags[0][1] : 1;
+
+                return (
+                  <>
+                    {/* Interactive horizontal bar chart */}
+                    {displayTags.length > 0 ? (
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="text-base flex items-center gap-2">
+                            <BarChart3 className="w-4 h-4" />
+                            Tags mais frequentes
+                          </CardTitle>
+                          <CardDescription>Top {displayTags.length} tags no período ({periodLabel})</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="h-[400px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={displayTags.map(([tag, count]) => {
+                                const prev = prevTagMap.get(tag) || 0;
+                                const variation = prev > 0 ? Math.round(((count - prev) / prev) * 100) : null;
+                                const isNew = !allPrevTagNames.has(tag);
+                                return { name: tag, value: count, prev, variation, isNew };
+                              })} layout="vertical" margin={{ left: 10, right: 30 }}>
+                                <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
+                                <XAxis type="number" className="text-xs" />
+                                <YAxis dataKey="name" type="category" width={160} className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
+                                <Tooltip
+                                  contentStyle={{ background: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }}
+                                  labelStyle={{ color: 'hsl(var(--foreground))' }}
+                                  formatter={(value: number, name: string, props: any) => {
+                                    const item = props.payload;
+                                    const parts = [`${value} conversas`];
+                                    if (item.variation !== null) parts.push(`${item.variation >= 0 ? '+' : ''}${item.variation}% vs anterior`);
+                                    if (item.isNew) parts.push('🆕 Novo');
+                                    return [parts.join(' • '), 'Volume'];
+                                  }}
+                                />
+                                <Bar dataKey="value" radius={[0, 4, 4, 0]} fill="hsl(var(--primary))">
+                                  {displayTags.map(([tag], idx) => {
+                                    const isNew = !allPrevTagNames.has(tag);
+                                    return <Cell key={idx} fill={isNew ? 'hsl(var(--success))' : 'hsl(var(--primary))'} />;
+                                  })}
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <Card>
+                        <CardContent className="py-12 text-center">
+                          <BarChart3 className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+                          <p className="text-sm text-muted-foreground">Sem tags no período.</p>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Detail table with variation and badges */}
+                    {displayTags.length > 0 && (
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="text-base">Detalhamento</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-2">
+                            {displayTags.map(([tag, count], idx) => {
+                              const prev = prevTagMap.get(tag) || 0;
+                              const variation = prev > 0 ? Math.round(((count - prev) / prev) * 100) : null;
+                              const isNew = !allPrevTagNames.has(tag);
+                              const pct = (count / maxVal) * 100;
+
+                              return (
+                                <div key={tag} className="space-y-1">
+                                  <div className="flex items-center justify-between text-sm">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <span className="text-xs text-muted-foreground w-5 text-right">{idx + 1}.</span>
+                                      <span className="truncate font-medium">{tag}</span>
+                                      {isNew && (
+                                        <Badge className="text-[10px] bg-success/15 text-success border-success/20">Novo</Badge>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <span className="text-muted-foreground font-mono text-xs">{count}</span>
+                                      {variation !== null && (
+                                        <span className={cn("text-xs font-medium", variation > 0 ? "text-destructive" : variation < 0 ? "text-success" : "text-muted-foreground")}>
+                                          {variation > 0 ? '+' : ''}{variation}%
+                                          {variation > 0 ? ' ⬆️' : variation < 0 ? ' ⬇️' : ''}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="h-1.5 rounded-full bg-secondary">
+                                    <div className={cn("h-full rounded-full transition-all", isNew ? "bg-success" : "bg-primary")} style={{ width: `${pct}%` }} />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </>
+                );
+              })()}
+            </TabsContent>
+
+            {/* ======================== AI REPORT TAB ======================== */}
             <TabsContent value="ai-report">
               <Card>
                 <CardHeader>
@@ -1102,6 +1406,34 @@ const AdminBrain = () => {
             </TabsContent>
           </Tabs>
         )}
+
+        {/* Train Theme Modal */}
+        <Dialog open={trainModalOpen} onOpenChange={setTrainModalOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <BookOpen className="w-5 h-5 text-primary" />
+                Treinar Tema: {trainModalTag}
+              </DialogTitle>
+              <DialogDescription>
+                Registre a ação de treinamento tomada para este tema.
+              </DialogDescription>
+            </DialogHeader>
+            <Textarea
+              placeholder="Descreva o que foi feito para cobrir este gap (ex: adicionei Q&A sobre cancelamentos, ajustei instruções do robô...)"
+              value={trainNote}
+              onChange={(e) => setTrainNote(e.target.value)}
+              rows={4}
+            />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setTrainModalOpen(false)}>Cancelar</Button>
+              <Button onClick={saveTrainNote} disabled={!trainNote.trim()} className="gap-2">
+                <CheckCircle2 className="w-4 h-4" />
+                Salvar Treinamento
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </MainLayout>
   );
@@ -1139,11 +1471,9 @@ function computeKnowledgeData(m: BrainMetrics): KnowledgeData {
   const total = m.aiResolved + m.humanResolved;
   const aiPct = total > 0 ? (m.aiResolved / total) * 100 : 0;
 
-  // Error tags frequency
   const errorTagCounts: Record<string, number> = {};
   m.errorLogs.forEach(l => l.tags.forEach(t => { errorTagCounts[t] = (errorTagCounts[t] || 0) + 1; }));
 
-  // Mastered topics: tags with high volume but low error presence
   const masteredTopics: KnowledgeTopic[] = m.topTags.slice(0, 10).map(([tag, count]) => {
     const errorCount = errorTagCounts[tag] || 0;
     const errorRatio = count > 0 ? errorCount / count : 0;
@@ -1151,21 +1481,17 @@ function computeKnowledgeData(m: BrainMetrics): KnowledgeData {
   });
   const masteredCount = masteredTopics.filter(t => t.mastered).length;
 
-  // Improvement percentage (TMA)
   const improvementPct = m.prevTma > 0 ? Math.round(((m.prevTma - m.tma) / m.prevTma) * 100) : 0;
 
-  // Gaps: tags frequent in errors
   const gapTags = Object.entries(errorTagCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
   const gapCount = gapTags.length;
 
-  // Maturity score
   const errorPct = m.totalConversas > 0 ? (m.errorLogs.length / m.totalConversas) * 100 : 0;
   const tmaBonusPct = Math.max(0, Math.min(100, improvementPct > 0 ? improvementPct * 2 : 0));
   const maturityScore = Math.round(
     Math.min(100, Math.max(0, (aiPct * 0.4) + (tmaBonusPct * 0.3) + (Math.max(0, 100 - errorPct * 5) * 0.3)))
   );
 
-  // Improvements
   const improvements: Improvement[] = [];
   if (m.prevTma > 0) {
     const tmaDiff = ((m.tma - m.prevTma) / m.prevTma) * 100;
@@ -1185,7 +1511,6 @@ function computeKnowledgeData(m: BrainMetrics): KnowledgeData {
       });
     }
   }
-  // Agent improvements
   m.agentStats
     .filter(a => a.prevAvgTime > 0 && a.count > 3)
     .map(a => ({ name: a.name, imp: ((a.prevAvgTime - a.avgTime) / a.prevAvgTime) * 100 }))
@@ -1211,7 +1536,6 @@ function computeKnowledgeData(m: BrainMetrics): KnowledgeData {
     improvements.push({ text: `IA resolvendo ${Math.round(aiPct)}% das conversas (${m.aiResolved} de ${total})`, positive: aiPct > 30 });
   }
 
-  // Gaps
   const gaps: Gap[] = [];
   gapTags.forEach(([tag, count]) => {
     const pct = m.totalConversas > 0 ? Math.round((count / m.totalConversas) * 100) : 0;
@@ -1222,7 +1546,6 @@ function computeKnowledgeData(m: BrainMetrics): KnowledgeData {
       priority: count > 5 ? 'high' : count > 2 ? 'medium' : 'low',
     });
   });
-  // Low automation channels
   Object.entries(m.channelCounts).forEach(([ch, count]) => {
     if (ch !== 'whatsapp' && count > 3) {
       gaps.push({
@@ -1233,7 +1556,6 @@ function computeKnowledgeData(m: BrainMetrics): KnowledgeData {
       });
     }
   });
-  // Agent overload as gap
   if (m.agentStats.length > 2 && m.totalConversas > 10) {
     m.agentStats.filter(a => a.count / m.totalConversas > 0.35).forEach(a => {
       gaps.push({
@@ -1245,7 +1567,6 @@ function computeKnowledgeData(m: BrainMetrics): KnowledgeData {
     });
   }
 
-  // Next steps
   const nextSteps: NextStep[] = [];
   gapTags.slice(0, 3).forEach(([tag, count]) => {
     nextSteps.push({
@@ -1261,7 +1582,6 @@ function computeKnowledgeData(m: BrainMetrics): KnowledgeData {
       impact: 'alto',
     });
   }
-  // Training recommendations
   const avgTma = m.agentStats.length > 0 ? m.agentStats.reduce((s, a) => s + a.avgTime * a.count, 0) / Math.max(1, m.agentStats.reduce((s, a) => s + a.count, 0)) : 0;
   m.agentStats
     .filter(a => a.avgTime > avgTma * 1.5 && a.count > 3)
@@ -1371,7 +1691,6 @@ function computeLearnings(m: BrainMetrics): string[] {
     insights.push(`🔴 ${m.errorLogs.length} conversas problemáticas detectadas no período — confira a aba "Erros & Gaps".`);
   }
 
-  // Abandon rate insight
   if (m.abandonRate != null && m.abandonRate > 5) {
     insights.push(`⚠️ Taxa de abandono em ${m.abandonRate}% — ${m.abandonedCount} conversas saíram sem atendimento.`);
   }
