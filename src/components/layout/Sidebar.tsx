@@ -103,7 +103,6 @@ const getNavItems = (queueCount: number, activeConversationsCount: number, inter
 
 const adminNavItems: NavItem[] = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/admin' },
-  { icon: MessageSquare, label: 'Conversas', path: '/admin/conversas' },
   { icon: Building2, label: 'Organização', path: '/admin/usuarios', children: [
     { icon: Users, label: 'Usuários', path: '/admin/usuarios' },
     { icon: Building2, label: 'Departamentos', path: '/admin/departamentos' },
