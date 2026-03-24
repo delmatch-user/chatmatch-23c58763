@@ -16,7 +16,7 @@ import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/hooks/useAuth';
 import { format, startOfDay, endOfDay, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { getTagColorClasses, getTagDotColor, LEGACY_TAG_MAP, SUPORTE_TAXONOMY_TAGS } from '@/lib/tagColors';
+import { getTagColorClasses, getTagDotColor, normalizeTag, SUPORTE_TAXONOMY_TAGS } from '@/lib/tagColors';
 import { extractCidade } from '@/lib/phoneUtils';
 import { cn, priorityLabel } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -239,8 +239,7 @@ export default function AILogs() {
     }
 
     if (tagFilter !== 'all') {
-      const legacyTag = LEGACY_TAG_MAP[tagFilter];
-      if (!log.tags?.some(t => t === tagFilter || t === legacyTag)) return false;
+      if (!log.tags?.some(t => normalizeTag(t) === tagFilter)) return false;
     }
 
     return true;

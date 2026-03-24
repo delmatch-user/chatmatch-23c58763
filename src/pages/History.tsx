@@ -17,7 +17,7 @@ import { useApp } from '@/contexts/AppContext';
 import { format, startOfDay, endOfDay, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
-import { getTagColorClasses, SUPORTE_TAXONOMY_TAGS } from '@/lib/tagColors';
+import { getTagColorClasses, normalizeTag, SUPORTE_TAXONOMY_TAGS } from '@/lib/tagColors';
 import { extractCidade } from '@/lib/phoneUtils';
 import { cn, priorityLabel } from '@/lib/utils';
 
@@ -430,7 +430,7 @@ export default function History() {
                                 </span>
                               )}
                               {(() => {
-                                const taxonomyTag = log.tags?.find(t => (SUPORTE_TAXONOMY_TAGS as readonly string[]).includes(t));
+                                const taxonomyTag = log.tags?.map(normalizeTag).find(t => (SUPORTE_TAXONOMY_TAGS as readonly string[]).includes(t));
                                 if (taxonomyTag) {
                                   return (
                                     <Badge className={`${getTagColorClasses(taxonomyTag)} border text-xs`}>
