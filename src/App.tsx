@@ -22,6 +22,7 @@ import Queue from "./pages/Queue";
 import QuickMessages from "./pages/QuickMessages";
 import Ranking from "./pages/Ranking";
 import AILogs from "./pages/AILogs";
+import Notifications from "./pages/Notifications";
 import AdminAIIntegrations from "./pages/admin/AdminAIIntegrations";
 import AdminConversationLogs from "./pages/admin/AdminConversationLogs";
 import AdminDashboard from "./pages/admin/AdminDashboard";
@@ -115,6 +116,14 @@ const App = () => {
                         element={
                           <ProtectedRoute>
                             <AILogs />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/notificacoes"
+                        element={
+                          <ProtectedRoute>
+                            <Notifications />
                           </ProtectedRoute>
                         }
                       />

@@ -14,6 +14,39 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_notifications: {
+        Row: {
+          agent_id: string
+          created_at: string
+          id: string
+          is_read: boolean
+          message: string
+          metrics: Json
+          period_days: number
+          sent_by: string
+        }
+        Insert: {
+          agent_id: string
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          message: string
+          metrics?: Json
+          period_days?: number
+          sent_by: string
+        }
+        Update: {
+          agent_id?: string
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          message?: string
+          metrics?: Json
+          period_days?: number
+          sent_by?: string
+        }
+        Relationships: []
+      }
       ai_providers: {
         Row: {
           created_at: string | null

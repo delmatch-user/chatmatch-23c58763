@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Brain, TrendingUp, TrendingDown, Clock, Users, Bot, AlertTriangle, Sparkles, RefreshCw, MessageSquare, Lightbulb, Activity, Store, Bike, BookOpen, Link2, FileText, CheckCircle2, XCircle, Zap, BarChart3, Target, ShieldAlert, Gauge, ArrowUpRight, ArrowDownRight, Minus, GraduationCap, Trophy, AlertCircle, Rocket, CheckSquare, CircleDot, UserX, Star, Wifi, WifiOff, CalendarDays, ChevronDown, ChevronRight, Flame, Repeat2, Filter, Medal, Crown, Eye, Download, CalendarClock, FileDown, History, Info } from 'lucide-react';
+import { Brain, TrendingUp, TrendingDown, Clock, Users, Bot, AlertTriangle, Sparkles, RefreshCw, MessageSquare, Lightbulb, Activity, Store, Bike, BookOpen, Link2, FileText, CheckCircle2, XCircle, Zap, BarChart3, Target, ShieldAlert, Gauge, ArrowUpRight, ArrowDownRight, Minus, GraduationCap, Trophy, AlertCircle, Rocket, CheckSquare, CircleDot, UserX, Star, Wifi, WifiOff, CalendarDays, ChevronDown, ChevronRight, Flame, Repeat2, Filter, Medal, Crown, Eye, Download, CalendarClock, FileDown, History, Info, Bell } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line, PieChart, Pie, Legend } from 'recharts';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -246,11 +246,19 @@ const AdminBrain = () => {
   const [maturityHistory, setMaturityHistory] = useState<Array<{ date: string; score: number }>>([]);
 
   // Agent live status
-  const [agentLiveStatus, setAgentLiveStatus] = useState<Record<string, { status: string; openConversations: number }>>({});
+  const [agentLiveStatus, setAgentLiveStatus] = useState<Record<string, { status: string; openConversations: number; profileId: string }>>({});
 
   // Report scheduling
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [scheduleConfig, setScheduleConfig] = useState<{ type: string; dayOfWeek: number; hourOfDay: number; isActive: boolean }>({ type: 'weekly', dayOfWeek: 1, hourOfDay: 8, isActive: false });
+
+  // Agent notification state
+  const [notifyModalOpen, setNotifyModalOpen] = useState(false);
+  const [notifyAgent, setNotifyAgent] = useState<AgentStat | null>(null);
+  const [notifyMessage, setNotifyMessage] = useState('');
+  const [notifyGenerating, setNotifyGenerating] = useState(false);
+  const [notifySending, setNotifySending] = useState(false);
+  const [agentNotifications, setAgentNotifications] = useState<Record<string, boolean>>({});
 
   const getEffectivePeriod = useCallback(() => {
     if (period === 'custom' && customDateRange.from && customDateRange.to) {
@@ -400,9 +408,9 @@ const AdminBrain = () => {
         conversations.forEach((c: any) => {
           if (c.assigned_to) openCounts[c.assigned_to] = (openCounts[c.assigned_to] || 0) + 1;
         });
-        const statusMap: Record<string, { status: string; openConversations: number }> = {};
+        const statusMap: Record<string, { status: string; openConversations: number; profileId: string }> = {};
         profiles.forEach((p: any) => {
-          statusMap[p.name] = { status: p.status, openConversations: openCounts[p.id] || 0 };
+          statusMap[p.name] = { status: p.status, openConversations: openCounts[p.id] || 0, profileId: p.id };
         });
         setAgentLiveStatus(statusMap);
       }
@@ -445,6 +453,91 @@ const AdminBrain = () => {
     }
   };
 
+  // Load which agents have been notified in current period
+  const loadAgentNotifications = useCallback(async () => {
+    try {
+      const effectivePeriod = getEffectivePeriod();
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - effectivePeriod);
+      const { data } = await supabase
+        .from('agent_notifications' as any)
+        .select('agent_id, created_at')
+        .gte('created_at', cutoff.toISOString());
+      const notifiedMap: Record<string, boolean> = {};
+      (data || []).forEach((n: any) => { notifiedMap[n.agent_id] = true; });
+      setAgentNotifications(notifiedMap);
+    } catch {}
+  }, [getEffectivePeriod]);
+
+  // Generate feedback via edge function
+  const generateFeedback = async () => {
+    if (!notifyAgent || !metrics) return;
+    setNotifyGenerating(true);
+    try {
+      const teamAvgTma = metrics.agentStats.reduce((s, a) => s + a.avgTime, 0) / metrics.agentStats.length;
+      const teamAvgTme = metrics.agentStats.reduce((s, a) => s + a.avgWaitTime, 0) / metrics.agentStats.length;
+      const { data, error } = await supabase.functions.invoke('brain-agent-feedback', {
+        body: {
+          agentName: notifyAgent.name,
+          agentStats: notifyAgent,
+          teamAvgTma,
+          teamAvgTme,
+          periodLabel: `últimos ${getEffectivePeriod()} dias`,
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setNotifyMessage(data.message || '');
+      toast.success('Feedback gerado pela Delma!');
+    } catch (e: any) {
+      toast.error('Erro ao gerar feedback: ' + (e.message || 'Erro desconhecido'));
+    } finally {
+      setNotifyGenerating(false);
+    }
+  };
+
+  // Send notification
+  const sendNotification = async () => {
+    if (!notifyAgent || !notifyMessage.trim() || !metrics) return;
+    setNotifySending(true);
+    try {
+      // Find agent_id by name from profiles
+      const { data: profileData } = await supabase.from('profiles').select('id').ilike('name', notifyAgent.name).maybeSingle();
+      if (!profileData) throw new Error('Perfil do atendente não encontrado');
+      const { data: authData } = await supabase.auth.getUser();
+      if (!authData?.user) throw new Error('Usuário não autenticado');
+
+      const teamAvgTma = metrics.agentStats.reduce((s, a) => s + a.avgTime, 0) / metrics.agentStats.length;
+      const teamAvgTme = metrics.agentStats.reduce((s, a) => s + a.avgWaitTime, 0) / metrics.agentStats.length;
+
+      const { error } = await supabase.from('agent_notifications' as any).insert({
+        agent_id: profileData.id,
+        sent_by: authData.user.id,
+        period_days: getEffectivePeriod(),
+        metrics: {
+          count: notifyAgent.count,
+          avgTime: notifyAgent.avgTime,
+          avgWaitTime: notifyAgent.avgWaitTime,
+          topTags: notifyAgent.topTags.slice(0, 3),
+          resolutionRate: notifyAgent.resolutionRate,
+          teamAvgTma,
+          teamAvgTme,
+        },
+        message: notifyMessage,
+      });
+      if (error) throw error;
+      toast.success(`Notificação enviada para ${notifyAgent.name}!`);
+      setNotifyModalOpen(false);
+      setNotifyMessage('');
+      setNotifyAgent(null);
+      loadAgentNotifications();
+    } catch (e: any) {
+      toast.error('Erro ao enviar: ' + (e.message || 'Erro desconhecido'));
+    } finally {
+      setNotifySending(false);
+    }
+  };
+
   useEffect(() => {
     fetchMetrics();
   }, [fetchMetrics]);
@@ -469,6 +562,7 @@ const AdminBrain = () => {
     loadMaturityHistory();
     loadScheduleConfig();
     loadAgentLiveStatus();
+    loadAgentNotifications();
   }, []);
 
   // Save maturity score when metrics update
@@ -646,7 +740,7 @@ const AdminBrain = () => {
               </Popover>
             )}
 
-            <Button variant="outline" size="icon" onClick={() => { fetchMetrics(true); loadAgentLiveStatus(); loadMaturityHistory(); loadReportHistory(); }} disabled={loadingMetrics}>
+            <Button variant="outline" size="icon" onClick={() => { fetchMetrics(true); loadAgentLiveStatus(); loadMaturityHistory(); loadReportHistory(); loadAgentNotifications(); }} disabled={loadingMetrics}>
               <RefreshCw className={cn("w-4 h-4", loadingMetrics && "animate-spin")} />
             </Button>
           </div>
@@ -1125,14 +1219,25 @@ const AdminBrain = () => {
                   const countTrend = agent.prevCount > 0 ? Math.round(((agent.count - agent.prevCount) / agent.prevCount) * 100) : null;
                   const channelData = agent.channels ? Object.entries(agent.channels).map(([ch, v]) => ({ name: ch, value: v, fill: CHANNEL_COLORS[ch] || 'hsl(var(--primary))' })) : [];
 
+                  const agentProfileId = agentLiveStatus[agent.name]?.profileId;
+                  const isNotified = agentProfileId ? !!agentNotifications[agentProfileId] : false;
+
                   return (
-                    <Card key={agent.name} className={cn("relative overflow-hidden cursor-pointer hover:border-primary/30 transition-colors", status === 'red' && "border-destructive/20")} onClick={() => { setSelectedAgent(agent); setAgentSheetOpen(true); }}>
+                    <Card key={agent.name} className={cn("relative overflow-hidden hover:border-primary/30 transition-colors", status === 'red' && "border-destructive/20")}>
                       {status === 'red' && (
-                        <div className="absolute top-2 right-2">
+                        <div className="absolute top-2 right-10">
                           <AlertTriangle className="w-4 h-4 text-destructive animate-pulse" />
                         </div>
                       )}
-                      <CardContent className="pt-6 space-y-3">
+                      {/* Notification status indicator */}
+                      <div className="absolute top-2 right-2" title={isNotified ? 'Notificado neste período' : 'Pendente de notificação'}>
+                        {isNotified ? (
+                          <CheckCircle2 className="w-4 h-4 text-success" />
+                        ) : (
+                          <Clock className="w-4 h-4 text-warning" />
+                        )}
+                      </div>
+                      <CardContent className="pt-6 space-y-3 cursor-pointer" onClick={() => { setSelectedAgent(agent); setAgentSheetOpen(true); }}>
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2 min-w-0">
                             {agentLiveStatus[agent.name] && (
@@ -1149,7 +1254,7 @@ const AdminBrain = () => {
                               </Badge>
                             )}
                           </div>
-                          <Badge className={cn("text-xs", statusColors[status])}>{statusLabels[status]}</Badge>
+                          <Badge className={cn("text-xs mr-6", statusColors[status])}>{statusLabels[status]}</Badge>
                         </div>
                         <div className="grid grid-cols-3 gap-2 text-sm">
                           <div>
@@ -1196,6 +1301,23 @@ const AdminBrain = () => {
                           </div>
                         )}
                       </CardContent>
+                      {/* Notify button */}
+                      <div className="px-6 pb-4">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full gap-2 text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setNotifyAgent(agent);
+                            setNotifyMessage('');
+                            setNotifyModalOpen(true);
+                          }}
+                        >
+                          <Bell className="w-3.5 h-3.5" />
+                          {isNotified ? 'Reenviar Notificação' : 'Notificar Atendente'}
+                        </Button>
+                      </div>
                     </Card>
                   );
                 })}
@@ -1269,6 +1391,89 @@ const AdminBrain = () => {
                   )}
                 </SheetContent>
               </Sheet>
+
+              {/* Agent Notification Modal */}
+              <Dialog open={notifyModalOpen} onOpenChange={(open) => { if (!open) { setNotifyModalOpen(false); setNotifyMessage(''); setNotifyAgent(null); } }}>
+                <DialogContent className="max-w-lg max-h-[90vh] overflow-auto">
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                      <Bell className="w-5 h-5 text-primary" />
+                      Notificar {notifyAgent?.name}
+                    </DialogTitle>
+                    <DialogDescription>Gere um feedback de desempenho com a Delma e envie ao atendente.</DialogDescription>
+                  </DialogHeader>
+
+                  {notifyAgent && metrics && (
+                    <div className="space-y-4">
+                      {/* Metrics summary */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="p-3 rounded-lg bg-secondary/30">
+                          <p className="text-xs text-muted-foreground">Conversas</p>
+                          <p className="text-lg font-bold">{notifyAgent.count}</p>
+                        </div>
+                        <div className="p-3 rounded-lg bg-secondary/30">
+                          <p className="text-xs text-muted-foreground">TMA</p>
+                          <p className="text-lg font-bold">{formatTime(notifyAgent.avgTime)}</p>
+                          <p className="text-[10px] text-muted-foreground">Média do time: {formatTime(metrics.agentStats.reduce((s, a) => s + a.avgTime, 0) / metrics.agentStats.length)}</p>
+                        </div>
+                        <div className="p-3 rounded-lg bg-secondary/30">
+                          <p className="text-xs text-muted-foreground">TME</p>
+                          <p className="text-lg font-bold">{formatTime(notifyAgent.avgWaitTime)}</p>
+                        </div>
+                        <div className="p-3 rounded-lg bg-secondary/30">
+                          <p className="text-xs text-muted-foreground">Resolução</p>
+                          <p className="text-lg font-bold">{notifyAgent.resolutionRate != null ? `${notifyAgent.resolutionRate}%` : '—'}</p>
+                        </div>
+                      </div>
+                      {notifyAgent.topTags.length > 0 && (
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">Top Tags</p>
+                          <div className="flex flex-wrap gap-1">
+                            {notifyAgent.topTags.slice(0, 3).map(([tag, count]) => (
+                              <Badge key={tag} variant="outline" className="text-xs">{tag} ({count})</Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Generate button */}
+                      {!notifyMessage && (
+                        <Button onClick={generateFeedback} disabled={notifyGenerating} className="w-full gap-2">
+                          {notifyGenerating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                          {notifyGenerating ? 'Gerando feedback...' : 'Gerar Feedback com IA'}
+                        </Button>
+                      )}
+
+                      {/* Editable message */}
+                      {notifyMessage && (
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1.5">Mensagem (editável)</p>
+                          <Textarea
+                            value={notifyMessage}
+                            onChange={(e) => setNotifyMessage(e.target.value)}
+                            rows={10}
+                            className="text-sm"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <DialogFooter className="gap-2">
+                    <Button variant="outline" onClick={() => { setNotifyModalOpen(false); setNotifyMessage(''); setNotifyAgent(null); }}>
+                      Cancelar
+                    </Button>
+                    <Button
+                      onClick={sendNotification}
+                      disabled={!notifyMessage.trim() || notifySending}
+                      className="gap-2"
+                    >
+                      {notifySending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Bell className="w-4 h-4" />}
+                      {notifySending ? 'Enviando...' : 'Enviar Notificação'}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </TabsContent>
 
             {/* ======================== KNOWLEDGE TAB ======================== */}
