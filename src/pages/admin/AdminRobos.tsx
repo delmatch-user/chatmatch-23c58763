@@ -85,6 +85,7 @@ const intelligenceOptions = [
   { value: 'flash', label: 'Flash ⚡', description: 'Rápido e eficiente para respostas simples', model: 'gemini-2.5-flash' },
   { value: 'maestro', label: 'Maestro 🎯', description: 'Ideal para agentes complexos que exigem contexto', model: 'gpt-4.1' },
   { value: 'pro', label: 'Pro 🚀', description: 'Equilibrio entre velocidade e qualidade', model: 'gemini-2.5-pro' },
+  { value: 'cerebro', label: 'Delma Cérebro 🧠', description: 'Máxima inteligência com Claude', model: 'claude-sonnet-4-20250514' },
 ];
 
 const toneOptions = [
