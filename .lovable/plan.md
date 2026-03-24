@@ -1,58 +1,40 @@
 
 
-# Incluir dados de conversas reais no prompt quando há observação manual
+# Corrigir timestamps para formato brasileiro (BRT) no Cérebro
 
 ## Problema
 
-O gestor pede "Qual foi a primeira mensagem enviada pelo Alex nas últimas 4h e qual cliente ele respondeu", mas a Delma só recebe métricas agregadas (contagens, TMA, TME). A tabela `conversation_logs` tem uma coluna `messages` (jsonb) com o conteúdo real das conversas, mas esses dados nunca são incluídos no prompt.
-
-## Solução
-
-Quando `reqUserContext` está presente (observação manual), incluir no prompt um bloco com as **conversas reais** dos agentes — contato, horário, e as primeiras mensagens de cada conversa. Isso permite à Delma responder perguntas específicas sobre conteúdo.
+Todas as datas e horários no bloco de conversas detalhadas são exibidos em formato ISO/UTC (ex: `2026-03-24T21:58:24.546Z`). O gestor espera formato brasileiro: `24/03/2026 18:58` (horário de Brasília, UTC-3).
 
 ## Mudança
 
 **Arquivo**: `supabase/functions/brain-analysis/index.ts`
 
-1. **Quando `reqUserContext` existe**, construir um bloco `conversationDetailsBlock` com dados das conversas reais do período:
-   - Para cada conversa do Suporte: nome do agente, nome do contato, telefone, horário de início/fim, e as primeiras 3-5 mensagens (sender + content + timestamp)
-   - Limitar a ~100 conversas para não estourar o contexto do modelo
-   - Incluir esse bloco no `userMessage` junto com o `metricsBlock`
-
-2. **Quando `reqUserContext` está vazio**, manter o comportamento atual (só métricas agregadas)
-
-### Lógica do bloco de conversas
+1. Criar uma função helper `formatBR(isoString)` que converte qualquer timestamp ISO para `DD/MM/YYYY HH:mm` no fuso `America/Sao_Paulo`
+2. Aplicar nos seguintes pontos:
+   - **Linha 411**: timestamps das mensagens (`m.created_at || m.timestamp`)
+   - **Linha 415**: `l.started_at` e `l.finalized_at`
+   - **Linha 362**: datas dos buckets diários por agente (converter `YYYY-MM-DD` para `DD/MM/YYYY`)
+   - **Linha 370**: datas das tendências diárias globais
 
 ```typescript
-// Só quando há observação manual
-let conversationDetailsBlock = '';
-if (reqUserContext) {
-  const detailLogs = logs
-    .filter(l => l.assigned_to_name && l.department_name?.toLowerCase() === 'suporte')
-    .slice(0, 100);
-  
-  conversationDetailsBlock = detailLogs.map(l => {
-    const msgs = Array.isArray(l.messages) ? l.messages.slice(0, 5) : [];
-    const msgLines = msgs.map((m: any) => 
-      `    [${m.created_at || m.timestamp || ''}] ${m.sender_name || m.sender || 'Desconhecido'}: ${(m.content || m.text || '').substring(0, 200)}`
-    ).join('\n');
-    return `Conversa: ${l.contact_name} (${l.contact_phone || 'sem telefone'})
-  Agente: ${l.assigned_to_name}
-  Início: ${l.started_at} | Fim: ${l.finalized_at}
-  Tags: ${(l.tags || []).join(', ')}
-  Mensagens:
-${msgLines || '    (sem mensagens)'}`;
-  }).join('\n---\n');
+function formatBR(iso: string): string {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch { return iso; }
+}
+
+function formatDateBR(dateStr: string): string {
+  if (!dateStr) return '';
+  const [y, m, d] = dateStr.split('-');
+  return `${d}/${m}/${y}`;
 }
 ```
 
-3. **Atualizar o `userMessage`** quando há observação para incluir as conversas:
-
-```typescript
-const userMessage = reqUserContext
-  ? `## SOLICITAÇÃO DO GESTOR (PRIORIDADE MÁXIMA):\n\n${reqUserContext}\n\n---\n\n${metricsBlock}\n\n**Conversas detalhadas do período:**\n${conversationDetailsBlock}`
-  : // prompt padrão atual
-```
-
-Isso garante que quando o gestor perguntar sobre mensagens específicas, contatos ou interações de um agente, a Delma terá acesso ao conteúdo real das conversas.
+Aplicações:
+- Mensagens: `[${formatBR(m.created_at || m.timestamp)}]`
+- Conversas: `Início: ${formatBR(l.started_at)} | Fim: ${formatBR(l.finalized_at)}`
+- Daily buckets: `${formatDateBR(day)}: ${d.count} conversas...`
+- Tendências: `${formatDateBR(d.date)}: TMA...`
 
