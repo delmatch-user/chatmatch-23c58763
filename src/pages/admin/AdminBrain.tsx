@@ -236,9 +236,9 @@ const AdminBrain = () => {
   };
 
   const learnings = metrics ? computeLearnings(metrics) : [];
-
-  // Knowledge gap analysis
-  const knowledgeAnalysis = metrics ? computeKnowledgeGaps(metrics, robots) : null;
+  const managerialInsights = metrics ? computeManagerialInsights(metrics) : [];
+  const patterns = metrics ? computePatterns(metrics) : null;
+  const recommendations = metrics ? computeRecommendations(metrics) : [];
 
   return (
     <MainLayout>
@@ -697,55 +697,49 @@ const AdminBrain = () => {
               )}
             </TabsContent>
 
-            {/* Knowledge Tab */}
+            {/* Knowledge Tab - Managerial View */}
             <TabsContent value="knowledge" className="space-y-6">
-              {/* Robot Knowledge Cards */}
-              <Card>
+              {/* What Delma Learned */}
+              <Card className="border-primary/20 bg-primary/5">
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
-                    <Bot className="w-4 h-4" />
-                    Base de Conhecimento dos Robôs
+                    <Brain className="w-4 h-4 text-primary" />
+                    O que a Delma Aprendeu
                   </CardTitle>
-                  <CardDescription>
-                    O que cada robô sabe: perguntas & respostas, links de referência e instruções configuradas
-                  </CardDescription>
+                  <CardDescription>Insights que a Delma identificou analisando o suporte nos últimos {period} dias</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {robots.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-6">Nenhum robô cadastrado.</p>
+                  {managerialInsights.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">Dados insuficientes para gerar insights neste período.</p>
                   ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                      {robots.map(robot => {
-                        const instrWords = robot.instructions.split(/\s+/).filter(Boolean).length;
+                    <div className="space-y-3">
+                      {managerialInsights.map((insight, i) => {
+                        const Icon = insight.icon;
+                        const severityStyles = {
+                          info: 'bg-primary/10 border-primary/20',
+                          warning: 'bg-warning/10 border-warning/20',
+                          critical: 'bg-destructive/10 border-destructive/20',
+                        };
+                        const iconStyles = {
+                          info: 'text-primary',
+                          warning: 'text-warning',
+                          critical: 'text-destructive',
+                        };
+                        const categoryLabels: Record<string, string> = {
+                          volume: 'Volume',
+                          performance: 'Performance',
+                          automation: 'Automação',
+                          alert: 'Alerta',
+                          team: 'Equipe',
+                        };
                         return (
-                          <div key={robot.id} className="p-4 rounded-lg border bg-secondary/20 space-y-3">
-                            <div className="flex items-center justify-between">
-                              <span className="font-semibold text-sm truncate">{robot.name}</span>
-                              <Badge variant={robot.status === 'active' ? 'default' : 'secondary'} className="text-xs">
-                                {robot.status === 'active' ? 'Ativo' : robot.status === 'paused' ? 'Pausado' : 'Inativo'}
-                              </Badge>
-                            </div>
-                            <div className="grid grid-cols-3 gap-2 text-center">
-                              <div className="p-2 rounded bg-background">
-                                <BookOpen className="w-4 h-4 mx-auto text-primary mb-1" />
-                                <p className="text-lg font-bold">{robot.qaPairs.length}</p>
-                                <p className="text-[10px] text-muted-foreground">Q&A</p>
+                          <div key={i} className={cn("flex items-start gap-3 p-3 rounded-lg border", severityStyles[insight.severity])}>
+                            <Icon className={cn("w-4 h-4 mt-0.5 shrink-0", iconStyles[insight.severity])} />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0">{categoryLabels[insight.category] || insight.category}</Badge>
                               </div>
-                              <div className="p-2 rounded bg-background">
-                                <Link2 className="w-4 h-4 mx-auto text-primary mb-1" />
-                                <p className="text-lg font-bold">{robot.referenceLinks.length}</p>
-                                <p className="text-[10px] text-muted-foreground">Referências</p>
-                              </div>
-                              <div className="p-2 rounded bg-background">
-                                <FileText className="w-4 h-4 mx-auto text-primary mb-1" />
-                                <p className="text-lg font-bold">{instrWords}</p>
-                                <p className="text-[10px] text-muted-foreground">Palavras</p>
-                              </div>
-                            </div>
-                            <div className="flex flex-wrap gap-1">
-                              {robot.channels.map(ch => (
-                                <Badge key={ch} variant="outline" className="text-[10px]">{ch}</Badge>
-                              ))}
+                              <span className="text-sm text-foreground">{insight.text}</span>
                             </div>
                           </div>
                         );
@@ -755,81 +749,161 @@ const AdminBrain = () => {
                 </CardContent>
               </Card>
 
-              {/* Knowledge Gaps */}
-              {knowledgeAnalysis && (
-                <Card className="border-warning/30">
-                  <CardHeader>
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <XCircle className="w-4 h-4 text-warning" />
-                      Gaps de Conhecimento Detectados
-                    </CardTitle>
-                    <CardDescription>
-                      Temas frequentes nas conversas que não estão cobertos na base dos robôs — {knowledgeAnalysis.covered} de {knowledgeAnalysis.total} temas cobertos ({knowledgeAnalysis.coveragePct}%)
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {knowledgeAnalysis.gaps.length === 0 ? (
-                      <div className="text-center py-6">
-                        <CheckCircle2 className="w-10 h-10 text-success/40 mx-auto mb-2" />
-                        <p className="text-sm text-muted-foreground">Todos os temas frequentes estão cobertos! 🎉</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {knowledgeAnalysis.gaps.map(gap => (
-                          <div key={gap.tag} className="flex items-center justify-between p-3 rounded-lg bg-warning/5 border border-warning/20">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <XCircle className="w-4 h-4 text-warning shrink-0" />
-                              <span className="text-sm font-medium truncate">{gap.tag}</span>
+              {/* Detected Patterns */}
+              {patterns && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Tag Trends */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <BarChart3 className="w-4 h-4" />
+                        Temas em Tendência
+                      </CardTitle>
+                      <CardDescription>Tags mais recorrentes e sua evolução</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {patterns.tagTrends.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-4">Sem dados suficientes.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {patterns.tagTrends.map((t, i) => (
+                            <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-secondary/30">
+                              <span className="text-sm font-medium truncate">{t.tag}</span>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <Badge variant="secondary" className="text-xs">{t.count}x</Badge>
+                                <span className="text-xs font-medium">
+                                  {t.pct}%
+                                </span>
+                              </div>
                             </div>
-                            <Badge variant="secondary" className="text-xs shrink-0 ml-2">{gap.count} ocorrências</Badge>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Workload Distribution */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Users className="w-4 h-4" />
+                        Distribuição de Carga
+                      </CardTitle>
+                      <CardDescription>Como o volume está dividido entre atendentes</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {patterns.workload.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-4">Sem dados de atendentes.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {patterns.workload.map((w, i) => (
+                            <div key={i} className="space-y-1">
+                              <div className="flex items-center justify-between text-sm">
+                                <span className="truncate">{w.name}</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-muted-foreground">{w.count} ({w.pct}%)</span>
+                                  {w.overloaded && <ShieldAlert className="w-3.5 h-3.5 text-warning" />}
+                                </div>
+                              </div>
+                              <div className="h-1.5 rounded-full bg-secondary">
+                                <div className={cn("h-full rounded-full transition-all", w.overloaded ? "bg-warning" : "bg-primary")} style={{ width: `${w.pct}%` }} />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* AI vs Human Resolution */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Bot className="w-4 h-4" />
+                        Resolução IA vs Humana
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {patterns.resolutionRate ? (
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-4">
+                            <div className="flex-1 text-center p-3 rounded-lg bg-primary/10">
+                              <p className="text-2xl font-bold text-primary">{patterns.resolutionRate.aiPct}%</p>
+                              <p className="text-xs text-muted-foreground">IA</p>
+                            </div>
+                            <div className="flex-1 text-center p-3 rounded-lg bg-secondary">
+                              <p className="text-2xl font-bold">{patterns.resolutionRate.humanPct}%</p>
+                              <p className="text-xs text-muted-foreground">Humano</p>
+                            </div>
                           </div>
-                        ))}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
+                          <p className="text-xs text-muted-foreground text-center">
+                            {metrics!.aiResolved} resolvidos por IA / {metrics!.humanResolved} por humanos
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground text-center py-4">Sem dados de resolução.</p>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Channel Performance */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <MessageSquare className="w-4 h-4" />
+                        Canais de Atendimento
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {Object.keys(patterns.channels).length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-4">Sem dados de canais.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {Object.entries(patterns.channels).sort((a, b) => b[1] - a[1]).map(([ch, count]) => (
+                            <div key={ch} className="flex items-center justify-between p-2 rounded-lg bg-secondary/30">
+                              <span className="text-sm font-medium">{ch}</span>
+                              <Badge variant="secondary" className="text-xs">{count} conversas</Badge>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
               )}
 
-              {/* Covered topics */}
-              {knowledgeAnalysis && knowledgeAnalysis.coveredTopics.length > 0 && (
-                <Card className="border-success/30">
+              {/* Flow Recommendations */}
+              {recommendations.length > 0 && (
+                <Card className="border-primary/20">
                   <CardHeader>
                     <CardTitle className="text-base flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-success" />
-                      Temas Cobertos
+                      <Target className="w-4 h-4 text-primary" />
+                      Recomendações da Delma
                     </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex flex-wrap gap-2">
-                      {knowledgeAnalysis.coveredTopics.map(topic => (
-                        <Badge key={topic.tag} className="bg-success/10 text-success border-success/20 text-xs gap-1">
-                          <CheckCircle2 className="w-3 h-3" />
-                          {topic.tag}
-                        </Badge>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Flow Improvement Suggestions */}
-              {knowledgeAnalysis && knowledgeAnalysis.suggestions.length > 0 && (
-                <Card className="border-primary/20 bg-primary/5">
-                  <CardHeader>
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <Zap className="w-4 h-4 text-primary" />
-                      Sugestões de Melhoria de Fluxo
-                    </CardTitle>
-                    <CardDescription>Ações concretas para melhorar o atendimento</CardDescription>
+                    <CardDescription>Ações sugeridas para melhorar o fluxo de atendimento</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3">
-                      {knowledgeAnalysis.suggestions.map((suggestion, i) => (
-                        <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-background border">
-                          <Lightbulb className="w-4 h-4 text-primary mt-0.5 shrink-0" />
-                          <span className="text-sm text-muted-foreground">{suggestion}</span>
-                        </div>
-                      ))}
+                      {recommendations.map((rec, i) => {
+                        const Icon = rec.icon;
+                        const typeStyles: Record<string, string> = {
+                          redistribute: 'bg-primary/10 text-primary',
+                          training: 'bg-warning/10 text-warning',
+                          automation: 'bg-success/10 text-success',
+                          alert: 'bg-destructive/10 text-destructive',
+                        };
+                        return (
+                          <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-background border">
+                            <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center shrink-0", typeStyles[rec.type] || 'bg-muted')}>
+                              <Icon className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-foreground">{rec.title}</p>
+                              <p className="text-xs text-muted-foreground mt-0.5">{rec.description}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </CardContent>
                 </Card>
