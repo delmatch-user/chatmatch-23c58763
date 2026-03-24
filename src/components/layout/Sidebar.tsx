@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { 
+  ChevronDown,
   MessageSquare, 
   Users, 
   Inbox, 
@@ -66,6 +67,7 @@ interface NavItem {
   path: string;
   badge?: number;
   isSettings?: boolean;
+  children?: NavItem[];
 }
 
 const getNavItems = (queueCount: number, activeConversationsCount: number, internalUnreadCount: number, showRanking: boolean, isSDR: boolean): NavItem[] => {
@@ -107,11 +109,12 @@ const adminNavItems: NavItem[] = [
   { icon: Bot, label: 'Robôs', path: '/admin/robos' },
   { icon: Sparkles, label: 'IAs', path: '/admin/ias' },
   { icon: Smartphone, label: 'WhatsApp', path: '/admin/whatsapp' },
-  { icon: FileText, label: 'Logs', path: '/admin/logs' },
-  { icon: Trash2, label: 'Exclusões', path: '/admin/exclusoes' },
-  { icon: BarChart3, label: 'Geral', path: '/admin/relatorios' },
+  { icon: BarChart3, label: 'Geral', path: '/admin/relatorios', children: [
+    { icon: FileText, label: 'Logs', path: '/admin/logs' },
+    { icon: Trash2, label: 'Exclusões', path: '/admin/exclusoes' },
+    { icon: HardDrive, label: 'Armazenamento', path: '/admin/armazenamento' },
+  ]},
   { icon: Trophy, label: 'Config. Ranking', path: '/admin/ranking-config' },
-  { icon: HardDrive, label: 'Armazenamento', path: '/admin/armazenamento' },
   { icon: Brain, label: 'Cérebro', path: '/admin/cerebro' },
   { icon: Settings, label: 'Configurações', path: '#settings', isSettings: true },
 ];
