@@ -202,7 +202,7 @@ serve(async (req) => {
     const { data: transferLogs } = await supabase
       .from("transfer_logs")
       .select("from_user_name")
-      .gte("created_at", periodStart)
+      .gte("created_at", effectiveStart)
       .limit(1000);
     (transferLogs || []).forEach((t: any) => {
       if (t.from_user_name && agentStats[t.from_user_name]) {
