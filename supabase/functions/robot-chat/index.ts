@@ -196,12 +196,16 @@ function convertToAnthropicRequest(openaiBody: any): any {
   }
 
   // Ensure messages alternate user/assistant; merge consecutive same-role
+  // Normalize all content to string for Anthropic compatibility
   const merged: any[] = [];
   for (const msg of userMessages) {
+    const contentStr = typeof msg.content === 'string' ? msg.content
+      : Array.isArray(msg.content) ? msg.content.map((c: any) => c.text || c.type || '').filter(Boolean).join('\n') || '...'
+      : JSON.stringify(msg.content);
     if (merged.length > 0 && merged[merged.length - 1].role === msg.role) {
-      merged[merged.length - 1].content += '\n' + (typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content));
+      merged[merged.length - 1].content += '\n' + contentStr;
     } else {
-      merged.push({ ...msg });
+      merged.push({ role: msg.role, content: contentStr });
     }
   }
   // Anthropic requires first message to be user
