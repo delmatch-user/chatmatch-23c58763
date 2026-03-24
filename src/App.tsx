@@ -120,6 +120,14 @@ const App = () => {
                         }
                       />
                       <Route
+                        path="/notificacoes"
+                        element={
+                          <ProtectedRoute>
+                            <Notifications />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
                         path="/contatos"
                         element={
                           <ProtectedRoute>
