@@ -141,7 +141,7 @@ function getModelFromIntelligence(intelligence: string): string {
     case 'maestro':
       return 'gpt-4o';
     case 'cerebro':
-      return 'openai/gpt-5.4';
+      return 'openai/gpt-5.2';
     default:
       return 'gemini-2.5-flash-lite';
   }
@@ -168,7 +168,7 @@ function getApiConfig(intelligence: string): { apiUrl: string; apiKey: string; p
     return {
       apiUrl: "https://ai.gateway.lovable.dev/v1/chat/completions",
       apiKey,
-      providerName: 'Lovable AI (GPT-5.4)'
+      providerName: 'Lovable AI (GPT-5.2)'
     };
   } else {
     const apiKey = Deno.env.get("OPENAI_API_KEY") || '';
