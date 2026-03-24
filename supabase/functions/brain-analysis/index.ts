@@ -6,6 +6,21 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const TAG_NORMALIZATION: Record<string, string> = {
+  'ACIDENTE_URGENTE': 'Acidente - Urgente',
+  'FINANCEIRO_NORMAL': 'Financeiro - Normal',
+  'DUVIDA_GERAL': 'Duvida - Geral',
+  'COMERCIAL_B2B': 'Comercial - B2B',
+  'OPERACIONAL_PENDENTE': 'Operacional - Geral',
+  'Operacional - Normal': 'Operacional - Geral',
+  'Operacional - Pendente': 'Operacional - Geral',
+};
+
+function normalizeTag(tag: string): string {
+  const clean = tag.replace(/^[^\w\sÀ-ú-]+\s*/u, '').trim();
+  return TAG_NORMALIZATION[clean] || clean;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 

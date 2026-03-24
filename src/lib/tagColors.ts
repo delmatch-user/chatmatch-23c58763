@@ -25,7 +25,7 @@ const TAG_NORMALIZATION: Record<string, string> = {
  * para o formato novo padronizado.
  */
 export function normalizeTag(tag: string): string {
-  const clean = tag.replace(/^[🔴🟡🟢🔵⚪◆◇●○■□▪▫✦✧⬥⬦♦️◈]\s*/, '').trim();
+  const clean = tag.replace(/^[^\w\sÀ-ú-]+\s*/u, '').trim();
   return TAG_NORMALIZATION[clean] || clean;
 }
 
