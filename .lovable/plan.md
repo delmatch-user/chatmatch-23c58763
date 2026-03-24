@@ -1,41 +1,72 @@
 
 
-# Remover limite de 1000 registros nas consultas do Cérebro
+# Corrigir roteamento de resposta: Meta API vs Baileys
 
 ## Problema
 
-O Supabase tem um limite padrão de **1000 linhas por requisição** (configuração do PostgREST). Mesmo com `.limit(5000)`, o máximo retornado é 1000. Por isso o dashboard mostra "Total Conversas: 1000" — não porque há exatamente 1000, mas porque é o teto da query.
+Quando uma conversa chega pela **API Oficial (Meta)**, ao responder, o sistema roteia a mensagem pelo **Baileys** (número QR Code) ao invés da API Oficial. Isso faz a resposta sair pelo número errado e o Meta cria uma nova conversa duplicada.
+
+**Causa raiz**: A função `getConnectionForDepartment()` em `useWhatsAppSend.tsx` **sempre prioriza Baileys sobre Meta API**, independentemente de qual canal originou a conversa. Se o lookup por `whatsappInstanceId` falhar por qualquer motivo (status diferente, ID não encontrado), o fallback ignora a origem e pega Baileys.
 
 ## Solução
 
-Implementar **paginação** na edge function `brain-analysis` para buscar **todos** os registros do período, sem limite artificial.
+Duas correções no arquivo `src/hooks/useWhatsAppSend.tsx`:
 
-**Arquivo**: `supabase/functions/brain-analysis/index.ts`
+### 1. Tornar o lookup por instanceId mais robusto
 
-1. Criar uma função helper `fetchAllLogs` que pagina em blocos de 1000 usando `.range(from, to)` até não haver mais dados:
+Na função `getConnectionByInstanceId`, remover o filtro de status para que encontre a conexão Meta API mesmo se o status não for exatamente `connected/active`:
 
 ```typescript
-async function fetchAllLogs(supabase, table, filters, selectColumns = '*') {
-  const PAGE_SIZE = 1000;
-  let allData = [];
-  let from = 0;
-  while (true) {
-    const query = supabase.from(table).select(selectColumns)
-      // apply filters
-      .range(from, from + PAGE_SIZE - 1);
-    const { data, error } = await query;
-    if (error) throw error;
-    allData = allData.concat(data || []);
-    if (!data || data.length < PAGE_SIZE) break;
-    from += PAGE_SIZE;
-  }
-  return allData;
+// Antes: .in('status', ['connected', 'active'])
+// Depois: buscar sem filtro de status, priorizando ativas
+async function getConnectionByInstanceId(instanceId: string) {
+  // Primeiro tentar com status ativo
+  const { data } = await supabase
+    .from('whatsapp_connections')
+    .select(...)
+    .eq('phone_number_id', instanceId)
+    .in('connection_type', ['baileys', 'meta_api'])
+    .in('status', ['connected', 'active'])
+    .limit(1).maybeSingle();
+  
+  if (data) return data;
+  
+  // Fallback: qualquer status (Meta API pode ter status diferente)
+  const { data: fallback } = await supabase
+    .from('whatsapp_connections')
+    .select(...)
+    .eq('phone_number_id', instanceId)
+    .in('connection_type', ['baileys', 'meta_api'])
+    .limit(1).maybeSingle();
+  
+  return fallback;
 }
 ```
 
-2. Substituir as duas queries existentes (linhas 73-91) por chamadas à função paginada — uma para `currentLogs` (com `select("*")`) e outra para `prevLogs` (com select parcial).
+### 2. Respeitar o canal da conversa no fallback por departamento
 
-3. Remover os `.limit(5000)` que não funcionavam.
+Na lógica principal de `sendMessage`, quando o `whatsappInstanceId` não resolve mas a conversa tem canal definido, buscar pelo tipo de conexão correto:
 
-Isso garante que independente de quantas conversas existam no período (1000, 3000, 10000+), **todas** serão contabilizadas nas métricas.
+```typescript
+// Após falha do instanceId, antes do fallback por departamento:
+// Se a conversa tem whatsappInstanceId definido (veio da Meta), 
+// forçar busca por meta_api no departamento
+if (!connection && whatsappInstanceId && departmentId) {
+  // O instanceId não resolveu, mas sabemos que veio da Meta API
+  // Buscar conexão meta_api para o departamento
+  connection = await getMetaConnectionForDepartment(departmentId);
+}
+```
+
+Criar uma função `getMetaConnectionForDepartment` que busca exclusivamente conexões `meta_api` (sem priorizar Baileys).
+
+### 3. Fallback final que respeita a origem
+
+Se mesmo assim não encontrar, e o `whatsappInstanceId` estava definido (indicando que veio da Meta), buscar qualquer conexão Meta API ativa em vez de qualquer Baileys.
+
+## Arquivos
+
+| Arquivo | Mudança |
+|---------|---------|
+| `src/hooks/useWhatsAppSend.tsx` | Tornar `getConnectionByInstanceId` mais robusto; adicionar lógica de fallback que respeita o canal da conversa; criar `getMetaConnectionForDepartment` |
 
