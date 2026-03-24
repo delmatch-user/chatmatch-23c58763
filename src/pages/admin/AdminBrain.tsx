@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { cn, priorityLabel } from '@/lib/utils';
+import { normalizeTag } from '@/lib/tagColors';
 
 interface AgentStat {
   name: string;
