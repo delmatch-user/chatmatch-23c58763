@@ -285,12 +285,15 @@ serve(async (req) => {
       agentStats: Object.entries(agentStats).map(([name, stats]) => {
         const prevS = prevAgentStats[name];
         const topTags = Object.entries(stats.tags).sort((a, b) => b[1] - a[1]).slice(0, 3);
+        const resolutionRate = stats.count > 0 ? Math.round(((stats.count - stats.transferredOut) / stats.count) * 1000) / 10 : 100;
         return {
           name,
           count: stats.count,
           avgTime: Math.round((stats.totalTime / stats.count) * 10) / 10,
           avgWaitTime: stats.waitCount > 0 ? Math.round((stats.totalWait / stats.waitCount) * 10) / 10 : 0,
           topTags,
+          channels: stats.channels,
+          resolutionRate,
           prevCount: prevS?.count || 0,
           prevAvgTime: prevS ? Math.round((prevS.totalTime / prevS.count) * 10) / 10 : 0,
         };
