@@ -21,12 +21,19 @@ interface ErrorLog {
   id: string;
   contact_name: string;
   contact_phone: string | null;
+  contact_notes: string | null;
   priority: string;
   tags: string[];
   channel: string | null;
   assigned_to_name: string | null;
   finalized_at: string;
   started_at: string;
+}
+
+interface ErrorTypeGroup {
+  total: number;
+  motivos: Record<string, number>;
+  logs: ErrorLog[];
 }
 
 interface BrainMetrics {
