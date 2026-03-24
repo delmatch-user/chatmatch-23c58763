@@ -1829,6 +1829,54 @@ const AdminBrain = () => {
           </Tabs>
         )}
 
+        {/* Schedule Dialog */}
+        <Dialog open={scheduleDialogOpen} onOpenChange={setScheduleDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <CalendarClock className="w-5 h-5 text-primary" />
+                Agendamento Automático
+              </DialogTitle>
+              <DialogDescription>Configure a geração automática de relatórios da Delma.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Ativar agendamento</span>
+                <Switch checked={scheduleConfig.isActive} onCheckedChange={(v) => setScheduleConfig(prev => ({ ...prev, isActive: v }))} />
+              </div>
+              <div>
+                <label className="text-sm text-muted-foreground">Dia da semana</label>
+                <Select value={String(scheduleConfig.dayOfWeek)} onValueChange={(v) => setScheduleConfig(prev => ({ ...prev, dayOfWeek: parseInt(v) }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'].map((d, i) => (
+                      <SelectItem key={i} value={String(i)}>{d}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm text-muted-foreground">Horário</label>
+                <Select value={String(scheduleConfig.hourOfDay)} onValueChange={(v) => setScheduleConfig(prev => ({ ...prev, hourOfDay: parseInt(v) }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 24 }, (_, i) => (
+                      <SelectItem key={i} value={String(i)}>{String(i).padStart(2, '0')}:00</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setScheduleDialogOpen(false)}>Cancelar</Button>
+              <Button onClick={saveScheduleConfig} className="gap-2">
+                <CheckCircle2 className="w-4 h-4" />
+                Salvar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         {/* Train Theme Modal */}
         <Dialog open={trainModalOpen} onOpenChange={setTrainModalOpen}>
           <DialogContent>
