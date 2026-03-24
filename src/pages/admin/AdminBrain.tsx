@@ -455,57 +455,122 @@ const AdminBrain = () => {
                 ) : null;
               })()}
 
-              {/* Error Logs List */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <AlertTriangle className="w-5 h-5 text-destructive" />
-                    Conversas Problemáticas
-                  </CardTitle>
-                  <CardDescription>
-                    {errorsSubTab === 'todos' ? 'Todas as conversas com alta prioridade, erros ou reclamações' :
-                     errorsSubTab === 'estabelecimento' ? 'Conversas problemáticas de Estabelecimentos' :
-                     'Conversas problemáticas de Motoboys'}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {(() => {
-                    const filteredLogs = errorsSubTab === 'todos'
-                      ? metrics.errorLogs
-                      : (metrics.errorsByType?.[errorsSubTab as 'estabelecimento' | 'motoboy']?.logs || []);
-                    return filteredLogs.length === 0 ? (
-                      <div className="text-center py-8">
-                        <AlertTriangle className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
-                        <p className="text-sm text-muted-foreground">Nenhuma conversa problemática encontrada. 🎉</p>
+              {/* Error Logs Summary */}
+              {(() => {
+                const filteredLogs = errorsSubTab === 'todos'
+                  ? metrics.errorLogs
+                  : (metrics.errorsByType?.[errorsSubTab as 'estabelecimento' | 'motoboy']?.logs || []);
+
+                if (filteredLogs.length === 0) {
+                  return (
+                    <Card>
+                      <CardContent className="pt-6">
+                        <div className="text-center py-8">
+                          <AlertTriangle className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+                          <p className="text-sm text-muted-foreground">Nenhuma conversa problemática encontrada. 🎉</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                }
+
+                // Summarize by priority
+                const byPriority: Record<string, number> = {};
+                filteredLogs.forEach(l => { byPriority[l.priority] = (byPriority[l.priority] || 0) + 1; });
+
+                // Summarize by tag
+                const byTag: Record<string, number> = {};
+                filteredLogs.forEach(l => l.tags.forEach(t => { byTag[t] = (byTag[t] || 0) + 1; }));
+                const topErrorTags = Object.entries(byTag).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+                // Summarize by agent
+                const byAgent: Record<string, number> = {};
+                filteredLogs.filter(l => l.assigned_to_name).forEach(l => {
+                  byAgent[l.assigned_to_name!] = (byAgent[l.assigned_to_name!] || 0) + 1;
+                });
+                const topErrorAgents = Object.entries(byAgent).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+                // Summarize by channel
+                const byChannel: Record<string, number> = {};
+                filteredLogs.forEach(l => { const ch = l.channel || 'whatsapp'; byChannel[ch] = (byChannel[ch] || 0) + 1; });
+
+                return (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <AlertTriangle className="w-5 h-5 text-destructive" />
+                        Resumo — Conversas Problemáticas
+                      </CardTitle>
+                      <CardDescription>
+                        {filteredLogs.length} conversa{filteredLogs.length !== 1 ? 's' : ''} com alta prioridade, erros ou reclamações
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-5">
+                      {/* Priority breakdown */}
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Por Prioridade</p>
+                        <div className="flex flex-wrap gap-2">
+                          {Object.entries(byPriority).sort((a, b) => b[1] - a[1]).map(([priority, count]) => (
+                            <Badge key={priority} className={cn("text-sm gap-1", priorityColors[priority] || 'bg-muted text-muted-foreground')}>
+                              {priority} <span className="font-bold">{count}</span>
+                            </Badge>
+                          ))}
+                        </div>
                       </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {filteredLogs.map((log) => (
-                          <div key={log.id} className="p-3 rounded-lg border bg-card hover:bg-secondary/30 transition-colors">
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0 flex-1">
-                                <p className="font-medium text-sm truncate">{log.contact_name}</p>
-                                {log.contact_phone && <p className="text-xs text-muted-foreground">{log.contact_phone}</p>}
-                              </div>
-                              <Badge className={cn("shrink-0", priorityColors[log.priority] || '')}>{log.priority}</Badge>
-                            </div>
-                            <div className="flex items-center gap-2 mt-2 flex-wrap">
-                              {log.channel && <Badge variant="outline" className="text-xs">{log.channel}</Badge>}
-                              {log.assigned_to_name && <span className="text-xs text-muted-foreground">Agente: {log.assigned_to_name}</span>}
-                              <span className="text-xs text-muted-foreground">{new Date(log.finalized_at).toLocaleDateString('pt-BR')}</span>
-                            </div>
-                            {log.tags.length > 0 && (
-                              <div className="flex flex-wrap gap-1 mt-2">
-                                {log.tags.map((tag) => (<Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>))}
-                              </div>
-                            )}
+
+                      {/* Tags breakdown */}
+                      {topErrorTags.length > 0 && (
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Principais Tags</p>
+                          <div className="space-y-1.5">
+                            {topErrorTags.map(([tag, count]) => {
+                              const pct = (count / filteredLogs.length) * 100;
+                              return (
+                                <div key={tag} className="flex items-center gap-3">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between text-sm mb-0.5">
+                                      <span className="truncate">{tag}</span>
+                                      <span className="text-muted-foreground text-xs ml-2">{count} ({Math.round(pct)}%)</span>
+                                    </div>
+                                    <div className="h-1.5 rounded-full bg-secondary">
+                                      <div className="h-full rounded-full bg-destructive/70 transition-all" style={{ width: `${pct}%` }} />
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
-                        ))}
+                        </div>
+                      )}
+
+                      {/* Agent + Channel row */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {topErrorAgents.length > 0 && (
+                          <div>
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Agentes mais envolvidos</p>
+                            <div className="space-y-1">
+                              {topErrorAgents.map(([name, count]) => (
+                                <div key={name} className="flex items-center justify-between text-sm p-1.5 rounded bg-secondary/30">
+                                  <span className="truncate">{name}</span>
+                                  <span className="text-muted-foreground font-medium">{count}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Por Canal</p>
+                          <div className="flex flex-wrap gap-2">
+                            {Object.entries(byChannel).map(([ch, count]) => (
+                              <Badge key={ch} variant="outline" className="text-sm">{ch}: {count}</Badge>
+                            ))}
+                          </div>
+                        </div>
                       </div>
-                    );
-                  })()}
-                </CardContent>
-              </Card>
+                    </CardContent>
+                  </Card>
+                );
+              })()}
             </TabsContent>
 
             {/* Agents Tab */}
