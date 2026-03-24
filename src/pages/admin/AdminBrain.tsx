@@ -173,18 +173,15 @@ const AdminBrain = () => {
     }
   };
 
-  // Auto-fetch on mount and period change
   useEffect(() => {
     fetchMetrics();
   }, [fetchMetrics]);
 
-  // Polling every 30s
   useEffect(() => {
     intervalRef.current = setInterval(() => fetchMetrics(), 30000);
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [fetchMetrics]);
 
-  // Realtime subscription
   useEffect(() => {
     const channel = supabase
       .channel('brain-realtime')
@@ -194,6 +191,29 @@ const AdminBrain = () => {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [fetchMetrics]);
+
+  // Fetch robots for knowledge tab
+  useEffect(() => {
+    const fetchRobots = async () => {
+      const { data } = await supabase
+        .from('robots')
+        .select('id, name, status, qa_pairs, reference_links, instructions, departments, channels')
+        .order('name');
+      if (data) {
+        setRobots(data.map((r: any) => ({
+          id: r.id,
+          name: r.name,
+          status: r.status,
+          qaPairs: Array.isArray(r.qa_pairs) ? r.qa_pairs : [],
+          referenceLinks: Array.isArray(r.reference_links) ? r.reference_links : [],
+          instructions: r.instructions || '',
+          departments: r.departments || [],
+          channels: r.channels || [],
+        })));
+      }
+    };
+    fetchRobots();
+  }, []);
 
   const getTrend = (current: number, previous: number, inverted = false) => {
     if (previous === 0) return null;
@@ -215,13 +235,15 @@ const AdminBrain = () => {
     urgent: 'bg-destructive/20 text-destructive',
   };
 
-  // Compute Delma's learnings from metrics
   const learnings = metrics ? computeLearnings(metrics) : [];
+
+  // Knowledge gap analysis
+  const knowledgeAnalysis = metrics ? computeKnowledgeGaps(metrics, robots) : null;
 
   return (
     <MainLayout>
       <div className="flex-1 overflow-auto p-6 space-y-6">
-        {/* Header — Delma Persona */}
+        {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center shadow-lg relative">
@@ -258,7 +280,6 @@ const AdminBrain = () => {
           </div>
         </div>
 
-        {/* Loading skeleton */}
         {!metrics && loadingMetrics && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[1, 2, 3, 4].map(i => (
@@ -273,12 +294,12 @@ const AdminBrain = () => {
               <TabsTrigger value="overview">Painel</TabsTrigger>
               <TabsTrigger value="errors">Erros & Gaps</TabsTrigger>
               <TabsTrigger value="agents">Atendentes</TabsTrigger>
+              <TabsTrigger value="knowledge">Conhecimento</TabsTrigger>
               <TabsTrigger value="ai-report">Relatório IA</TabsTrigger>
             </TabsList>
 
             {/* Painel Tab */}
             <TabsContent value="overview" className="space-y-6">
-              {/* KPI Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <KPICard title="Total Conversas" value={metrics.totalConversas} icon={MessageSquare} trend={getTrend(metrics.totalConversas, metrics.prevTotalConversas)} />
                 <KPICard title="TMA" value={formatTime(metrics.tma)} icon={Clock} trend={getTrend(metrics.tma, metrics.prevTma, true)} subtitle="Tempo médio de atendimento" />
@@ -291,7 +312,6 @@ const AdminBrain = () => {
                 />
               </div>
 
-              {/* Delma's Learnings */}
               {learnings.length > 0 && (
                 <Card className="border-primary/20 bg-primary/5">
                   <CardHeader className="pb-3">
@@ -313,7 +333,6 @@ const AdminBrain = () => {
                 </Card>
               )}
 
-              {/* Agent Performance + Top Tags */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <Card>
                   <CardHeader>
@@ -371,7 +390,6 @@ const AdminBrain = () => {
                 </Card>
               </div>
 
-              {/* Channel & Priority */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <Card>
                   <CardHeader><CardTitle className="text-base">Por Canal</CardTitle></CardHeader>
@@ -398,7 +416,6 @@ const AdminBrain = () => {
 
             {/* Errors Tab */}
             <TabsContent value="errors" className="space-y-6">
-              {/* Sub-tabs */}
               <div className="flex items-center gap-2 flex-wrap">
                 {[
                   { key: 'todos', label: 'Todos', icon: AlertTriangle, count: metrics.errorLogs.length },
@@ -419,7 +436,6 @@ const AdminBrain = () => {
                 ))}
               </div>
 
-              {/* Motivos Chart */}
               {(() => {
                 const motivos = errorsSubTab === 'todos'
                   ? mergeMotivos(metrics.errorsByType)
@@ -467,7 +483,6 @@ const AdminBrain = () => {
                 ) : null;
               })()}
 
-              {/* Error Logs Summary */}
               {(() => {
                 const filteredLogs = errorsSubTab === 'todos'
                   ? metrics.errorLogs
@@ -486,23 +501,19 @@ const AdminBrain = () => {
                   );
                 }
 
-                // Summarize by priority
                 const byPriority: Record<string, number> = {};
                 filteredLogs.forEach(l => { byPriority[l.priority] = (byPriority[l.priority] || 0) + 1; });
 
-                // Summarize by tag
                 const byTag: Record<string, number> = {};
                 filteredLogs.forEach(l => l.tags.forEach(t => { byTag[t] = (byTag[t] || 0) + 1; }));
                 const topErrorTags = Object.entries(byTag).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
-                // Summarize by agent
                 const byAgent: Record<string, number> = {};
                 filteredLogs.filter(l => l.assigned_to_name).forEach(l => {
                   byAgent[l.assigned_to_name!] = (byAgent[l.assigned_to_name!] || 0) + 1;
                 });
                 const topErrorAgents = Object.entries(byAgent).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
-                // Summarize by channel
                 const byChannel: Record<string, number> = {};
                 filteredLogs.forEach(l => { const ch = l.channel || 'whatsapp'; byChannel[ch] = (byChannel[ch] || 0) + 1; });
 
@@ -518,7 +529,6 @@ const AdminBrain = () => {
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-5">
-                      {/* Priority breakdown */}
                       <div>
                         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Por Prioridade</p>
                         <div className="flex flex-wrap gap-2">
@@ -530,7 +540,6 @@ const AdminBrain = () => {
                         </div>
                       </div>
 
-                      {/* Tags breakdown */}
                       {topErrorTags.length > 0 && (
                         <div>
                           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Principais Tags</p>
@@ -555,7 +564,6 @@ const AdminBrain = () => {
                         </div>
                       )}
 
-                      {/* Agent + Channel row */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {topErrorAgents.length > 0 && (
                           <div>
@@ -587,7 +595,6 @@ const AdminBrain = () => {
 
             {/* Agents Tab */}
             <TabsContent value="agents" className="space-y-6">
-              {/* TMA Comparison Chart */}
               {metrics.agentStats.length > 0 && (
                 <Card>
                   <CardHeader>
@@ -621,7 +628,6 @@ const AdminBrain = () => {
                 </Card>
               )}
 
-              {/* Agent Cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {metrics.agentStats.map((agent) => {
                   const avgAll = metrics.agentStats.reduce((s, a) => s + a.avgTime, 0) / metrics.agentStats.length;
@@ -691,6 +697,144 @@ const AdminBrain = () => {
               )}
             </TabsContent>
 
+            {/* Knowledge Tab */}
+            <TabsContent value="knowledge" className="space-y-6">
+              {/* Robot Knowledge Cards */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Bot className="w-4 h-4" />
+                    Base de Conhecimento dos Robôs
+                  </CardTitle>
+                  <CardDescription>
+                    O que cada robô sabe: perguntas & respostas, links de referência e instruções configuradas
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {robots.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-6">Nenhum robô cadastrado.</p>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {robots.map(robot => {
+                        const instrWords = robot.instructions.split(/\s+/).filter(Boolean).length;
+                        return (
+                          <div key={robot.id} className="p-4 rounded-lg border bg-secondary/20 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-sm truncate">{robot.name}</span>
+                              <Badge variant={robot.status === 'active' ? 'default' : 'secondary'} className="text-xs">
+                                {robot.status === 'active' ? 'Ativo' : robot.status === 'paused' ? 'Pausado' : 'Inativo'}
+                              </Badge>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 text-center">
+                              <div className="p-2 rounded bg-background">
+                                <BookOpen className="w-4 h-4 mx-auto text-primary mb-1" />
+                                <p className="text-lg font-bold">{robot.qaPairs.length}</p>
+                                <p className="text-[10px] text-muted-foreground">Q&A</p>
+                              </div>
+                              <div className="p-2 rounded bg-background">
+                                <Link2 className="w-4 h-4 mx-auto text-primary mb-1" />
+                                <p className="text-lg font-bold">{robot.referenceLinks.length}</p>
+                                <p className="text-[10px] text-muted-foreground">Referências</p>
+                              </div>
+                              <div className="p-2 rounded bg-background">
+                                <FileText className="w-4 h-4 mx-auto text-primary mb-1" />
+                                <p className="text-lg font-bold">{instrWords}</p>
+                                <p className="text-[10px] text-muted-foreground">Palavras</p>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              {robot.channels.map(ch => (
+                                <Badge key={ch} variant="outline" className="text-[10px]">{ch}</Badge>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Knowledge Gaps */}
+              {knowledgeAnalysis && (
+                <Card className="border-warning/30">
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <XCircle className="w-4 h-4 text-warning" />
+                      Gaps de Conhecimento Detectados
+                    </CardTitle>
+                    <CardDescription>
+                      Temas frequentes nas conversas que não estão cobertos na base dos robôs — {knowledgeAnalysis.covered} de {knowledgeAnalysis.total} temas cobertos ({knowledgeAnalysis.coveragePct}%)
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {knowledgeAnalysis.gaps.length === 0 ? (
+                      <div className="text-center py-6">
+                        <CheckCircle2 className="w-10 h-10 text-success/40 mx-auto mb-2" />
+                        <p className="text-sm text-muted-foreground">Todos os temas frequentes estão cobertos! 🎉</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {knowledgeAnalysis.gaps.map(gap => (
+                          <div key={gap.tag} className="flex items-center justify-between p-3 rounded-lg bg-warning/5 border border-warning/20">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <XCircle className="w-4 h-4 text-warning shrink-0" />
+                              <span className="text-sm font-medium truncate">{gap.tag}</span>
+                            </div>
+                            <Badge variant="secondary" className="text-xs shrink-0 ml-2">{gap.count} ocorrências</Badge>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Covered topics */}
+              {knowledgeAnalysis && knowledgeAnalysis.coveredTopics.length > 0 && (
+                <Card className="border-success/30">
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-success" />
+                      Temas Cobertos
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap gap-2">
+                      {knowledgeAnalysis.coveredTopics.map(topic => (
+                        <Badge key={topic.tag} className="bg-success/10 text-success border-success/20 text-xs gap-1">
+                          <CheckCircle2 className="w-3 h-3" />
+                          {topic.tag}
+                        </Badge>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Flow Improvement Suggestions */}
+              {knowledgeAnalysis && knowledgeAnalysis.suggestions.length > 0 && (
+                <Card className="border-primary/20 bg-primary/5">
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Zap className="w-4 h-4 text-primary" />
+                      Sugestões de Melhoria de Fluxo
+                    </CardTitle>
+                    <CardDescription>Ações concretas para melhorar o atendimento</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {knowledgeAnalysis.suggestions.map((suggestion, i) => (
+                        <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-background border">
+                          <Lightbulb className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                          <span className="text-sm text-muted-foreground">{suggestion}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
 
             <TabsContent value="ai-report">
               <Card>
@@ -745,11 +889,86 @@ function mergeMotivos(errorsByType?: { estabelecimento: ErrorTypeGroup; motoboy:
   return merged;
 }
 
+// Knowledge gap analysis
+function computeKnowledgeGaps(m: BrainMetrics, robots: RobotKnowledge[]) {
+  if (m.topTags.length === 0) return null;
+
+  // Build a combined knowledge text from all robots
+  const allKnowledgeText = robots
+    .map(r => {
+      const qaText = r.qaPairs.map((qa: any) => `${qa.question || ''} ${qa.answer || ''}`).join(' ');
+      return `${r.instructions} ${qaText}`.toLowerCase();
+    })
+    .join(' ');
+
+  const gaps: { tag: string; count: number }[] = [];
+  const coveredTopics: { tag: string; count: number }[] = [];
+
+  // Check top 10 tags for coverage
+  const tagsToCheck = m.topTags.slice(0, 10);
+
+  for (const [tag, count] of tagsToCheck) {
+    const keywords = tag.toLowerCase().split(/[\s\-–—/\\,]+/).filter(w => w.length > 2);
+    const isCovered = keywords.some(kw => allKnowledgeText.includes(kw));
+
+    if (isCovered) {
+      coveredTopics.push({ tag, count });
+    } else {
+      gaps.push({ tag, count });
+    }
+  }
+
+  const total = tagsToCheck.length;
+  const covered = coveredTopics.length;
+  const coveragePct = total > 0 ? Math.round((covered / total) * 100) : 100;
+
+  // Generate suggestions
+  const suggestions: string[] = [];
+
+  for (const gap of gaps.slice(0, 3)) {
+    const pct = m.totalConversas > 0 ? Math.round((gap.count / m.totalConversas) * 100) : 0;
+    suggestions.push(
+      `Criar Q&A sobre "${gap.tag}" — aparece em ${pct}% das conversas mas não está na base de conhecimento dos robôs.`
+    );
+  }
+
+  // Check if any robot has very few Q&A
+  const activeRobots = robots.filter(r => r.status === 'active');
+  for (const robot of activeRobots) {
+    if (robot.qaPairs.length < 3 && robot.referenceLinks.length < 2) {
+      suggestions.push(
+        `O robô "${robot.name}" tem apenas ${robot.qaPairs.length} Q&A e ${robot.referenceLinks.length} referências — considere enriquecer a base de conhecimento.`
+      );
+    }
+    if (robot.instructions.length < 100) {
+      suggestions.push(
+        `O robô "${robot.name}" tem instruções muito curtas (${robot.instructions.split(/\s+/).length} palavras) — instruções mais detalhadas melhoram a qualidade das respostas.`
+      );
+    }
+  }
+
+  // AI resolution suggestion
+  const total2 = m.aiResolved + m.humanResolved;
+  if (total2 > 10 && m.aiResolved / total2 < 0.3) {
+    suggestions.push(
+      `Apenas ${Math.round((m.aiResolved / total2) * 100)}% das conversas são resolvidas por IA — revisar as instruções e Q&A dos robôs pode aumentar essa taxa.`
+    );
+  }
+
+  // Check for high TME suggesting flow issues
+  if (m.tme > 10) {
+    suggestions.push(
+      `O TME está em ${Math.round(m.tme)} minutos — considere ativar mais robôs ou ajustar os horários de operação para reduzir o tempo de espera.`
+    );
+  }
+
+  return { gaps, coveredTopics, total, covered, coveragePct, suggestions };
+}
+
 // Compute learnings from metrics client-side
 function computeLearnings(m: BrainMetrics): string[] {
   const insights: string[] = [];
 
-  // Volume trend
   if (m.prevTotalConversas > 0) {
     const volDiff = ((m.totalConversas - m.prevTotalConversas) / m.prevTotalConversas) * 100;
     if (Math.abs(volDiff) > 10) {
@@ -761,7 +980,6 @@ function computeLearnings(m: BrainMetrics): string[] {
     }
   }
 
-  // TMA alert
   if (m.prevTma > 0) {
     const tmaDiff = ((m.tma - m.prevTma) / m.prevTma) * 100;
     if (tmaDiff > 15) {
@@ -771,7 +989,6 @@ function computeLearnings(m: BrainMetrics): string[] {
     }
   }
 
-  // TME alert
   if (m.prevTme > 0) {
     const tmeDiff = ((m.tme - m.prevTme) / m.prevTme) * 100;
     if (tmeDiff > 20) {
@@ -779,7 +996,6 @@ function computeLearnings(m: BrainMetrics): string[] {
     }
   }
 
-  // AI resolution rate
   const total = m.aiResolved + m.humanResolved;
   if (total > 0) {
     const aiPct = Math.round((m.aiResolved / total) * 100);
@@ -790,7 +1006,6 @@ function computeLearnings(m: BrainMetrics): string[] {
     }
   }
 
-  // Top tag dominance
   if (m.topTags.length > 0) {
     const topTag = m.topTags[0];
     if (m.totalConversas > 0 && topTag[1] / m.totalConversas > 0.3) {
@@ -798,7 +1013,6 @@ function computeLearnings(m: BrainMetrics): string[] {
     }
   }
 
-  // Agent with highest TMA
   if (m.agentStats.length > 2) {
     const sorted = [...m.agentStats].sort((a, b) => b.avgTime - a.avgTime);
     const slowest = sorted[0];
@@ -808,7 +1022,6 @@ function computeLearnings(m: BrainMetrics): string[] {
     }
   }
 
-  // Overloaded agent (>30% volume)
   if (m.agentStats.length > 2 && m.totalConversas > 10) {
     const overloaded = m.agentStats.find(a => a.count / m.totalConversas > 0.3);
     if (overloaded) {
@@ -816,7 +1029,6 @@ function computeLearnings(m: BrainMetrics): string[] {
     }
   }
 
-  // Best improvement in TMA
   if (m.agentStats.length > 1) {
     const improved = m.agentStats
       .filter(a => a.prevAvgTime > 0 && a.count > 3)
@@ -827,7 +1039,6 @@ function computeLearnings(m: BrainMetrics): string[] {
     }
   }
 
-  // Agent with TME much above average
   if (m.agentStats.length > 2) {
     const avgWait = m.agentStats.reduce((s, a) => s + a.avgWaitTime, 0) / m.agentStats.length;
     const slowWait = m.agentStats.find(a => a.avgWaitTime > avgWait * 2 && a.count > 3);
@@ -836,7 +1047,6 @@ function computeLearnings(m: BrainMetrics): string[] {
     }
   }
 
-  // Error count
   if (m.errorLogs.length > 5) {
     insights.push(`🔴 ${m.errorLogs.length} conversas problemáticas detectadas no período — confira a aba "Erros & Gaps".`);
   }
