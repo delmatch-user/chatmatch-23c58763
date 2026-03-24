@@ -63,6 +63,7 @@ const AdminBrain = () => {
   const [metrics, setMetrics] = useState<BrainMetrics | null>(null);
   const [aiAnalysis, setAiAnalysis] = useState<string>('');
   const [activeTab, setActiveTab] = useState('overview');
+  const [errorsSubTab, setErrorsSubTab] = useState('todos');
   const [loadingMetrics, setLoadingMetrics] = useState(false);
   const [loadingReport, setLoadingReport] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
