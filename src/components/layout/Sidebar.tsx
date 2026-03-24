@@ -104,9 +104,12 @@ const getNavItems = (queueCount: number, activeConversationsCount: number, inter
 const adminNavItems: NavItem[] = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/admin' },
   { icon: MessageSquare, label: 'Conversas', path: '/admin/conversas' },
-  { icon: Users, label: 'Usuários', path: '/admin/usuarios' },
-  { icon: Building2, label: 'Departamentos', path: '/admin/departamentos' },
-  { icon: Bot, label: 'Robôs', path: '/admin/robos' },
+  { icon: Building2, label: 'Organização', path: '/admin/usuarios', children: [
+    { icon: Users, label: 'Usuários', path: '/admin/usuarios' },
+    { icon: Building2, label: 'Departamentos', path: '/admin/departamentos' },
+    { icon: Bot, label: 'Robôs', path: '/admin/robos' },
+    { icon: Trophy, label: 'Config. Ranking', path: '/admin/ranking-config' },
+  ]},
   { icon: Share, label: 'Integrações', path: '/admin/ias', children: [
     { icon: Sparkles, label: 'IAs', path: '/admin/ias' },
     { icon: Smartphone, label: 'WhatsApp', path: '/admin/whatsapp' },
@@ -116,7 +119,6 @@ const adminNavItems: NavItem[] = [
     { icon: Trash2, label: 'Exclusões', path: '/admin/exclusoes' },
     { icon: HardDrive, label: 'Armazenamento', path: '/admin/armazenamento' },
   ]},
-  { icon: Trophy, label: 'Config. Ranking', path: '/admin/ranking-config' },
   { icon: Brain, label: 'Cérebro', path: '/admin/cerebro' },
   { icon: Settings, label: 'Configurações', path: '#settings', isSettings: true },
 ];
