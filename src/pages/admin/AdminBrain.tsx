@@ -368,6 +368,10 @@ const AdminBrain = () => {
     return () => { supabase.removeChannel(channel); };
   }, [fetchMetrics]);
 
+  useEffect(() => {
+    loadReportHistory();
+  }, []);
+
   const getTrend = (current: number, previous: number, inverted = false) => {
     if (previous === 0) return null;
     const diff = ((current - previous) / previous) * 100;
