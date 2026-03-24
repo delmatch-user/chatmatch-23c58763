@@ -460,7 +460,7 @@ ${agentList || '- Sem dados'}
 > ⚠️ Este relatório foi gerado automaticamente sem análise de IA. Configure um provedor de IA para relatórios mais detalhados.`;
     }
 
-    return new Response(JSON.stringify({ metrics, aiAnalysis, providerUsed, fallbackUsed }), {
+    return new Response(JSON.stringify({ metrics, aiAnalysis, providerUsed, fallbackUsed, fallbackError }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
