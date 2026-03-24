@@ -304,7 +304,6 @@ Seja direta, objetiva e use dados para embasar cada ponto. Responda em portuguê
         console.error("[brain-analysis] GPT-5.2 error:", e);
       }
     }
-    }
 
     // 2. Fallback: Lovable AI with Gemini Flash
     if (!aiAnalysis && LOVABLE_API_KEY) {
