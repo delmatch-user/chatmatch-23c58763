@@ -17,7 +17,7 @@ import { useApp } from '@/contexts/AppContext';
 import { format, startOfDay, endOfDay, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
-import { getTagColorClasses, SUPORTE_TAXONOMY_TAGS } from '@/lib/tagColors';
+import { getTagColorClasses, normalizeTag, SUPORTE_TAXONOMY_TAGS } from '@/lib/tagColors';
 import { extractCidade } from '@/lib/phoneUtils';
 import { cn, priorityLabel } from '@/lib/utils';
 

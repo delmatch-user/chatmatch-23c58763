@@ -62,17 +62,7 @@ interface BrainMetrics {
   };
 }
 
-const TAG_NORMALIZATION: Record<string, string> = {
-  'ACIDENTE_URGENTE': 'Acidente - Urgente',
-  'FINANCEIRO_NORMAL': 'Financeiro - Normal',
-  'DUVIDA_GERAL': 'Duvida - Geral',
-  'COMERCIAL_B2B': 'Comercial - B2B',
-};
-
-const normalizeTag = (tag: string): string => {
-  const clean = tag.replace(/^[🔴🟡🟢🔵⚪◆◇●○■□▪▫✦✧⬥⬦♦️◈]\s*/, '').trim();
-  return TAG_NORMALIZATION[clean] || clean;
-};
+// normalizeTag is imported from tagColors.ts
 
 const normalizeTopTags = (tags: [string, number][]): [string, number][] => {
   const merged: Record<string, number> = {};
