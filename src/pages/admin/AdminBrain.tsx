@@ -28,6 +28,8 @@ interface AgentStat {
   avgTime: number;
   avgWaitTime: number;
   topTags: [string, number][];
+  channels?: Record<string, number>;
+  resolutionRate?: number;
   prevCount: number;
   prevAvgTime: number;
 }
