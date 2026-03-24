@@ -1,81 +1,157 @@
 
-Objetivo: corrigir os 3 fluxos que você confirmou com falha (Teste de conexão Claude, Relatório da Delma, Robô Delma Cérebro) e deixar o sistema resiliente mesmo quando um provedor estiver sem crédito/indisponível.
 
-Diagnóstico confirmado
-- Do I know what the issue is? Sim.
-- Relatório Delma: logs da função `brain-analysis` mostram `AI gateway error: 402`, então a análise falha por crédito/limite do provedor atual.
-- Teste de conexão Claude: hoje o teste usa geração em `/v1/messages`; isso falha por billing/model access e vira “conexão falhou”, mesmo quando a chave pode estar válida.
-- Robôs Delma Cérebro: fluxo Claude está frágil para erros não-429 e para payload multimodal; sem fallback robusto, a conversa quebra em vez de continuar com outro provedor/modelo.
+# Plano: Evolução do Módulo Cérebro da Delma
 
-Plano de correção (implementação)
+O arquivo `AdminBrain.tsx` atualmente tem ~1440 linhas e este pedido adiciona dezenas de funcionalidades novas em todas as 5 abas + Top Tags. Para manter qualidade e não quebrar lógica existente, o trabalho será dividido em **3 fases** implementadas sequencialmente.
 
-1) Corrigir base de modelos do provider Anthropic (DB migration)
-- Criar migration para atualizar `public.ai_providers` (provider `anthropic`) com modelo correto:
-  - `claude-sonnet-4-20250514`
-  - `claude-3-5-haiku-20241022` (corrigindo o id inválido salvo hoje)
-- Garantir `default_model` consistente e `updated_at = now()`.
+---
 
-2) Tornar “Testar Conexão” confiável em `manage-ai-keys`
-- Arquivo: `supabase/functions/manage-ai-keys/index.ts`
-- Para `provider === 'anthropic'`:
-  - Trocar teste principal para `GET https://api.anthropic.com/v1/models` (valida chave sem depender de consumo de tokens).
-  - Validar se o modelo default esperado existe na lista e retornar status claro:
-    - sucesso total (chave válida + modelo disponível),
-    - sucesso parcial (chave válida, mas sem acesso ao modelo default),
-    - falha real (401/403).
-  - Padronizar retorno `{ success, message, statusCode, details }` com mensagens detalhadas para a UI.
-- Manter logs técnicos no backend para diagnóstico rápido.
+## Fase 1 — Dashboard + Infraestrutura
 
-3) Blindar `robot-chat` (Delma Cérebro) com fallback real
-- Arquivo: `supabase/functions/robot-chat/index.ts`
-- Melhorias:
-  - Ajustar adaptação para Anthropic com normalização segura de conteúdo (texto/imagem) para não quebrar quando houver conteúdo não-string.
-  - Tratar falhas não-429 (400/401/402/403/404/5xx) com fallback em cadeia:
-    1) Claude Sonnet (primário),
-    2) Claude Haiku (fallback de modelo),
-    3) Lovable AI (modelo estável),
-    4) Gemini/OpenAI conforme chaves disponíveis.
-  - Preservar tool-calls e formato de resposta para não quebrar transferências/finalização.
-  - Melhorar mensagens de erro retornadas ao cliente (`provider`, `status`, `reason`).
+### 1.1 Seletor de período expandido
+- Adicionar opções "hoje", "ontem", "personalizado" ao seletor existente (mantendo 7/15/30 dias)
+- Para "personalizado", exibir date range picker com Popover + Calendar
+- O período filtra todos os KPIs (já funciona assim via `period` state)
 
-4) Blindar `sdr-robot-chat` com a mesma estratégia
-- Arquivo: `supabase/functions/sdr-robot-chat/index.ts`
-- Aplicar o mesmo pacote de robustez:
-  - normalização de payload Anthropic,
-  - fallback de modelo/provedor,
-  - tratamento uniforme de erro + logs detalhados,
-  - garantir continuidade do fluxo SDR sem travar conversa.
+### 1.2 Novos KPIs: Taxa de Abandono e CSAT
+- **Taxa de Abandono**: calcular no `brain-analysis` edge function — conversas com status `em_fila` que foram finalizadas sem `assigned_to` (sem atendimento humano ou IA)
+- **CSAT**: como não existe tabela de avaliações, criar um KPI placeholder que mostra "Sem dados" até que avaliações sejam implementadas, ou buscar de `app_settings` se houver
+- Adicionar 2 novos KPICards na grid
 
-5) Fazer o Relatório da Delma funcionar sempre
-- Arquivo: `supabase/functions/brain-analysis/index.ts`
-- Alterar geração de relatório para:
-  - Primário: Anthropic (Delma Cérebro),
-  - Fallback: Lovable AI,
-  - Fallback final: relatório determinístico (sem IA) usando as métricas já calculadas.
-- Resultado: sempre retorna conteúdo de relatório útil (nunca tela “não foi possível…”).
-- Incluir metadados no retorno (`providerUsed`, `fallbackUsed`, `warning`) para transparência na UI.
+### 1.3 Gráfico de tendência TMA/TME
+- Adicionar `LineChart` (Recharts) com dados diários de TMA e TME ao longo do período
+- Requer que o backend retorne `dailyTrends: { date, tma, tme }[]` — atualizar `brain-analysis`
 
-6) Ajuste fino da UI do Cérebro para feedback correto
-- Arquivo: `src/pages/admin/AdminBrain.tsx`
-- Exibir aviso contextual quando relatório veio por fallback (sem parecer erro fatal).
-- Mensagens de toast mais claras (ex.: “Gerado com fallback Claude Haiku” / “Gerado em modo automático sem IA”).
+### 1.4 Donut chart para Canais
+- Substituir badges por `PieChart` (Recharts) com `innerRadius` para efeito donut
+- Legenda com percentuais
 
-Validação (fim-a-fim)
-1. Admin > Integrações de IA:
-- Testar conexão Claude deve retornar status explicativo correto.
-2. Admin > Cérebro > Relatório IA:
-- Gerar relatório deve sempre produzir conteúdo (Claude, fallback, ou automático).
-3. Robô com inteligência “Delma Cérebro 🧠”:
-- Testar conversa real (incluindo caso com transferência/tool-call) sem quebra.
-4. SDR com “Delma Cérebro”:
-- Validar avanço de etapa + transferência sem erro de provedor.
-5. Conferir logs:
-- erros com status e causa claros; sem falha silenciosa.
+### 1.5 Sparkline para Prioridades Urgentes
+- Mini `LineChart` sem eixos mostrando evolução diária das urgentes (7 dias)
+- Requer dados diários do backend
 
-Arquivos que serão alterados
-- `supabase/migrations/*` (nova migration de ajuste de `ai_providers`)
-- `supabase/functions/manage-ai-keys/index.ts`
-- `supabase/functions/robot-chat/index.ts`
-- `supabase/functions/sdr-robot-chat/index.ts`
-- `supabase/functions/brain-analysis/index.ts`
-- `src/pages/admin/AdminBrain.tsx`
+### 1.6 Indicador de status do sistema
+- Badge no topo: "Online" (verde), "Degradado" (amarelo se fallback), "Offline" (vermelho se erro)
+- Mostrar timestamp da última sincronização (já existe `lastUpdated`)
+
+---
+
+## Fase 2 — Conhecimento + Erros & Gaps + Top Tags
+
+### 2.1 Gauge animado para Score de Maturidade
+- Implementar gauge com SVG semicircular com faixas vermelho/amarelo/verde
+- Animação CSS de preenchimento
+
+### 2.2 Histórico do score (30 dias)
+- Salvar score diário em `app_settings` (key: `brain_maturity_history`)
+- Exibir `LineChart` com últimos 30 pontos
+
+### 2.3 Tendência por tema + Volume
+- Adicionar coluna "Volume" e indicador de tendência (seta verde/amarela/vermelha) comparando com período anterior
+- Requer `prevTopTags` do backend
+
+### 2.4 Checklist interativo de próximos passos
+- Permitir marcar como concluído via state local (sem persistência no banco inicialmente)
+
+### 2.5 Botão "Treinar Tema" com modal
+- Dialog para registrar ação de treinamento (textarea + botão salvar)
+- Salvar em `app_settings` com key `brain_training_log`
+
+### 2.6 Filtros na aba Erros
+- Adicionar seletor de período e filtro por categoria no topo (já tem sub-tabs parciais)
+
+### 2.7 Cards expansíveis para resumos
+- Transformar resumos em `Collapsible` cards com motivo, volume, prioridade e link para conversas
+
+### 2.8 Top 10 barras horizontais para erros
+- Já existe parcialmente — melhorar para top 10 com cores
+
+### 2.9 Reincidência e Mapa de Calor
+- Badge "Reincidente" para motivos presentes em múltiplos períodos
+- Mapa de calor por hora usando grid com opacidade variável
+
+### 2.10 Top Tags evoluído
+- Gráfico de barras horizontal interativo com tooltip de exemplos
+- Filtros por canal e período
+- Variação percentual vs período anterior
+- Badge "Novo" para tags emergentes
+- Botão "Agrupar similares" (toggle)
+
+---
+
+## Fase 3 — Atendentes + Relatório IA
+
+### 3.1 Ranking visual (pódio)
+- Top 3 agentes com ícones de medalha (ouro/prata/bronze) no topo da aba
+
+### 3.2 Barras empilhadas por canal
+- Mini `BarChart` em cada card de agente mostrando WhatsApp/Instagram/Machine
+- Requer `channelBreakdown` por agente do backend
+
+### 3.3 Taxa de Resolução individual
+- % de conversas resolvidas sem transferência — calcular no backend
+
+### 3.4 Status ao vivo dos agentes
+- Buscar `profiles.status` em tempo real + contar `conversations` abertas por agente
+
+### 3.5 Painel lateral de histórico
+- Sheet lateral ao clicar no agente com desempenho dos últimos 30 dias
+
+### 3.6 Alerta visual TMA acima da média
+- Já existe parcialmente (badge vermelho/amarelo/verde) — adicionar ícone de alerta pulsante
+
+### 3.7 Histórico de relatórios
+- Salvar relatórios gerados em nova tabela `brain_reports` (id, created_at, period, provider, content, context)
+- Listar com data, modelo e botão para reabrir
+
+### 3.8 Exportar PDF
+- Usar `html2pdf.js` (já presente no projeto) para exportar relatório com branding Delma
+
+### 3.9 Agendamento automático
+- Reutilizar padrão de `report_schedule` — criar config para relatório do Cérebro
+
+### 3.10 Comparativo de períodos no relatório
+- Já existe no prompt da IA — tornar mais visual no frontend com tabela comparativa
+
+### 3.11 Detalhamento de fallback
+- Capturar e exibir status code + motivo do erro do provider principal
+
+### 3.12 Campo de contexto adicional
+- Textarea antes de gerar relatório para observações manuais
+- Enviar como parte do prompt para a IA
+
+---
+
+## Alterações técnicas
+
+### Backend (`brain-analysis` edge function)
+- Adicionar `dailyTrends` (TMA/TME por dia) ao response
+- Adicionar `prevTopTags` para comparação de tags
+- Adicionar `abandonRate` (taxa de abandono)
+- Adicionar `agentChannelBreakdown` por agente
+- Adicionar `agentResolutionRate` (sem transferência)
+
+### Nova tabela: `brain_reports`
+- Migration para criar tabela com RLS para admin/supervisor
+
+### Frontend: componentização
+- Extrair sub-componentes para cada aba (BrainDashboardTab, BrainKnowledgeTab, etc.) para manter o arquivo principal gerenciável
+
+### Preservação garantida
+- Polling de 30s: mantido sem alteração
+- Cadeia de resiliência IA: GPT-5.2 → Gemini Flash → Automático — intocada
+- Filtro de perfis admin (Fábio/Arthur): preservado em `filterMetrics`
+- Normalização de tags: `normalizeTag` e `normalizeTopTags` inalterados
+- Realtime subscription: mantida
+
+---
+
+## Ordem de implementação sugerida
+
+Dado o volume, recomendo implementar em **3 mensagens** separadas:
+1. **Fase 1** — Dashboard (seletor, KPIs, gráficos, status)
+2. **Fase 2** — Conhecimento + Erros + Top Tags
+3. **Fase 3** — Atendentes + Relatório IA
+
+Cada fase será funcional independentemente. Posso começar pela Fase 1?
+
