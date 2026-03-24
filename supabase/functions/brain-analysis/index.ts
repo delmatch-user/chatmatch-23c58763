@@ -97,6 +97,42 @@ serve(async (req) => {
     const priorityCounts: Record<string, number> = {};
     logs.forEach(l => { priorityCounts[l.priority] = (priorityCounts[l.priority] || 0) + 1; });
 
+    // === NEW: Daily Trends (TMA/TME per day) ===
+    const dailyBuckets: Record<string, { tmaSum: number; tmaCount: number; tmeSum: number; tmeCount: number; urgentCount: number }> = {};
+    logs.forEach(l => {
+      const day = (l.finalized_at || '').substring(0, 10); // YYYY-MM-DD
+      if (!day) return;
+      if (!dailyBuckets[day]) dailyBuckets[day] = { tmaSum: 0, tmaCount: 0, tmeSum: 0, tmeCount: 0, urgentCount: 0 };
+      if (l.started_at && l.finalized_at) {
+        const dur = (new Date(l.finalized_at).getTime() - new Date(l.started_at).getTime()) / 60000;
+        dailyBuckets[day].tmaSum += dur;
+        dailyBuckets[day].tmaCount++;
+      }
+      if (l.wait_time != null) {
+        dailyBuckets[day].tmeSum += l.wait_time / 60;
+        dailyBuckets[day].tmeCount++;
+      }
+      if (l.priority === 'urgent') {
+        dailyBuckets[day].urgentCount++;
+      }
+    });
+    const dailyTrends = Object.entries(dailyBuckets)
+      .map(([date, b]) => ({
+        date,
+        tma: b.tmaCount > 0 ? Math.round((b.tmaSum / b.tmaCount) * 10) / 10 : 0,
+        tme: b.tmeCount > 0 ? Math.round((b.tmeSum / b.tmeCount) * 10) / 10 : 0,
+        urgent: b.urgentCount,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    // === NEW: Abandon Rate ===
+    // Conversations that were finalized without being assigned to anyone (no human, no robot)
+    const abandonedCount = logs.filter(l =>
+      (!l.assigned_to_name || l.assigned_to_name === '') &&
+      (!l.assigned_to || l.assigned_to === null)
+    ).length;
+    const abandonRate = totalConversas > 0 ? Math.round((abandonedCount / totalConversas) * 1000) / 10 : 0;
+
     // Agent performance (enriched)
     const agentStats: Record<string, { count: number; totalTime: number; totalWait: number; waitCount: number; tags: Record<string, number> }> = {};
     logs.filter(l => l.assigned_to_name).forEach(l => {
@@ -152,21 +188,15 @@ serve(async (req) => {
     // Classify errors by type analyzing tags → contact_notes → messages
     const classifyType = (log: any): string => {
       const tags = log.tags || [];
-      // 1. Check tags
       if (tags.some((t: string) => t === 'Estabelecimento')) return 'estabelecimento';
       if (tags.some((t: string) => t === 'Motoboy')) return 'motoboy';
-
-      // 2. Check contact_notes
       const notes = (log.contact_notes || '').toLowerCase();
       if (ESTAB_KEYWORDS.some(k => notes.includes(k))) return 'estabelecimento';
       if (MOTOBOY_KEYWORDS.some(k => notes.includes(k))) return 'motoboy';
-
-      // 3. Check first messages content
       const msgs = Array.isArray(log.messages) ? log.messages.slice(0, 10) : [];
       const msgText = msgs.map((m: any) => ((m.content || m.text || '') as string).toLowerCase()).join(' ');
       if (ESTAB_KEYWORDS.some(k => msgText.includes(k))) return 'estabelecimento';
       if (MOTOBOY_KEYWORDS.some(k => msgText.includes(k))) return 'motoboy';
-
       return 'outros';
     };
 
@@ -205,6 +235,9 @@ serve(async (req) => {
       topTags,
       channelCounts,
       priorityCounts,
+      dailyTrends,
+      abandonRate,
+      abandonedCount,
       agentStats: Object.entries(agentStats).map(([name, stats]) => {
         const prevS = prevAgentStats[name];
         const topTags = Object.entries(stats.tags).sort((a, b) => b[1] - a[1]).slice(0, 3);
@@ -260,6 +293,7 @@ Situações que precisam de atenção imediata.
 - Total de conversas: ${totalConversas} (anterior: ${prevTotalConversas})
 - TMA: ${metrics.tma} min (anterior: ${metrics.prevTma} min)
 - TME: ${metrics.tme} min (anterior: ${metrics.prevTme} min)
+- Taxa de Abandono: ${metrics.abandonRate}% (${metrics.abandonedCount} conversas)
 - Resolvidas por IA: ${aiResolved} | Por humano: ${humanResolved}
 - Top tags: ${topTags.map(([t, c]: [string, number]) => t + " (" + c + ")").join(', ')}
 - Canais: ${Object.entries(channelCounts).map(([c, n]) => c + ": " + n).join(', ')}
@@ -355,6 +389,7 @@ Seja direta, objetiva e use dados para embasar cada ponto. Responda em portuguê
 | Total | ${totalConversas} | ${prevTotalConversas} | ${totalConversas > prevTotalConversas ? '⬆️' : '⬇️'} |
 | TMA | ${metrics.tma} min | ${metrics.prevTma} min | ${tmaDir} |
 | TME | ${metrics.tme} min | ${metrics.prevTme} min | ${tmeDir} |
+| Abandono | ${metrics.abandonRate}% | - | ${metrics.abandonRate > 10 ? '⚠️' : '✅'} |
 
 ## Resolução
 - IA: ${aiResolved} (${totalConversas > 0 ? Math.round((aiResolved / totalConversas) * 100) : 0}%)
