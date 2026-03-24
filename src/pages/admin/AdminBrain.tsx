@@ -1,16 +1,20 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Brain, TrendingUp, TrendingDown, Clock, Users, Bot, AlertTriangle, Sparkles, RefreshCw, MessageSquare, Lightbulb, Activity, Store, Bike, BookOpen, Link2, FileText, CheckCircle2, XCircle, Zap, BarChart3, Target, ShieldAlert, Gauge, ArrowUpRight, ArrowDownRight, Minus, GraduationCap, Trophy, AlertCircle, Rocket, CheckSquare, CircleDot } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { Brain, TrendingUp, TrendingDown, Clock, Users, Bot, AlertTriangle, Sparkles, RefreshCw, MessageSquare, Lightbulb, Activity, Store, Bike, BookOpen, Link2, FileText, CheckCircle2, XCircle, Zap, BarChart3, Target, ShieldAlert, Gauge, ArrowUpRight, ArrowDownRight, Minus, GraduationCap, Trophy, AlertCircle, Rocket, CheckSquare, CircleDot, UserX, Star, Wifi, WifiOff, CalendarDays } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line, PieChart, Pie, Legend } from 'recharts';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { cn, priorityLabel } from '@/lib/utils';
 import { normalizeTag } from '@/lib/tagColors';
+import { format, subDays, startOfDay, differenceInDays } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 interface AgentStat {
   name: string;
@@ -41,6 +45,13 @@ interface ErrorTypeGroup {
   logs: ErrorLog[];
 }
 
+interface DailyTrend {
+  date: string;
+  tma: number;
+  tme: number;
+  urgent: number;
+}
+
 interface BrainMetrics {
   period: number;
   totalConversas: number;
@@ -56,6 +67,9 @@ interface BrainMetrics {
   priorityCounts: Record<string, number>;
   agentStats: AgentStat[];
   errorLogs: ErrorLog[];
+  dailyTrends?: DailyTrend[];
+  abandonRate?: number;
+  abandonedCount?: number;
   errorsByType?: {
     estabelecimento: ErrorTypeGroup;
     motoboy: ErrorTypeGroup;
@@ -103,8 +117,16 @@ const filterMetrics = (raw: any): BrainMetrics => ({
   } : undefined,
 });
 
+// Channel colors for donut chart
+const CHANNEL_COLORS: Record<string, string> = {
+  whatsapp: 'hsl(142, 70%, 45%)',
+  instagram: 'hsl(330, 80%, 55%)',
+  machine: 'hsl(217, 91%, 60%)',
+};
+
 const AdminBrain = () => {
   const [period, setPeriod] = useState('7');
+  const [customDateRange, setCustomDateRange] = useState<{ from?: Date; to?: Date }>({});
   const [metrics, setMetrics] = useState<BrainMetrics | null>(null);
   const [aiAnalysis, setAiAnalysis] = useState<string>('');
   const [activeTab, setActiveTab] = useState('overview');
@@ -112,13 +134,25 @@ const AdminBrain = () => {
   const [loadingMetrics, setLoadingMetrics] = useState(false);
   const [loadingReport, setLoadingReport] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [fetchError, setFetchError] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const getEffectivePeriod = useCallback(() => {
+    if (period === 'custom' && customDateRange.from && customDateRange.to) {
+      return Math.max(1, differenceInDays(customDateRange.to, customDateRange.from) + 1);
+    }
+    if (period === 'today') return 1;
+    if (period === 'yesterday') return 1; // handled separately
+    return parseInt(period);
+  }, [period, customDateRange]);
 
   const fetchMetrics = useCallback(async (showToast = false) => {
     setLoadingMetrics(true);
+    setFetchError(false);
     try {
+      const effectivePeriod = getEffectivePeriod();
       const { data, error } = await supabase.functions.invoke('brain-analysis', {
-        body: { period: parseInt(period), metricsOnly: true },
+        body: { period: effectivePeriod, metricsOnly: true },
       });
       if (error) throw error;
       setMetrics(filterMetrics(data.metrics));
@@ -126,11 +160,12 @@ const AdminBrain = () => {
       if (showToast) toast.success('Métricas atualizadas!');
     } catch (e: any) {
       console.error(e);
+      setFetchError(true);
       if (showToast) toast.error('Erro ao carregar métricas');
     } finally {
       setLoadingMetrics(false);
     }
-  }, [period]);
+  }, [getEffectivePeriod]);
 
   const [reportProvider, setReportProvider] = useState<string>('');
   const [reportFallback, setReportFallback] = useState(false);
@@ -138,8 +173,9 @@ const AdminBrain = () => {
   const fetchReport = async () => {
     setLoadingReport(true);
     try {
+      const effectivePeriod = getEffectivePeriod();
       const { data, error } = await supabase.functions.invoke('brain-analysis', {
-        body: { period: parseInt(period) },
+        body: { period: effectivePeriod },
       });
       if (error) throw error;
       setMetrics(filterMetrics(data.metrics));
@@ -179,9 +215,6 @@ const AdminBrain = () => {
     return () => { supabase.removeChannel(channel); };
   }, [fetchMetrics]);
 
-
-
-
   const getTrend = (current: number, previous: number, inverted = false) => {
     if (previous === 0) return null;
     const diff = ((current - previous) / previous) * 100;
@@ -204,6 +237,28 @@ const AdminBrain = () => {
 
   const learnings = metrics ? computeLearnings(metrics) : [];
 
+  // System status
+  const systemStatus = fetchError ? 'offline' : (reportFallback ? 'degraded' : 'online');
+  const systemStatusConfig = {
+    online: { label: 'Online', color: 'bg-success', textColor: 'text-success', icon: Wifi },
+    degraded: { label: 'Degradado', color: 'bg-warning', textColor: 'text-warning', icon: WifiOff },
+    offline: { label: 'Offline', color: 'bg-destructive', textColor: 'text-destructive', icon: WifiOff },
+  };
+  const statusCfg = systemStatusConfig[systemStatus];
+
+  // Period label helper
+  const periodLabel = period === 'today' ? 'Hoje' : period === 'yesterday' ? 'Ontem' : period === 'custom' ? 'Personalizado' : `${period} dias`;
+
+  // Channel donut data
+  const channelDonutData = metrics ? Object.entries(metrics.channelCounts).map(([name, value]) => ({
+    name: name.charAt(0).toUpperCase() + name.slice(1),
+    value,
+    fill: CHANNEL_COLORS[name] || 'hsl(var(--primary))',
+  })) : [];
+
+  // Urgent sparkline data (last 7 entries from dailyTrends)
+  const urgentSparkData = metrics?.dailyTrends?.slice(-7).map(d => ({ date: d.date.substring(5), urgent: d.urgent })) || [];
+
   return (
     <MainLayout>
       <div className="flex-1 overflow-auto p-6 space-y-6">
@@ -212,32 +267,74 @@ const AdminBrain = () => {
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center shadow-lg relative">
               <Brain className="w-7 h-7 text-primary-foreground" />
-              <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-success rounded-full border-2 border-background animate-pulse" />
+              <span className={cn("absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background", statusCfg.color, systemStatus === 'online' && 'animate-pulse')} />
             </div>
             <div>
               <h1 className="text-2xl font-bold text-foreground">Delma</h1>
               <p className="text-sm text-muted-foreground flex items-center gap-1.5">
-                <Activity className="w-3 h-3 text-success" />
-                Online — Monitorando o suporte em tempo real
+                <statusCfg.icon className={cn("w-3 h-3", statusCfg.textColor)} />
+                {statusCfg.label} — Monitorando o suporte em tempo real
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            {lastUpdated && (
-              <span className="text-xs text-muted-foreground">
-                Atualizado: {lastUpdated.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-              </span>
-            )}
-            <Select value={period} onValueChange={setPeriod}>
-              <SelectTrigger className="w-[140px]">
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* System status badge */}
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-secondary/50 px-2.5 py-1.5 rounded-md">
+              <div className={cn("w-2 h-2 rounded-full", statusCfg.color)} />
+              <span>{statusCfg.label}</span>
+              {lastUpdated && (
+                <span className="ml-1 opacity-70">
+                  • {lastUpdated.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </span>
+              )}
+            </div>
+
+            <Select value={period} onValueChange={(val) => {
+              setPeriod(val);
+              if (val !== 'custom') setCustomDateRange({});
+            }}>
+              <SelectTrigger className="w-[160px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="today">Hoje</SelectItem>
+                <SelectItem value="yesterday">Ontem</SelectItem>
                 <SelectItem value="7">7 dias</SelectItem>
                 <SelectItem value="15">15 dias</SelectItem>
                 <SelectItem value="30">30 dias</SelectItem>
+                <SelectItem value="custom">Personalizado</SelectItem>
               </SelectContent>
             </Select>
+
+            {period === 'custom' && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-2">
+                    <CalendarDays className="w-4 h-4" />
+                    {customDateRange.from && customDateRange.to
+                      ? `${format(customDateRange.from, 'dd/MM')} - ${format(customDateRange.to, 'dd/MM')}`
+                      : 'Selecionar datas'}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="range"
+                    selected={customDateRange.from && customDateRange.to ? { from: customDateRange.from, to: customDateRange.to } : undefined}
+                    onSelect={(range: any) => {
+                      if (range?.from && range?.to) {
+                        setCustomDateRange({ from: range.from, to: range.to });
+                      } else if (range?.from) {
+                        setCustomDateRange({ from: range.from });
+                      }
+                    }}
+                    numberOfMonths={1}
+                    disabled={(date) => date > new Date()}
+                    className="p-3 pointer-events-auto"
+                  />
+                </PopoverContent>
+              </Popover>
+            )}
+
             <Button variant="outline" size="icon" onClick={() => fetchMetrics(true)} disabled={loadingMetrics}>
               <RefreshCw className={cn("w-4 h-4", loadingMetrics && "animate-spin")} />
             </Button>
@@ -264,7 +361,8 @@ const AdminBrain = () => {
 
             {/* Painel Tab */}
             <TabsContent value="overview" className="space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* KPI Row 1 - Main metrics */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
                 <KPICard title="Total Conversas" value={metrics.totalConversas} icon={MessageSquare} trend={getTrend(metrics.totalConversas, metrics.prevTotalConversas)} />
                 <KPICard title="TMA" value={formatTime(metrics.tma)} icon={Clock} trend={getTrend(metrics.tma, metrics.prevTma, true)} subtitle="Tempo médio de atendimento" />
                 <KPICard title="TME" value={formatTime(metrics.tme)} icon={Clock} trend={getTrend(metrics.tme, metrics.prevTme, true)} subtitle="Tempo médio de espera" />
@@ -274,7 +372,56 @@ const AdminBrain = () => {
                   icon={Bot}
                   subtitle={`${metrics.aiResolved} IA / ${metrics.humanResolved} humano`}
                 />
+                <KPICard
+                  title="Taxa de Abandono"
+                  value={metrics.abandonRate != null ? `${metrics.abandonRate}%` : 'N/A'}
+                  icon={UserX}
+                  subtitle={metrics.abandonedCount != null ? `${metrics.abandonedCount} abandonadas` : undefined}
+                />
+                <KPICard
+                  title="CSAT"
+                  value="—"
+                  icon={Star}
+                  subtitle="Sem dados de avaliação"
+                />
               </div>
+
+              {/* TMA/TME Trend Chart */}
+              {metrics.dailyTrends && metrics.dailyTrends.length > 1 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Activity className="w-4 h-4" />
+                      Tendência TMA / TME
+                    </CardTitle>
+                    <CardDescription>Evolução diária no período ({periodLabel})</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-[250px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={metrics.dailyTrends} margin={{ left: 0, right: 10, top: 5, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
+                          <XAxis
+                            dataKey="date"
+                            className="text-xs"
+                            tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                            tickFormatter={(val) => val.substring(5)} // MM-DD
+                          />
+                          <YAxis className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} unit="min" />
+                          <Tooltip
+                            contentStyle={{ background: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }}
+                            labelStyle={{ color: 'hsl(var(--foreground))' }}
+                            formatter={(value: number, name: string) => [`${value} min`, name === 'tma' ? 'TMA' : 'TME']}
+                            labelFormatter={(label) => `Dia ${label}`}
+                          />
+                          <Line type="monotone" dataKey="tma" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 3 }} name="TMA" />
+                          <Line type="monotone" dataKey="tme" stroke="hsl(var(--destructive))" strokeWidth={2} dot={{ r: 3 }} name="TME" />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {learnings.length > 0 && (
                 <Card className="border-primary/20 bg-primary/5">
@@ -355,24 +502,69 @@ const AdminBrain = () => {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Channel Donut Chart */}
                 <Card>
                   <CardHeader><CardTitle className="text-base">Por Canal</CardTitle></CardHeader>
                   <CardContent>
-                    <div className="flex flex-wrap gap-2">
-                      {Object.entries(metrics.channelCounts).map(([channel, count]) => (
-                        <Badge key={channel} variant="secondary" className="text-sm">{channel}: {count}</Badge>
-                      ))}
-                    </div>
+                    {channelDonutData.length > 0 ? (
+                      <div className="h-[220px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={channelDonutData}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={55}
+                              outerRadius={80}
+                              dataKey="value"
+                              label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                              labelLine={false}
+                            >
+                              {channelDonutData.map((entry, idx) => (
+                                <Cell key={idx} fill={entry.fill} />
+                              ))}
+                            </Pie>
+                            <Tooltip
+                              contentStyle={{ background: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }}
+                              formatter={(value: number, name: string) => [value, name]}
+                            />
+                            <Legend />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground text-center py-6">Sem dados de canal.</p>
+                    )}
                   </CardContent>
                 </Card>
+
+                {/* Priority with Sparkline */}
                 <Card>
                   <CardHeader><CardTitle className="text-base">Por Prioridade</CardTitle></CardHeader>
-                  <CardContent>
+                  <CardContent className="space-y-4">
                     <div className="flex flex-wrap gap-2">
                       {Object.entries(metrics.priorityCounts).map(([priority, count]) => (
                         <Badge key={priority} className={cn("text-sm", priorityColors[priority] || 'bg-muted text-muted-foreground')}>{priorityLabel(priority)}: {count}</Badge>
                       ))}
                     </div>
+                    {/* Urgent sparkline */}
+                    {urgentSparkData.length > 1 && (
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-2">Urgentes (últimos 7 dias)</p>
+                        <div className="h-[60px]">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={urgentSparkData}>
+                              <Line type="monotone" dataKey="urgent" stroke="hsl(var(--destructive))" strokeWidth={2} dot={false} />
+                              <Tooltip
+                                contentStyle={{ background: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', borderRadius: '6px', fontSize: '12px' }}
+                                formatter={(v: number) => [v, 'Urgentes']}
+                                labelFormatter={(l) => l}
+                              />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>
@@ -1093,212 +1285,6 @@ function computeKnowledgeData(m: BrainMetrics): KnowledgeData {
   return { masteredCount, improvementPct, gapCount, maturityScore, masteredTopics, improvements, gaps, nextSteps };
 }
 
-
-interface ManagerialInsight {
-  category: 'volume' | 'performance' | 'automation' | 'alert' | 'team';
-  icon: React.ElementType;
-  text: string;
-  severity: 'info' | 'warning' | 'critical';
-}
-
-function computeManagerialInsights(m: BrainMetrics): ManagerialInsight[] {
-  const insights: ManagerialInsight[] = [];
-
-  if (m.prevTotalConversas > 0) {
-    const volDiff = ((m.totalConversas - m.prevTotalConversas) / m.prevTotalConversas) * 100;
-    if (Math.abs(volDiff) > 10) {
-      insights.push({
-        category: 'volume',
-        icon: volDiff > 0 ? TrendingUp : TrendingDown,
-        text: volDiff > 0
-          ? `Volume aumentou ${Math.round(volDiff)}% comparado ao período anterior — ${m.totalConversas} conversas no período.`
-          : `Volume caiu ${Math.round(Math.abs(volDiff))}% comparado ao período anterior — demanda menor pode ser oportunidade de treinamento.`,
-        severity: volDiff > 30 ? 'warning' : 'info',
-      });
-    }
-  }
-
-  if (m.prevTma > 0) {
-    const tmaDiff = ((m.tma - m.prevTma) / m.prevTma) * 100;
-    if (tmaDiff > 15) {
-      insights.push({ category: 'performance', icon: Clock, text: `TMA subiu ${Math.round(tmaDiff)}% — atendimentos estão demorando mais. Possíveis causas: tickets mais complexos ou falta de base de conhecimento.`, severity: 'warning' });
-    } else if (tmaDiff < -15) {
-      insights.push({ category: 'performance', icon: CheckCircle2, text: `TMA caiu ${Math.round(Math.abs(tmaDiff))}% — atendimentos estão mais rápidos! Equipe evoluindo.`, severity: 'info' });
-    }
-  }
-
-  if (m.prevTme > 0) {
-    const tmeDiff = ((m.tme - m.prevTme) / m.prevTme) * 100;
-    if (tmeDiff > 20) {
-      insights.push({ category: 'alert', icon: AlertTriangle, text: `Tempo de espera subiu ${Math.round(tmeDiff)}% — clientes estão aguardando mais na fila. Avaliar escala ou automação.`, severity: 'critical' });
-    }
-  }
-
-  const total = m.aiResolved + m.humanResolved;
-  if (total > 0) {
-    const aiPct = Math.round((m.aiResolved / total) * 100);
-    if (aiPct > 60) {
-      insights.push({ category: 'automation', icon: Bot, text: `IA resolvendo ${aiPct}% das conversas — boa taxa de automação! Monitorar qualidade das respostas automáticas.`, severity: 'info' });
-    } else if (aiPct < 20 && total > 10) {
-      insights.push({ category: 'automation', icon: Bot, text: `Apenas ${aiPct}% resolvido por IA — oportunidade de melhorar automação revisando instruções e Q&A dos robôs.`, severity: 'warning' });
-    }
-  }
-
-  if (m.topTags.length > 0) {
-    const topTag = m.topTags[0];
-    if (m.totalConversas > 0 && topTag[1] / m.totalConversas > 0.25) {
-      insights.push({ category: 'volume', icon: Target, text: `"${topTag[0]}" representa ${Math.round((topTag[1] / m.totalConversas) * 100)}% do volume — tema dominante que merece atenção especial.`, severity: 'info' });
-    }
-  }
-
-  if (m.agentStats.length > 2) {
-    const sorted = [...m.agentStats].sort((a, b) => b.avgTime - a.avgTime);
-    const slowest = sorted[0];
-    const fastest = sorted[sorted.length - 1];
-    if (slowest.avgTime > fastest.avgTime * 2 && slowest.count > 3) {
-      insights.push({ category: 'team', icon: Users, text: `Diferença de ${Math.round(slowest.avgTime / fastest.avgTime)}x no TMA entre ${slowest.name} e ${fastest.name} — avaliar se precisa de suporte ou treinamento.`, severity: 'warning' });
-    }
-  }
-
-  if (m.agentStats.length > 2 && m.totalConversas > 10) {
-    const overloaded = m.agentStats.find(a => a.count / m.totalConversas > 0.3);
-    if (overloaded) {
-      insights.push({ category: 'team', icon: ShieldAlert, text: `${overloaded.name} concentra ${Math.round((overloaded.count / m.totalConversas) * 100)}% do volume — risco de sobrecarga e burnout.`, severity: 'critical' });
-    }
-  }
-
-  if (m.agentStats.length > 1) {
-    const improved = m.agentStats
-      .filter(a => a.prevAvgTime > 0 && a.count > 3)
-      .map(a => ({ ...a, improvement: ((a.prevAvgTime - a.avgTime) / a.prevAvgTime) * 100 }))
-      .sort((a, b) => b.improvement - a.improvement);
-    if (improved.length > 0 && improved[0].improvement > 10) {
-      insights.push({ category: 'team', icon: TrendingUp, text: `${improved[0].name} melhorou TMA em ${Math.round(improved[0].improvement)}% — reconhecer a evolução!`, severity: 'info' });
-    }
-  }
-
-  if (m.errorLogs.length > 5) {
-    insights.push({ category: 'alert', icon: AlertTriangle, text: `${m.errorLogs.length} conversas problemáticas no período — padrão de erros precisa de atenção.`, severity: 'critical' });
-  }
-
-  return insights;
-}
-
-interface PatternData {
-  tagTrends: { tag: string; count: number; pct: number }[];
-  workload: { name: string; count: number; pct: number; overloaded: boolean }[];
-  resolutionRate: { aiPct: number; humanPct: number } | null;
-  channels: Record<string, number>;
-}
-
-function computePatterns(m: BrainMetrics): PatternData {
-  const tagTrends = m.topTags.slice(0, 8).map(([tag, count]) => ({
-    tag,
-    count,
-    pct: m.totalConversas > 0 ? Math.round((count / m.totalConversas) * 100) : 0,
-  }));
-
-  const workload = m.agentStats.map(a => ({
-    name: a.name,
-    count: a.count,
-    pct: m.totalConversas > 0 ? Math.round((a.count / m.totalConversas) * 100) : 0,
-    overloaded: m.totalConversas > 10 && a.count / m.totalConversas > 0.3,
-  })).sort((a, b) => b.count - a.count);
-
-  const total = m.aiResolved + m.humanResolved;
-  const resolutionRate = total > 0 ? {
-    aiPct: Math.round((m.aiResolved / total) * 100),
-    humanPct: Math.round((m.humanResolved / total) * 100),
-  } : null;
-
-  return { tagTrends, workload, resolutionRate, channels: m.channelCounts };
-}
-
-interface Recommendation {
-  type: 'redistribute' | 'training' | 'automation' | 'alert';
-  icon: React.ElementType;
-  title: string;
-  description: string;
-}
-
-function computeRecommendations(m: BrainMetrics): Recommendation[] {
-  const recs: Recommendation[] = [];
-
-  // Workload redistribution
-  if (m.agentStats.length > 2 && m.totalConversas > 10) {
-    const overloaded = m.agentStats.filter(a => a.count / m.totalConversas > 0.3);
-    for (const agent of overloaded) {
-      recs.push({
-        type: 'redistribute',
-        icon: Users,
-        title: `Redistribuir carga de ${agent.name}`,
-        description: `Concentra ${Math.round((agent.count / m.totalConversas) * 100)}% dos atendimentos. Redistribuir entre a equipe para equilibrar o volume.`,
-      });
-    }
-  }
-
-  // TME high
-  if (m.tme > 10) {
-    recs.push({
-      type: 'alert',
-      icon: Clock,
-      title: 'Reduzir tempo de espera',
-      description: `TME em ${Math.round(m.tme)} minutos — ativar mais robôs nos horários de pico ou ajustar escala de atendentes.`,
-    });
-  }
-
-  // Low AI resolution
-  const total = m.aiResolved + m.humanResolved;
-  if (total > 10 && m.aiResolved / total < 0.3) {
-    recs.push({
-      type: 'automation',
-      icon: Bot,
-      title: 'Aumentar taxa de automação',
-      description: `Apenas ${Math.round((m.aiResolved / total) * 100)}% resolvido por IA — revisar Q&A e instruções dos robôs para cobrir os temas mais frequentes.`,
-    });
-  }
-
-  // Agent with high TMA
-  if (m.agentStats.length > 1) {
-    const avgTma = m.agentStats.reduce((s, a) => s + a.avgTime * a.count, 0) / Math.max(1, m.agentStats.reduce((s, a) => s + a.count, 0));
-    const slow = m.agentStats.filter(a => a.avgTime > avgTma * 1.5 && a.count > 3);
-    for (const agent of slow.slice(0, 2)) {
-      recs.push({
-        type: 'training',
-        icon: Lightbulb,
-        title: `Treinamento para ${agent.name}`,
-        description: `TMA de ${Math.round(agent.avgTime)} min — ${Math.round(agent.avgTime / avgTma)}x acima da média. Avaliar se precisa de capacitação ou ferramentas.`,
-      });
-    }
-  }
-
-  // High wait time for specific agents
-  if (m.agentStats.length > 2) {
-    const avgWait = m.agentStats.reduce((s, a) => s + a.avgWaitTime, 0) / m.agentStats.length;
-    const slowWait = m.agentStats.filter(a => a.avgWaitTime > avgWait * 2 && a.count > 3);
-    for (const agent of slowWait.slice(0, 1)) {
-      recs.push({
-        type: 'redistribute',
-        icon: Clock,
-        title: `Fila longa para ${agent.name}`,
-        description: `Clientes esperam ${Math.round(agent.avgWaitTime)} min — ${Math.round(agent.avgWaitTime / avgWait)}x acima da média da equipe.`,
-      });
-    }
-  }
-
-  // Many errors
-  if (m.errorLogs.length > 10) {
-    recs.push({
-      type: 'alert',
-      icon: AlertTriangle,
-      title: 'Investigar conversas problemáticas',
-      description: `${m.errorLogs.length} ocorrências no período — verificar a aba "Erros & Gaps" para identificar padrões recorrentes.`,
-    });
-  }
-
-  return recs;
-}
-
 // Compute learnings from metrics client-side
 function computeLearnings(m: BrainMetrics): string[] {
   const insights: string[] = [];
@@ -1383,6 +1369,11 @@ function computeLearnings(m: BrainMetrics): string[] {
 
   if (m.errorLogs.length > 5) {
     insights.push(`🔴 ${m.errorLogs.length} conversas problemáticas detectadas no período — confira a aba "Erros & Gaps".`);
+  }
+
+  // Abandon rate insight
+  if (m.abandonRate != null && m.abandonRate > 5) {
+    insights.push(`⚠️ Taxa de abandono em ${m.abandonRate}% — ${m.abandonedCount} conversas saíram sem atendimento.`);
   }
 
   return insights;
