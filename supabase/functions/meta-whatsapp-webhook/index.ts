@@ -354,7 +354,7 @@ serve(async (req) => {
 
             const { data: existingConv } = await supabase
               .from('conversations')
-              .select('id, assigned_to_robot, assigned_to, robot_transferred')
+              .select('id, assigned_to_robot, assigned_to, robot_transferred, whatsapp_instance_id')
               .eq('contact_id', contactId)
               .in('status', ['em_fila', 'em_atendimento', 'pendente'])
               .maybeSingle();
@@ -362,6 +362,15 @@ serve(async (req) => {
             if (existingConv) {
               conversationId = existingConv.id;
               assignedRobotId = existingConv.assigned_to_robot;
+
+              // Auto-correção: preencher whatsapp_instance_id se estiver vazio
+              if (!existingConv.whatsapp_instance_id && phoneNumberId) {
+                console.log(`[Meta Webhook] Auto-corrigindo whatsapp_instance_id da conversa ${conversationId} → ${phoneNumberId}`);
+                await supabase
+                  .from('conversations')
+                  .update({ whatsapp_instance_id: phoneNumberId })
+                  .eq('id', conversationId);
+              }
             } else {
               const { data: newConv, error: convError } = await supabase
                 .from('conversations')
@@ -373,7 +382,8 @@ serve(async (req) => {
                   assigned_to_robot: filteredRobot?.id || null,
                   priority: 'normal',
                   tags: [],
-                  last_message_preview: '[Nova mensagem]'
+                  last_message_preview: '[Nova mensagem]',
+                  whatsapp_instance_id: phoneNumberId || null
                 })
                 .select('id')
                 .single();
