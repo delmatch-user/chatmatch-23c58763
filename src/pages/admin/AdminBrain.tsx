@@ -62,6 +62,32 @@ interface BrainMetrics {
   };
 }
 
+const TAG_NORMALIZATION: Record<string, string> = {
+  'OPERACIONAL_PENDENTE': 'Operacional - Pendente',
+  'ACIDENTE_URGENTE': 'Acidente - Urgente',
+  'FINANCEIRO_NORMAL': 'Financeiro - Normal',
+  'DUVIDA_GERAL': 'Duvida - Geral',
+  'COMERCIAL_B2B': 'Comercial - B2B',
+};
+
+const normalizeTopTags = (tags: [string, number][]): [string, number][] => {
+  const merged: Record<string, number> = {};
+  tags.forEach(([tag, count]) => {
+    const clean = tag.replace(/^[🔴🟡🟢🔵⚪]\s*/, '').trim();
+    const normalized = TAG_NORMALIZATION[clean] || clean;
+    merged[normalized] = (merged[normalized] || 0) + count;
+  });
+  return Object.entries(merged).sort((a, b) => b[1] - a[1]) as [string, number][];
+};
+
+const filterMetrics = (raw: any): BrainMetrics => ({
+  ...raw,
+  agentStats: (raw.agentStats || []).filter((a: AgentStat) =>
+    !a.name.toLowerCase().includes('fábio') && !a.name.toLowerCase().includes('fabio') && !a.name.toLowerCase().includes('arthur')
+  ),
+  topTags: normalizeTopTags(raw.topTags || []),
+});
+
 const AdminBrain = () => {
   const [period, setPeriod] = useState('7');
   const [metrics, setMetrics] = useState<BrainMetrics | null>(null);
