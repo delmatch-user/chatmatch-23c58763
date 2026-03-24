@@ -115,7 +115,7 @@ serve(async (req) => {
       (l.tags || []).some((t: string) => t.toLowerCase().includes('erro') || t.toLowerCase().includes('reclamação') || t.toLowerCase().includes('insatisf'))
     ).slice(0, 50);
 
-    const taxonomyTags = ['Acidente - Urgente', 'Operacional - Pendente', 'Financeiro - Normal', 'Duvida - Geral', 'Comercial - B2B'];
+    const taxonomyTags = ['Acidente - Urgente', 'Financeiro - Normal', 'Duvida - Geral', 'Comercial - B2B'];
 
     const mapErrorLog = (l: any) => ({
       id: l.id,
