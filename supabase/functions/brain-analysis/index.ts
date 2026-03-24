@@ -25,24 +25,45 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { period = 7, metricsOnly = false, userContext: reqUserContext = '' } = await req.json();
+    const { period = 7, metricsOnly = false, userContext: reqUserContext = '', periodStart: reqPeriodStart, periodEnd: reqPeriodEnd } = await req.json();
     
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     const now = new Date();
-    const periodStart = new Date(now.getTime() - period * 24 * 60 * 60 * 1000).toISOString();
-    const prevPeriodStart = new Date(now.getTime() - period * 2 * 24 * 60 * 60 * 1000).toISOString();
+    
+    // Use explicit date range if provided, otherwise fallback to rolling window
+    let effectiveStart: string;
+    let effectiveEnd: string;
+    let prevStart: string;
+    let prevEnd: string;
+    
+    if (reqPeriodStart && reqPeriodEnd) {
+      effectiveStart = reqPeriodStart;
+      effectiveEnd = reqPeriodEnd;
+      // Calculate previous period with same duration
+      const startMs = new Date(reqPeriodStart).getTime();
+      const endMs = new Date(reqPeriodEnd).getTime();
+      const durationMs = endMs - startMs;
+      prevStart = new Date(startMs - durationMs).toISOString();
+      prevEnd = reqPeriodStart;
+    } else {
+      effectiveStart = new Date(now.getTime() - period * 24 * 60 * 60 * 1000).toISOString();
+      effectiveEnd = now.toISOString();
+      prevStart = new Date(now.getTime() - period * 2 * 24 * 60 * 60 * 1000).toISOString();
+      prevEnd = effectiveStart;
+    }
 
     // Fetch current period logs
     const { data: currentLogs, error: logsError } = await supabase
       .from("conversation_logs")
       .select("*")
-      .gte("finalized_at", periodStart)
+      .gte("finalized_at", effectiveStart)
+      .lte("finalized_at", effectiveEnd)
       .is("reset_at", null)
       .order("finalized_at", { ascending: false })
-      .limit(1000);
+      .limit(5000);
 
     if (logsError) throw logsError;
 
@@ -50,10 +71,10 @@ serve(async (req) => {
     const { data: prevLogs } = await supabase
       .from("conversation_logs")
       .select("started_at, finalized_at, wait_time, assigned_to_name, department_name, tags, priority, channel")
-      .gte("finalized_at", prevPeriodStart)
-      .lt("finalized_at", periodStart)
+      .gte("finalized_at", prevStart)
+      .lt("finalized_at", prevEnd)
       .is("reset_at", null)
-      .limit(1000);
+      .limit(5000);
 
     // Calculate metrics
     const logs = currentLogs || [];
