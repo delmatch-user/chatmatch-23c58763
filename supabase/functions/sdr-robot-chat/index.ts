@@ -1269,11 +1269,7 @@ serve(async (req) => {
           let followUpResp: Response | null = null;
           // Attempt 1: primary API with short retry
           for (let followUpAttempt = 0; followUpAttempt < 2; followUpAttempt++) {
-            followUpResp = await fetch(apiUrl, {
-              method: "POST",
-              headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-              body: JSON.stringify(followUpBody),
-            });
+            followUpResp = await fetchAI(apiUrl, apiKey, followUpBody, isAnthropic);
 
             if (followUpResp.status === 429) {
               const waitTime = 5 + (followUpAttempt * 5);
@@ -1299,9 +1295,11 @@ serve(async (req) => {
           }
 
           if (followUpResp && followUpResp.ok) {
-            const followUpData = await followUpResp.json();
+            const followUpData = isAnthropic && !followUpResp.url?.includes('lovable') 
+              ? convertAnthropicResponse(await followUpResp.json()) 
+              : await followUpResp.json();
             responseText = followUpData.choices?.[0]?.message?.content || '';
-            console.log(`[SDR-Robot-Chat] Follow-up response (source: ${followUpResp.url?.includes('lovable') ? 'lovable-fallback' : 'primary'}): ${responseText.substring(0, 100)}...`);
+            console.log(`[SDR-Robot-Chat] Follow-up response: ${responseText.substring(0, 100)}...`);
           } else {
             console.error(`[SDR-Robot-Chat] Follow-up call failed entirely: ${followUpResp?.status}`);
           }
