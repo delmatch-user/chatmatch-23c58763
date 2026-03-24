@@ -373,7 +373,7 @@ serve(async (req) => {
       const dayLines = Object.entries(days).sort(([a], [b]) => a.localeCompare(b)).map(([day, d]) => {
         const tma = d.tmaCount > 0 ? Math.round((d.tmaSum / d.tmaCount) * 10) / 10 : 0;
         const tme = d.tmeCount > 0 ? Math.round((d.tmeSum / d.tmeCount) * 10) / 10 : 0;
-        return `  ${day}: ${d.count} conversas, TMA ${tma}min, TME ${tme}min`;
+        return `  ${formatDateBR(day)}: ${d.count} conversas, TMA ${tma}min, TME ${tme}min`;
       }).join('\n');
       const allTags = agentStats[name] ? Object.entries(agentStats[name].tags).sort((a, b) => b[1] - a[1]).map(([t, c]) => `${t}(${c})`).join(', ') : '';
       const agentErrors = errorLogs.filter(l => l.assigned_to_name === name);
@@ -381,7 +381,7 @@ serve(async (req) => {
     }).join('\n');
 
     // Build daily trends for the prompt
-    const dailyTrendsBlock = dailyTrends.map(d => `  ${d.date}: TMA ${d.tma}min, TME ${d.tme}min, Urgentes: ${d.urgent}`).join('\n');
+    const dailyTrendsBlock = dailyTrends.map(d => `  ${formatDateBR(d.date)}: TMA ${d.tma}min, TME ${d.tme}min, Urgentes: ${d.urgent}`).join('\n');
 
     // Build error logs per agent
     const agentErrorBlock = Object.keys(agentStats).map(name => {
@@ -422,11 +422,11 @@ ${agentErrorBlock || 'Nenhuma conversa problemática atribuída a agentes'}`;
       conversationDetailsBlock = detailLogs.map((l: any) => {
         const msgs = Array.isArray(l.messages) ? l.messages.slice(0, 5) : [];
         const msgLines = msgs.map((m: any) => 
-          `    [${m.created_at || m.timestamp || ''}] ${m.sender_name || m.sender || 'Desconhecido'}: ${(m.content || m.text || '').substring(0, 200)}`
+          `    [${formatBR(m.created_at || m.timestamp || '')}] ${m.sender_name || m.sender || 'Desconhecido'}: ${(m.content || m.text || '').substring(0, 200)}`
         ).join('\n');
         return `Conversa: ${l.contact_name} (${l.contact_phone || 'sem telefone'})
   Agente: ${l.assigned_to_name}
-  Início: ${l.started_at} | Fim: ${l.finalized_at}
+  Início: ${formatBR(l.started_at)} | Fim: ${formatBR(l.finalized_at)}
   Tags: ${(l.tags || []).join(', ')}
   Mensagens:
 ${msgLines || '    (sem mensagens)'}`;
