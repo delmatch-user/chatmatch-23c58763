@@ -215,8 +215,21 @@ serve(async (req) => {
             if (!success) {
               const errorBody = await resp.text();
               console.error('Anthropic test error:', resp.status, errorBody);
+
+              let providerMessage = '';
+              try {
+                const parsed = JSON.parse(errorBody);
+                providerMessage = parsed?.error?.message || parsed?.message || '';
+              } catch {
+                providerMessage = errorBody || '';
+              }
+
+              message = providerMessage
+                ? `Erro: ${resp.status} - ${providerMessage}`
+                : `Erro: ${resp.status}`;
+            } else {
+              message = 'Conexão bem sucedida!';
             }
-            message = success ? 'Conexão bem sucedida!' : `Erro: ${resp.status}`;
           } catch (e) {
             message = 'Erro de conexão';
           }
