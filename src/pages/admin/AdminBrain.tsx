@@ -114,8 +114,7 @@ const normalizeErrorTypeGroup = (group: ErrorTypeGroup): ErrorTypeGroup => ({
 
 const filterMetrics = (raw: any): BrainMetrics => ({
   ...raw,
-  agentStats: (raw.agentStats || []).filter((a: AgentStat) =>
-    !a.name.toLowerCase().includes('fábio') && !a.name.toLowerCase().includes('fabio') && !a.name.toLowerCase().includes('arthur') && !a.name.toLowerCase().includes('matteus') && !a.name.toLowerCase().includes('mayara')
+  agentStats: (raw.agentStats || []
   ),
   topTags: normalizeTopTags(raw.topTags || []),
   prevTopTags: raw.prevTopTags ? normalizeTopTags(raw.prevTopTags) : undefined,

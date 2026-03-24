@@ -49,7 +49,7 @@ serve(async (req) => {
     // Fetch previous period logs for comparison
     const { data: prevLogs } = await supabase
       .from("conversation_logs")
-      .select("started_at, finalized_at, wait_time, assigned_to_name, tags, priority, channel")
+      .select("started_at, finalized_at, wait_time, assigned_to_name, department_name, tags, priority, channel")
       .gte("finalized_at", prevPeriodStart)
       .lt("finalized_at", periodStart)
       .is("reset_at", null)
@@ -141,9 +141,10 @@ serve(async (req) => {
     ).length;
     const abandonRate = totalConversas > 0 ? Math.round((abandonedCount / totalConversas) * 1000) / 10 : 0;
 
-    // Agent performance (enriched with channel breakdown + resolution rate)
+    // Agent performance — only agents from "Suporte" department
+    const suporteLogs = logs.filter(l => l.assigned_to_name && l.department_name && l.department_name.toLowerCase() === 'suporte');
     const agentStats: Record<string, { count: number; totalTime: number; totalWait: number; waitCount: number; tags: Record<string, number>; channels: Record<string, number>; transferredOut: number }> = {};
-    logs.filter(l => l.assigned_to_name).forEach(l => {
+    suporteLogs.forEach(l => {
       const name = l.assigned_to_name!;
       if (!agentStats[name]) agentStats[name] = { count: 0, totalTime: 0, totalWait: 0, waitCount: 0, tags: {}, channels: {}, transferredOut: 0 };
       agentStats[name].count++;
@@ -171,9 +172,9 @@ serve(async (req) => {
       }
     });
 
-    // Previous period agent stats
+    // Previous period agent stats — also only "Suporte"
     const prevAgentStats: Record<string, { count: number; totalTime: number }> = {};
-    prev.filter(l => l.assigned_to_name).forEach(l => {
+    prev.filter(l => l.assigned_to_name && l.department_name && l.department_name.toLowerCase() === 'suporte').forEach(l => {
       const name = l.assigned_to_name!;
       if (!prevAgentStats[name]) prevAgentStats[name] = { count: 0, totalTime: 0 };
       prevAgentStats[name].count++;
