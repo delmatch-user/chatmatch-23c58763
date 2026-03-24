@@ -350,6 +350,7 @@ Situações que precisam de atenção imediata.
 - Prioridades: ${Object.entries(priorityCounts).map(([p, n]) => p + ": " + n).join(', ')}
 - Performance agentes: ${metrics.agentStats.map((a: any) => a.name + ": " + a.count + " conversas, TMA " + a.avgTime + "min").join('; ')}
 - Conversas problemáticas: ${errorLogs.length} (alta prioridade, erros ou reclamações)
+${userContextStr}
 
 Seja direta, objetiva e use dados para embasar cada ponto. Responda em português brasileiro.`;
 
@@ -382,9 +383,11 @@ Seja direta, objetiva e use dados para embasar cada ponto. Responda em portuguê
           console.log("[brain-analysis] GPT-5.2 OK");
         } else {
           const errBody = await gptResp.text();
+          fallbackError = `GPT-5.2: HTTP ${gptResp.status} — ${errBody.substring(0, 200)}`;
           console.warn("[brain-analysis] GPT-5.2 falhou:", gptResp.status, errBody);
         }
-      } catch (e) {
+      } catch (e: any) {
+        fallbackError = `GPT-5.2: ${e.message || 'Timeout/Network error'}`;
         console.error("[brain-analysis] GPT-5.2 error:", e);
       }
     }
