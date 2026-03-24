@@ -10,6 +10,7 @@ const SUPORTE_DEPARTMENT_ID = 'dea51138-49e4-45b0-a491-fb07a5fad479';
 
 const TAXONOMY_TAGS = [
   'Acidente - Urgente',
+  'Operacional - Normal',
   'Financeiro - Normal',
   'Duvida - Geral',
   'Comercial - B2B',
@@ -17,6 +18,7 @@ const TAXONOMY_TAGS = [
 
 const TAG_TO_PRIORITY: Record<string, string> = {
   'Acidente - Urgente': 'urgent',
+  'Operacional - Normal': 'normal',
   'Financeiro - Normal': 'normal',
   'Duvida - Geral': 'normal',
   'Comercial - B2B': 'normal',
@@ -100,9 +102,10 @@ serve(async (req) => {
 Classifique cada conversa em EXATAMENTE UMA das seguintes categorias:
 
 1. "Acidente - Urgente" - Acidentes com motoboys, situações de emergência, problemas graves de segurança
-2. "Financeiro - Normal" - Assuntos financeiros: pagamentos, cobranças, reembolsos, notas fiscais, valores
-3. "Duvida - Geral" - Dúvidas gerais, informações, como funciona, cadastro, perguntas simples, problemas operacionais, entregas atrasadas, pedidos incorretos, problemas técnicos
-4. "Comercial - B2B" - Assuntos comerciais B2B: parcerias, novos estabelecimentos, propostas comerciais, negociações
+2. "Operacional - Normal" - Problemas operacionais, entregas atrasadas, pedidos incorretos, bugs no app, problemas técnicos
+3. "Financeiro - Normal" - Assuntos financeiros: pagamentos, cobranças, reembolsos, notas fiscais, valores
+4. "Duvida - Geral" - Dúvidas gerais, informações, como funciona, cadastro, perguntas simples
+5. "Comercial - B2B" - Assuntos comerciais B2B: parcerias, novos estabelecimentos, propostas comerciais, negociações
 
 Responda APENAS com um JSON array onde cada item tem "id" (o ID da conversa) e "tag" (uma das 4 categorias acima, exatamente como escrita).
 Exemplo: [{"id":"abc","tag":"Duvida - Geral"}]`;
