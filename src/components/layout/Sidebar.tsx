@@ -157,6 +157,7 @@ export function Sidebar({ className, variant = 'desktop', onNavigate }: SidebarP
   ).length;
   const navItems = isAdmin ? adminNavItems : getNavItems(queueCount, activeConversationsCount, unreadCount.internalChat, userBelongsToSuport, userBelongsToComercial);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   // PWA installation state
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
@@ -270,23 +271,82 @@ export function Sidebar({ className, variant = 'desktop', onNavigate }: SidebarP
 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto scrollbar-thin">
-          {navItems.map((item) => (
-            item.isSettings ? (
-              <button
-                key={item.path}
-                type="button"
-                onClick={handleSettingsClick}
-                className={cn(
-                  "sidebar-item group w-full text-left",
-                  isCollapsed && "justify-center px-2"
-                )}
-              >
-                <item.icon className="w-5 h-5 shrink-0" />
-                {!isCollapsed && (
-                  <span className="flex-1">{item.label}</span>
-                )}
-              </button>
-            ) : (
+          {navItems.map((item) => {
+            if (item.isSettings) {
+              return (
+                <button
+                  key={item.path}
+                  type="button"
+                  onClick={handleSettingsClick}
+                  className={cn(
+                    "sidebar-item group w-full text-left",
+                    isCollapsed && "justify-center px-2"
+                  )}
+                >
+                  <item.icon className="w-5 h-5 shrink-0" />
+                  {!isCollapsed && (
+                    <span className="flex-1">{item.label}</span>
+                  )}
+                </button>
+              );
+            }
+
+            if (item.children && item.children.length > 0) {
+              const isGroupActive = location.pathname === item.path || item.children.some(c => location.pathname === c.path);
+              const isExpanded = expandedGroups[item.path] ?? isGroupActive;
+
+              return (
+                <div key={item.path} className="space-y-1">
+                  <div className="flex items-center">
+                    <NavLink
+                      to={item.path}
+                      onClick={() => onNavigate?.()}
+                      className={({ isActive }) =>
+                        cn(
+                          "sidebar-item group flex-1",
+                          isActive && "sidebar-item-active",
+                          isCollapsed && "justify-center px-2"
+                        )
+                      }
+                    >
+                      <item.icon className="w-5 h-5 shrink-0" />
+                      {!isCollapsed && <span className="flex-1">{item.label}</span>}
+                    </NavLink>
+                    {!isCollapsed && (
+                      <button
+                        type="button"
+                        onClick={() => setExpandedGroups(prev => ({ ...prev, [item.path]: !isExpanded }))}
+                        className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+                      >
+                        <ChevronDown className={cn("w-4 h-4 transition-transform", isExpanded && "rotate-180")} />
+                      </button>
+                    )}
+                  </div>
+                  {isExpanded && !isCollapsed && (
+                    <div className="ml-4 pl-3 border-l border-sidebar-border space-y-1">
+                      {item.children.map((child) => (
+                        <NavLink
+                          key={child.path}
+                          to={child.path}
+                          onClick={() => onNavigate?.()}
+                          className={({ isActive }) =>
+                            cn(
+                              "sidebar-item group text-sm",
+                              isActive && "sidebar-item-active"
+                            )
+                          }
+                        >
+                          <child.icon className="w-4 h-4 shrink-0" />
+                          <span className="flex-1">{child.label}</span>
+                        </NavLink>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            return (
               <NavLink
                 key={item.path}
                 to={item.path}
@@ -314,8 +374,8 @@ export function Sidebar({ className, variant = 'desktop', onNavigate }: SidebarP
                   </span>
                 )}
               </NavLink>
-            )
-          ))}
+            );
+          })}
         </nav>
 
         {/* Mode Switch - Only show admin option for admins */}
