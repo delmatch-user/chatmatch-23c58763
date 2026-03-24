@@ -563,7 +563,7 @@ const AdminBrain = () => {
     loadScheduleConfig();
     loadAgentLiveStatus();
     loadAgentNotifications();
-  }, []);
+  }, [getEffectivePeriod, loadAgentLiveStatus, loadAgentNotifications]);
 
   // Save maturity score when metrics update
   useEffect(() => {
