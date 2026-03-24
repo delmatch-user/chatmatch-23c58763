@@ -261,10 +261,10 @@ Situações que precisam de atenção imediata.
 - TMA: ${metrics.tma} min (anterior: ${metrics.prevTma} min)
 - TME: ${metrics.tme} min (anterior: ${metrics.prevTme} min)
 - Resolvidas por IA: ${aiResolved} | Por humano: ${humanResolved}
-- Top tags: ${topTags.map(([t, c]: [string, number]) => \`\${t} (\${c})\`).join(', ')}
-- Canais: ${Object.entries(channelCounts).map(([c, n]) => \`\${c}: \${n}\`).join(', ')}
-- Prioridades: ${Object.entries(priorityCounts).map(([p, n]) => \`\${p}: \${n}\`).join(', ')}
-- Performance agentes: ${metrics.agentStats.map((a: any) => \`\${a.name}: \${a.count} conversas, TMA \${a.avgTime}min\`).join('; ')}
+- Top tags: ${topTags.map(([t, c]: [string, number]) => t + " (" + c + ")").join(', ')}
+- Canais: ${Object.entries(channelCounts).map(([c, n]) => c + ": " + n).join(', ')}
+- Prioridades: ${Object.entries(priorityCounts).map(([p, n]) => p + ": " + n).join(', ')}
+- Performance agentes: ${metrics.agentStats.map((a: any) => a.name + ": " + a.count + " conversas, TMA " + a.avgTime + "min").join('; ')}
 - Conversas problemáticas: ${errorLogs.length} (alta prioridade, erros ou reclamações)
 
 Seja direta, objetiva e use dados para embasar cada ponto. Responda em português brasileiro.`;
