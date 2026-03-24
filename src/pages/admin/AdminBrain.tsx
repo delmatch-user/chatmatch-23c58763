@@ -712,6 +712,8 @@ function computeLearnings(m: BrainMetrics): string[] {
   if (m.errorLogs.length > 5) {
     insights.push(`🔴 ${m.errorLogs.length} conversas problemáticas detectadas no período — confira a aba "Erros & Gaps".`);
   }
+
+  return insights;
 }
 
 // Simple markdown to HTML renderer
