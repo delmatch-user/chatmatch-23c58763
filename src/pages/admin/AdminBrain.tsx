@@ -63,7 +63,6 @@ interface BrainMetrics {
 }
 
 const TAG_NORMALIZATION: Record<string, string> = {
-  'OPERACIONAL_PENDENTE': 'Operacional - Pendente',
   'ACIDENTE_URGENTE': 'Acidente - Urgente',
   'FINANCEIRO_NORMAL': 'Financeiro - Normal',
   'DUVIDA_GERAL': 'Duvida - Geral',
