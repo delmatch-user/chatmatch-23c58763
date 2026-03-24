@@ -1677,6 +1677,10 @@ const AdminBrain = () => {
                       <CardDescription>Análise profunda gerada por IA sob demanda</CardDescription>
                     </div>
                     <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setScheduleDialogOpen(true)} className="gap-2">
+                        <CalendarClock className="w-4 h-4" />
+                        Agendar
+                      </Button>
                       {aiAnalysis && (
                         <Button variant="outline" size="sm" onClick={exportPdf} className="gap-2">
                           <FileDown className="w-4 h-4" />
