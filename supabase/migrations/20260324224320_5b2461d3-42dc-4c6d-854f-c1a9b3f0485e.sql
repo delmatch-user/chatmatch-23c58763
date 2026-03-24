@@ -1,0 +1,1 @@
+DELETE FROM public.brain_reports WHERE created_at::date = '2026-03-24';
