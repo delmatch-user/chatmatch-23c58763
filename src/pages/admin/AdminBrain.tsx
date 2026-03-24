@@ -884,6 +884,14 @@ const AdminBrain = () => {
                   </div>
                 </CardHeader>
                 <CardContent>
+                  {reportFallback && reportProvider && (
+                    <div className="mb-4 p-3 rounded-lg bg-warning/10 border border-warning/20 flex items-center gap-2 text-sm">
+                      <AlertCircle className="w-4 h-4 text-warning flex-shrink-0" />
+                      <span className="text-warning">
+                        Relatório gerado via <strong>{reportProvider}</strong> — provedor principal indisponível.
+                      </span>
+                    </div>
+                  )}
                   {aiAnalysis ? (
                     <div className="prose prose-sm dark:prose-invert max-w-none">
                       <div dangerouslySetInnerHTML={{ __html: renderMarkdown(aiAnalysis) }} />
