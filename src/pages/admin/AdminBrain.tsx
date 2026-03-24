@@ -243,6 +243,16 @@ const AdminBrain = () => {
   const [reportContext, setReportContext] = useState('');
   const [reportFallbackError, setReportFallbackError] = useState('');
 
+  // Maturity score history
+  const [maturityHistory, setMaturityHistory] = useState<Array<{ date: string; score: number }>>([]);
+
+  // Agent live status
+  const [agentLiveStatus, setAgentLiveStatus] = useState<Record<string, { status: string; openConversations: number }>>({});
+
+  // Report scheduling
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [scheduleConfig, setScheduleConfig] = useState<{ type: string; dayOfWeek: number; hourOfDay: number; isActive: boolean }>({ type: 'weekly', dayOfWeek: 1, hourOfDay: 8, isActive: false });
+
   const getEffectivePeriod = useCallback(() => {
     if (period === 'custom' && customDateRange.from && customDateRange.to) {
       return Math.max(1, differenceInDays(customDateRange.to, customDateRange.from) + 1);
@@ -349,6 +359,93 @@ const AdminBrain = () => {
     }
   };
 
+  // Save maturity score to history
+  const saveMaturityScore = useCallback(async (score: number) => {
+    try {
+      const today = format(new Date(), 'yyyy-MM-dd');
+      const { data: existing } = await supabase.from('app_settings').select('*').eq('key', 'brain_maturity_history').maybeSingle();
+      let history: Array<{ date: string; score: number }> = existing ? JSON.parse(existing.value) : [];
+      // Only save once per day
+      if (history.length > 0 && history[history.length - 1].date === today) {
+        history[history.length - 1].score = score;
+      } else {
+        history.push({ date: today, score });
+      }
+      // Keep last 30 entries
+      history = history.slice(-30);
+      if (existing) {
+        await supabase.from('app_settings').update({ value: JSON.stringify(history) }).eq('key', 'brain_maturity_history');
+      } else {
+        await supabase.from('app_settings').insert({ key: 'brain_maturity_history', value: JSON.stringify(history) });
+      }
+      setMaturityHistory(history);
+    } catch {
+      // silently fail
+    }
+  }, []);
+
+  const loadMaturityHistory = async () => {
+    try {
+      const { data } = await supabase.from('app_settings').select('*').eq('key', 'brain_maturity_history').maybeSingle();
+      if (data) setMaturityHistory(JSON.parse(data.value));
+    } catch {}
+  };
+
+  // Load agent live status
+  const loadAgentLiveStatus = useCallback(async () => {
+    try {
+      const { data: profiles } = await supabase.from('profiles').select('id, name, status');
+      const { data: conversations } = await supabase.from('conversations').select('assigned_to').neq('status', 'finalizada');
+      if (profiles && conversations) {
+        const openCounts: Record<string, number> = {};
+        conversations.forEach((c: any) => {
+          if (c.assigned_to) openCounts[c.assigned_to] = (openCounts[c.assigned_to] || 0) + 1;
+        });
+        const statusMap: Record<string, { status: string; openConversations: number }> = {};
+        profiles.forEach((p: any) => {
+          statusMap[p.name] = { status: p.status, openConversations: openCounts[p.id] || 0 };
+        });
+        setAgentLiveStatus(statusMap);
+      }
+    } catch {}
+  }, []);
+
+  // Load/save report schedule
+  const loadScheduleConfig = async () => {
+    try {
+      const { data } = await supabase.from('report_schedule').select('*').eq('schedule_type', 'brain_report').maybeSingle();
+      if (data) {
+        setScheduleConfig({
+          type: 'weekly',
+          dayOfWeek: data.day_of_week ?? 1,
+          hourOfDay: data.hour_of_day ?? 8,
+          isActive: data.is_active ?? false,
+        });
+      }
+    } catch {}
+  };
+
+  const saveScheduleConfig = async () => {
+    try {
+      const { data: existing } = await supabase.from('report_schedule').select('id').eq('schedule_type', 'brain_report').maybeSingle();
+      const payload = {
+        schedule_type: 'brain_report',
+        day_of_week: scheduleConfig.dayOfWeek,
+        hour_of_day: scheduleConfig.hourOfDay,
+        is_active: scheduleConfig.isActive,
+      };
+      if (existing) {
+        await supabase.from('report_schedule').update(payload).eq('id', existing.id);
+      } else {
+        await supabase.from('report_schedule').insert(payload);
+      }
+      toast.success('Agendamento salvo!');
+      setScheduleDialogOpen(false);
+    } catch {
+      toast.error('Erro ao salvar agendamento');
+    }
+  };
+
   useEffect(() => {
     fetchMetrics();
   }, [fetchMetrics]);
@@ -370,7 +467,24 @@ const AdminBrain = () => {
 
   useEffect(() => {
     loadReportHistory();
+    loadMaturityHistory();
+    loadScheduleConfig();
+    loadAgentLiveStatus();
   }, []);
+
+  // Save maturity score when metrics update
+  useEffect(() => {
+    if (metrics) {
+      const knowledgeData = computeKnowledgeData(metrics);
+      saveMaturityScore(knowledgeData.maturityScore);
+    }
+  }, [metrics, saveMaturityScore]);
+
+  // Refresh agent live status every 30s
+  useEffect(() => {
+    const interval = setInterval(loadAgentLiveStatus, 30000);
+    return () => clearInterval(interval);
+  }, [loadAgentLiveStatus]);
 
   const getTrend = (current: number, previous: number, inverted = false) => {
     if (previous === 0) return null;
@@ -784,18 +898,18 @@ const AdminBrain = () => {
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <div className="h-[300px]">
+                      <div style={{ height: `${Math.max(120, chartData.length * 45 + 40)}px` }}>
                         <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={chartData} layout="vertical" margin={{ left: 20, right: 20 }}>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
-                            <XAxis type="number" className="text-xs" />
+                          <BarChart data={chartData} layout="vertical" margin={{ left: 20, right: 20 }} barSize={24}>
+                            <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" horizontal={false} />
+                            <XAxis type="number" className="text-xs" allowDecimals={false} tick={{ fill: 'hsl(var(--muted-foreground))' }} />
                             <YAxis dataKey="name" type="category" width={150} className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
                             <Tooltip
                               contentStyle={{ background: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }}
                               labelStyle={{ color: 'hsl(var(--foreground))' }}
                               formatter={(value: number, name: string, props: any) => {
                                 const item = chartData.find(d => d.name === props.payload.name);
-                                return [value, item?.recurrent ? `${name} 🔁 Reincidente` : name];
+                                return [`${value} conversas`, item?.recurrent ? `${props.payload.name} 🔁 Reincidente` : props.payload.name];
                               }}
                             />
                             <Bar dataKey="value" radius={[0, 4, 4, 0]}>
@@ -1021,7 +1135,21 @@ const AdminBrain = () => {
                       )}
                       <CardContent className="pt-6 space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="font-semibold text-sm truncate">{agent.name}</span>
+                          <div className="flex items-center gap-2 min-w-0">
+                            {agentLiveStatus[agent.name] && (
+                              <span className={cn("w-2.5 h-2.5 rounded-full shrink-0",
+                                agentLiveStatus[agent.name].status === 'online' ? 'bg-success animate-pulse' :
+                                agentLiveStatus[agent.name].status === 'pausa' ? 'bg-warning' : 'bg-muted-foreground/40'
+                              )} title={agentLiveStatus[agent.name].status} />
+                            )}
+                            <span className="font-semibold text-sm truncate">{agent.name}</span>
+                            {agentLiveStatus[agent.name]?.openConversations > 0 && (
+                              <Badge variant="outline" className="text-[10px] shrink-0 gap-1 border-primary/30 text-primary">
+                                <MessageSquare className="w-2.5 h-2.5" />
+                                {agentLiveStatus[agent.name].openConversations}
+                              </Badge>
+                            )}
+                          </div>
                           <Badge className={cn("text-xs", statusColors[status])}>{statusLabels[status]}</Badge>
                         </div>
                         <div className="grid grid-cols-3 gap-2 text-sm">
@@ -1164,6 +1292,20 @@ const AdminBrain = () => {
                           <p className="text-xs text-muted-foreground mt-2 text-center">
                             {knowledgeData.maturityScore >= 70 ? 'Operação madura' : knowledgeData.maturityScore >= 40 ? 'Em evolução' : 'Precisa de atenção'}
                           </p>
+                          {/* Score History */}
+                          {maturityHistory.length > 1 && (
+                            <div className="mt-3">
+                              <p className="text-[10px] text-muted-foreground mb-1">Histórico (30 dias)</p>
+                              <div className="h-[50px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <LineChart data={maturityHistory}>
+                                    <Line type="monotone" dataKey="score" stroke={knowledgeData.maturityScore >= 70 ? 'hsl(var(--success))' : knowledgeData.maturityScore >= 40 ? 'hsl(48, 96%, 53%)' : 'hsl(var(--destructive))'} strokeWidth={2} dot={false} />
+                                    <Tooltip contentStyle={{ background: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', borderRadius: '6px', fontSize: '11px' }} formatter={(v: number) => [v, 'Score']} labelFormatter={(l) => l} />
+                                  </LineChart>
+                                </ResponsiveContainer>
+                              </div>
+                            </div>
+                          )}
                         </CardContent>
                       </Card>
 
@@ -1535,6 +1677,10 @@ const AdminBrain = () => {
                       <CardDescription>Análise profunda gerada por IA sob demanda</CardDescription>
                     </div>
                     <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setScheduleDialogOpen(true)} className="gap-2">
+                        <CalendarClock className="w-4 h-4" />
+                        Agendar
+                      </Button>
                       {aiAnalysis && (
                         <Button variant="outline" size="sm" onClick={exportPdf} className="gap-2">
                           <FileDown className="w-4 h-4" />
@@ -1682,6 +1828,54 @@ const AdminBrain = () => {
             </TabsContent>
           </Tabs>
         )}
+
+        {/* Schedule Dialog */}
+        <Dialog open={scheduleDialogOpen} onOpenChange={setScheduleDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <CalendarClock className="w-5 h-5 text-primary" />
+                Agendamento Automático
+              </DialogTitle>
+              <DialogDescription>Configure a geração automática de relatórios da Delma.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Ativar agendamento</span>
+                <Switch checked={scheduleConfig.isActive} onCheckedChange={(v) => setScheduleConfig(prev => ({ ...prev, isActive: v }))} />
+              </div>
+              <div>
+                <label className="text-sm text-muted-foreground">Dia da semana</label>
+                <Select value={String(scheduleConfig.dayOfWeek)} onValueChange={(v) => setScheduleConfig(prev => ({ ...prev, dayOfWeek: parseInt(v) }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'].map((d, i) => (
+                      <SelectItem key={i} value={String(i)}>{d}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm text-muted-foreground">Horário</label>
+                <Select value={String(scheduleConfig.hourOfDay)} onValueChange={(v) => setScheduleConfig(prev => ({ ...prev, hourOfDay: parseInt(v) }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 24 }, (_, i) => (
+                      <SelectItem key={i} value={String(i)}>{String(i).padStart(2, '0')}:00</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setScheduleDialogOpen(false)}>Cancelar</Button>
+              <Button onClick={saveScheduleConfig} className="gap-2">
+                <CheckCircle2 className="w-4 h-4" />
+                Salvar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Train Theme Modal */}
         <Dialog open={trainModalOpen} onOpenChange={setTrainModalOpen}>
