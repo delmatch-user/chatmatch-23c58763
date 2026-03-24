@@ -1,51 +1,81 @@
 
+Objetivo: corrigir os 3 fluxos que você confirmou com falha (Teste de conexão Claude, Relatório da Delma, Robô Delma Cérebro) e deixar o sistema resiliente mesmo quando um provedor estiver sem crédito/indisponível.
 
-## Plano: Adicionar Claude (Anthropic) como provedor de IA + inteligência "Delma Cérebro"
+Diagnóstico confirmado
+- Do I know what the issue is? Sim.
+- Relatório Delma: logs da função `brain-analysis` mostram `AI gateway error: 402`, então a análise falha por crédito/limite do provedor atual.
+- Teste de conexão Claude: hoje o teste usa geração em `/v1/messages`; isso falha por billing/model access e vira “conexão falhou”, mesmo quando a chave pode estar válida.
+- Robôs Delma Cérebro: fluxo Claude está frágil para erros não-429 e para payload multimodal; sem fallback robusto, a conversa quebra em vez de continuar com outro provedor/modelo.
 
-### Resumo
-Adicionar a Anthropic (Claude) como 3º provedor de IA no sistema, com uma nova opção de inteligência **"Delma Cérebro 🧠"** nos robôs que usa o modelo `claude-sonnet-4-20250514`.
+Plano de correção (implementação)
 
-### Pré-requisito
-- Solicitar ao usuário a configuração do secret `ANTHROPIC_API_KEY` via ferramenta de secrets.
+1) Corrigir base de modelos do provider Anthropic (DB migration)
+- Criar migration para atualizar `public.ai_providers` (provider `anthropic`) com modelo correto:
+  - `claude-sonnet-4-20250514`
+  - `claude-3-5-haiku-20241022` (corrigindo o id inválido salvo hoje)
+- Garantir `default_model` consistente e `updated_at = now()`.
 
-### Mudanças
+2) Tornar “Testar Conexão” confiável em `manage-ai-keys`
+- Arquivo: `supabase/functions/manage-ai-keys/index.ts`
+- Para `provider === 'anthropic'`:
+  - Trocar teste principal para `GET https://api.anthropic.com/v1/models` (valida chave sem depender de consumo de tokens).
+  - Validar se o modelo default esperado existe na lista e retornar status claro:
+    - sucesso total (chave válida + modelo disponível),
+    - sucesso parcial (chave válida, mas sem acesso ao modelo default),
+    - falha real (401/403).
+  - Padronizar retorno `{ success, message, statusCode, details }` com mensagens detalhadas para a UI.
+- Manter logs técnicos no backend para diagnóstico rápido.
 
-| Arquivo | O que muda |
-|---------|-----------|
-| **DB Migration** | Inserir novo registro na tabela `ai_providers` para `anthropic` com display_name "Anthropic (Claude)", models `["claude-sonnet-4-20250514","claude-haiku-3-5-20241022"]`, default_model `claude-sonnet-4-20250514`. |
-| **`src/pages/admin/AdminAIIntegrations.tsx`** | Adicionar ícone e secret name para `anthropic` (`ANTHROPIC_API_KEY`), com link para console.anthropic.com. |
-| **`src/pages/admin/AdminRobos.tsx`** | Adicionar opção `{ value: 'cerebro', label: 'Delma Cérebro 🧠', description: 'Máxima inteligência com Claude', model: 'claude-sonnet-4-20250514' }` ao `intelligenceOptions`. |
-| **`supabase/functions/robot-chat/index.ts`** | Atualizar `getModelFromIntelligence` (case `cerebro` → `claude-sonnet-4-20250514`), `isGeminiModel` (sem mudança), criar `isClaudeModel()`, e atualizar `getApiConfig` para retornar URL/key da Anthropic. |
-| **`supabase/functions/sdr-robot-chat/index.ts`** | Mesmas mudanças de `getModelFromIntelligence`, `isClaudeModel`, e `getApiConfig`. |
-| **`supabase/functions/manage-ai-keys/index.ts`** | Adicionar `anthropic: !!Deno.env.get('ANTHROPIC_API_KEY')` no check, e bloco de teste que chama `https://api.anthropic.com/v1/messages` com header `x-api-key`. |
+3) Blindar `robot-chat` (Delma Cérebro) com fallback real
+- Arquivo: `supabase/functions/robot-chat/index.ts`
+- Melhorias:
+  - Ajustar adaptação para Anthropic com normalização segura de conteúdo (texto/imagem) para não quebrar quando houver conteúdo não-string.
+  - Tratar falhas não-429 (400/401/402/403/404/5xx) com fallback em cadeia:
+    1) Claude Sonnet (primário),
+    2) Claude Haiku (fallback de modelo),
+    3) Lovable AI (modelo estável),
+    4) Gemini/OpenAI conforme chaves disponíveis.
+  - Preservar tool-calls e formato de resposta para não quebrar transferências/finalização.
+  - Melhorar mensagens de erro retornadas ao cliente (`provider`, `status`, `reason`).
 
-### Detalhes técnicos
+4) Blindar `sdr-robot-chat` com a mesma estratégia
+- Arquivo: `supabase/functions/sdr-robot-chat/index.ts`
+- Aplicar o mesmo pacote de robustez:
+  - normalização de payload Anthropic,
+  - fallback de modelo/provedor,
+  - tratamento uniforme de erro + logs detalhados,
+  - garantir continuidade do fluxo SDR sem travar conversa.
 
-**API da Anthropic** usa formato diferente do OpenAI. O endpoint `https://api.anthropic.com/v1/messages` requer:
-- Header `x-api-key` (não Bearer)
-- Header `anthropic-version: 2023-06-01`
-- Body com `model`, `max_tokens`, `messages` (formato compatível com OpenAI)
+5) Fazer o Relatório da Delma funcionar sempre
+- Arquivo: `supabase/functions/brain-analysis/index.ts`
+- Alterar geração de relatório para:
+  - Primário: Anthropic (Delma Cérebro),
+  - Fallback: Lovable AI,
+  - Fallback final: relatório determinístico (sem IA) usando as métricas já calculadas.
+- Resultado: sempre retorna conteúdo de relatório útil (nunca tela “não foi possível…”).
+- Incluir metadados no retorno (`providerUsed`, `fallbackUsed`, `warning`) para transparência na UI.
 
-A resposta retorna `content[0].text` ao invés de `choices[0].message.content`. As funções `robot-chat` e `sdr-robot-chat` precisarão de lógica para adaptar request/response ao formato Anthropic, incluindo tool calling que usa formato próprio.
+6) Ajuste fino da UI do Cérebro para feedback correto
+- Arquivo: `src/pages/admin/AdminBrain.tsx`
+- Exibir aviso contextual quando relatório veio por fallback (sem parecer erro fatal).
+- Mensagens de toast mais claras (ex.: “Gerado com fallback Claude Haiku” / “Gerado em modo automático sem IA”).
 
-**Alternativa simplificada**: A Anthropic oferece compatibilidade parcial com OpenAI format. Usaremos a adaptação no código para garantir compatibilidade com tool calling.
+Validação (fim-a-fim)
+1. Admin > Integrações de IA:
+- Testar conexão Claude deve retornar status explicativo correto.
+2. Admin > Cérebro > Relatório IA:
+- Gerar relatório deve sempre produzir conteúdo (Claude, fallback, ou automático).
+3. Robô com inteligência “Delma Cérebro 🧠”:
+- Testar conversa real (incluindo caso com transferência/tool-call) sem quebra.
+4. SDR com “Delma Cérebro”:
+- Validar avanço de etapa + transferência sem erro de provedor.
+5. Conferir logs:
+- erros com status e causa claros; sem falha silenciosa.
 
-**getApiConfig atualizado:**
-```typescript
-function isClaudeModel(intelligence: string): boolean {
-  return intelligence === 'cerebro';
-}
-
-function getApiConfig(intelligence: string) {
-  if (isGeminiModel(intelligence)) {
-    return { apiUrl: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", apiKey: Deno.env.get("GOOGLE_GEMINI_API_KEY") || '', providerName: 'Google Gemini' };
-  }
-  if (isClaudeModel(intelligence)) {
-    return { apiUrl: "https://api.anthropic.com/v1/messages", apiKey: Deno.env.get("ANTHROPIC_API_KEY") || '', providerName: 'Anthropic Claude', isAnthropic: true };
-  }
-  return { apiUrl: "https://api.openai.com/v1/chat/completions", apiKey: Deno.env.get("OPENAI_API_KEY") || '', providerName: 'OpenAI' };
-}
-```
-
-**Adaptação de request/response para Anthropic**: Na chamada AI dentro de `handleAutomaticMode`, quando `isClaudeModel`, converter o body para formato Anthropic (separar system prompt de messages, converter tools para formato Anthropic), e na resposta converter `content[0].text` de volta para formato OpenAI-like para que o resto do código funcione sem mudanças.
-
+Arquivos que serão alterados
+- `supabase/migrations/*` (nova migration de ajuste de `ai_providers`)
+- `supabase/functions/manage-ai-keys/index.ts`
+- `supabase/functions/robot-chat/index.ts`
+- `supabase/functions/sdr-robot-chat/index.ts`
+- `supabase/functions/brain-analysis/index.ts`
+- `src/pages/admin/AdminBrain.tsx`
