@@ -1,54 +1,36 @@
 
 
-## Plano: Insights autonomos da Delma + Performance individual dos atendentes
+## Plano: Nova aba "Conhecimento & Fluxos" no Cerebro
 
-### O que muda
+### O que sera feito
 
-1. **Insights autonomos mais ricos** — Expandir `computeLearnings()` com analises mais profundas: comparativo entre agentes (quem melhorou/piorou), deteccao de sobrecarga, taxa de resolucao por agente, horarios de pico por agente, e sugestoes automaticas de acao.
+Uma nova tab **"Conhecimento"** no Cerebro da Delma que mostra:
 
-2. **Nova secao "Performance Atendentes"** — Uma tab dedicada no Cerebro mostrando cada atendente do Suporte com:
-   - Conversas finalizadas no periodo
-   - TMA individual (com indicador visual verde/amarelo/vermelho)
-   - TME individual
-   - Tags mais frequentes por agente
-   - Grafico de barras comparativo entre agentes
-   - Comparativo com periodo anterior (tendencia de melhora/piora)
+1. **Base de Conhecimento dos Robos** — Lista cada robo ativo do Suporte com resumo do que ele sabe: quantidade de Q&A pairs, links de referencia, tamanho das instrucoes, e canais ativos.
 
-3. **Edge function enriquecida** — Adicionar ao `agentStats` dados de TME individual, tags por agente e comparativo com periodo anterior.
+2. **Gaps de Conhecimento Detectados** — Cruzando as tags mais frequentes de conversas problematicas com o conteudo dos robos, identificar temas que nao estao cobertos na base.
+
+3. **Sugestoes de Melhoria de Fluxo** — Analise automatica baseada nas metricas existentes gerando sugestoes concretas (ex: "Criar Q&A sobre tema X que aparece em 30% dos erros", "Robo Y nao tem instrucoes sobre financeiro mas 20% dos tickets sao financeiros").
 
 ### Arquivos modificados
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `supabase/functions/brain-analysis/index.ts` | Enriquecer `agentStats` com TME, tags frequentes, e stats do periodo anterior |
-| `src/pages/admin/AdminBrain.tsx` | Nova tab "Atendentes", insights autonomos expandidos |
+| `src/pages/admin/AdminBrain.tsx` | Nova tab "Conhecimento", fetch de robos, logica de gap analysis, UI com cards de robos + sugestoes |
 
 ### Detalhes tecnicos
 
-**Edge function — agentStats enriquecido:**
-```typescript
-agentStats: [{
-  name: string,
-  count: number,
-  avgTime: number,        // TMA
-  avgWaitTime: number,    // TME individual
-  topTags: [string, number][],  // top 3 tags do agente
-  prevCount: number,      // conversas periodo anterior
-  prevAvgTime: number,    // TMA periodo anterior
-}]
-```
+**Dados dos robos** — Buscar da tabela `robots` via Supabase client (ja acessivel por authenticated users). Campos relevantes: `name`, `status`, `qa_pairs` (jsonb array), `reference_links` (jsonb array), `instructions` (text), `departments` (text[]), `channels` (text[]).
 
-Calculado a partir dos `logs` e `prevLogs` ja buscados, agrupando por `assigned_to_name`.
+**Gap analysis (client-side):**
+- Comparar `topTags` das metricas com keywords nas `instructions` e `qa_pairs` dos robos
+- Se uma tag frequente nao aparece em nenhum Q&A ou instrucao, sinalizar como gap
+- Calcular cobertura percentual: "X de Y temas cobertos"
 
-**Frontend — nova tab "Atendentes":**
-- Tab "Atendentes" entre "Erros & Gaps" e "Relatorio IA"
-- Grafico de barras horizontal comparando TMA de cada agente
-- Cards individuais por agente com metricas + tendencia
-- Badge de status: verde (TMA abaixo da media), amarelo (na media), vermelho (acima)
+**UI da nova tab:**
+- Secao 1: Cards por robo mostrando nome, status, qtd Q&A, qtd links, tamanho instrucoes
+- Secao 2: Card "Gaps Detectados" com lista de tags frequentes sem cobertura
+- Secao 3: Card "Sugestoes de Melhoria" com acoes concretas geradas automaticamente
 
-**Frontend — insights autonomos expandidos no `computeLearnings`:**
-- Agente que mais melhorou TMA vs periodo anterior
-- Agente sobrecarregado (>30% do volume total)
-- Alerta se algum agente tem TME muito acima da media
-- Sugestao de redistribuicao de carga quando desbalanceado
+**Nova tab position:** Entre "Atendentes" e "Relatorio IA"
 
