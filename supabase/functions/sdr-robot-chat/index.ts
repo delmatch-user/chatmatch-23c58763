@@ -105,7 +105,7 @@ function getModelFromIntelligence(intelligence: string): string {
     case 'flash': return 'gemini-2.5-flash';
     case 'pro': return 'gemini-2.5-pro';
     case 'maestro': return 'gpt-4o';
-    case 'cerebro': return 'claude-sonnet-4-20250514';
+    case 'cerebro': return 'openai/gpt-5.2';
     default: return 'gemini-2.5-flash-lite';
   }
 }
@@ -115,7 +115,7 @@ function isGeminiModel(intelligence: string): boolean {
 }
 
 function isClaudeModel(intelligence: string): boolean {
-  return intelligence === 'cerebro';
+  return false; // Cerebro now uses Lovable AI, not Claude
 }
 
 function getApiConfig(intelligence: string): { apiUrl: string; apiKey: string; providerName: string; isAnthropic?: boolean } {
@@ -126,12 +126,11 @@ function getApiConfig(intelligence: string): { apiUrl: string; apiKey: string; p
       providerName: 'Google Gemini'
     };
   }
-  if (isClaudeModel(intelligence)) {
+  if (intelligence === 'cerebro') {
     return {
-      apiUrl: "https://api.anthropic.com/v1/messages",
-      apiKey: Deno.env.get("ANTHROPIC_API_KEY") || '',
-      providerName: 'Anthropic Claude',
-      isAnthropic: true
+      apiUrl: "https://ai.gateway.lovable.dev/v1/chat/completions",
+      apiKey: Deno.env.get("LOVABLE_API_KEY") || '',
+      providerName: 'Lovable AI (GPT-5.2)'
     };
   }
   return {

@@ -274,66 +274,36 @@ Seja direta, objetiva e use dados para embasar cada ponto. Responda em portuguê
       { role: "user", content: analysisPrompt },
     ];
 
-    // 1. Try Anthropic Claude (primary for Delma Cérebro)
-    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!aiAnalysis && ANTHROPIC_API_KEY) {
+    // 1. Try Lovable AI with GPT-5.2 (primary for Delma Cérebro)
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    if (!aiAnalysis && LOVABLE_API_KEY) {
       try {
-        console.log("[brain-analysis] Tentando Anthropic Claude...");
-        const anthropicResp = await fetch("https://api.anthropic.com/v1/messages", {
+        console.log("[brain-analysis] Tentando Lovable AI (GPT-5.2)...");
+        const gptResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
           method: "POST",
           headers: {
-            "x-api-key": ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 2000,
-            system: aiMessages[0].content,
-            messages: [{ role: "user", content: analysisPrompt }],
+            model: "openai/gpt-5.2",
+            messages: aiMessages,
           }),
         });
 
-        if (anthropicResp.ok) {
-          const anthropicData = await anthropicResp.json();
-          aiAnalysis = anthropicData.content?.[0]?.text || "";
-          providerUsed = "Anthropic Claude Sonnet";
-          console.log("[brain-analysis] Anthropic Claude Sonnet OK");
+        if (gptResp.ok) {
+          const gptData = await gptResp.json();
+          aiAnalysis = gptData.choices?.[0]?.message?.content || "";
+          providerUsed = "GPT-5.2";
+          console.log("[brain-analysis] GPT-5.2 OK");
         } else {
-          const errBody = await anthropicResp.text();
-          console.warn("[brain-analysis] Anthropic Sonnet falhou:", anthropicResp.status, errBody);
-          
-          // Try Claude Haiku as model fallback
-          try {
-            console.log("[brain-analysis] Tentando Anthropic Claude Haiku...");
-            const haikuResp = await fetch("https://api.anthropic.com/v1/messages", {
-              method: "POST",
-              headers: {
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                model: "claude-3-5-haiku-20241022",
-                max_tokens: 2000,
-                system: aiMessages[0].content,
-                messages: [{ role: "user", content: analysisPrompt }],
-              }),
-            });
-            if (haikuResp.ok) {
-              const haikuData = await haikuResp.json();
-              aiAnalysis = haikuData.content?.[0]?.text || "";
-              providerUsed = "Anthropic Claude Haiku";
-              fallbackUsed = true;
-              console.log("[brain-analysis] Anthropic Claude Haiku OK");
-            } else {
-              const haikuErr = await haikuResp.text();
-              console.warn("[brain-analysis] Anthropic Haiku falhou:", haikuResp.status, haikuErr);
-            }
-          } catch (haikuE) {
-            console.error("[brain-analysis] Haiku error:", haikuE);
-          }
+          const errBody = await gptResp.text();
+          console.warn("[brain-analysis] GPT-5.2 falhou:", gptResp.status, errBody);
         }
+      } catch (e) {
+        console.error("[brain-analysis] GPT-5.2 error:", e);
+      }
+    }
       } catch (e) {
         console.error("[brain-analysis] Anthropic error:", e);
       }
