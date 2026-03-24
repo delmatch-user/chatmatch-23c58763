@@ -252,6 +252,14 @@ const AdminBrain = () => {
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [scheduleConfig, setScheduleConfig] = useState<{ type: string; dayOfWeek: number; hourOfDay: number; isActive: boolean }>({ type: 'weekly', dayOfWeek: 1, hourOfDay: 8, isActive: false });
 
+  // Agent notification state
+  const [notifyModalOpen, setNotifyModalOpen] = useState(false);
+  const [notifyAgent, setNotifyAgent] = useState<AgentStat | null>(null);
+  const [notifyMessage, setNotifyMessage] = useState('');
+  const [notifyGenerating, setNotifyGenerating] = useState(false);
+  const [notifySending, setNotifySending] = useState(false);
+  const [agentNotifications, setAgentNotifications] = useState<Record<string, boolean>>({});
+
   const getEffectivePeriod = useCallback(() => {
     if (period === 'custom' && customDateRange.from && customDateRange.to) {
       return Math.max(1, differenceInDays(customDateRange.to, customDateRange.from) + 1);
