@@ -31,7 +31,8 @@ import {
   Sparkles,
   Trash2,
   Calendar,
-  ContactRound
+  ContactRound,
+  Brain
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/contexts/AppContext';
@@ -111,6 +112,7 @@ const adminNavItems: NavItem[] = [
   { icon: BarChart3, label: 'Geral', path: '/admin/relatorios' },
   { icon: Trophy, label: 'Config. Ranking', path: '/admin/ranking-config' },
   { icon: HardDrive, label: 'Armazenamento', path: '/admin/armazenamento' },
+  { icon: Brain, label: 'Cérebro', path: '/admin/cerebro' },
   { icon: Settings, label: 'Configurações', path: '#settings', isSettings: true },
 ];
 

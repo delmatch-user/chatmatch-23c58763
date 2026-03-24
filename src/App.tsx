@@ -33,6 +33,7 @@ import AdminReports from "./pages/admin/AdminReports";
 import AdminRobos from "./pages/admin/AdminRobos";
 import AdminStorage from "./pages/admin/AdminStorage";
 import AdminUsers from "./pages/admin/AdminUsers";
+import AdminBrain from "./pages/admin/AdminBrain";
 import GoogleCallbackPage from "./pages/sdr/GoogleCallbackPage";
 import SDRContactsPage from "./pages/sdr/SDRContactsPage";
 import SDRDashboardPage from "./pages/sdr/SDRDashboardPage";
@@ -263,6 +264,14 @@ const App = () => {
                         element={
                           <ProtectedRoute requireAdmin>
                             <AdminDeletionLogs />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/admin/cerebro"
+                        element={
+                          <ProtectedRoute requireAdmin>
+                            <AdminBrain />
                           </ProtectedRoute>
                         }
                       />
