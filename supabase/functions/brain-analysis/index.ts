@@ -141,12 +141,14 @@ serve(async (req) => {
     ).length;
     const abandonRate = totalConversas > 0 ? Math.round((abandonedCount / totalConversas) * 1000) / 10 : 0;
 
-    // Agent performance (enriched)
-    const agentStats: Record<string, { count: number; totalTime: number; totalWait: number; waitCount: number; tags: Record<string, number> }> = {};
+    // Agent performance (enriched with channel breakdown + resolution rate)
+    const agentStats: Record<string, { count: number; totalTime: number; totalWait: number; waitCount: number; tags: Record<string, number>; channels: Record<string, number>; transferredOut: number }> = {};
     logs.filter(l => l.assigned_to_name).forEach(l => {
       const name = l.assigned_to_name!;
-      if (!agentStats[name]) agentStats[name] = { count: 0, totalTime: 0, totalWait: 0, waitCount: 0, tags: {} };
+      if (!agentStats[name]) agentStats[name] = { count: 0, totalTime: 0, totalWait: 0, waitCount: 0, tags: {}, channels: {}, transferredOut: 0 };
       agentStats[name].count++;
+      const ch = l.channel || 'whatsapp';
+      agentStats[name].channels[ch] = (agentStats[name].channels[ch] || 0) + 1;
       if (l.started_at && l.finalized_at) {
         agentStats[name].totalTime += (new Date(l.finalized_at).getTime() - new Date(l.started_at).getTime()) / 60000;
       }
@@ -155,6 +157,18 @@ serve(async (req) => {
         agentStats[name].waitCount++;
       }
       (l.tags || []).forEach((t: string) => { const nt = normalizeTag(t); agentStats[name].tags[nt] = (agentStats[name].tags[nt] || 0) + 1; });
+    });
+
+    // Count transfers per agent for resolution rate
+    const { data: transferLogs } = await supabase
+      .from("transfer_logs")
+      .select("from_user_name")
+      .gte("created_at", periodStart)
+      .limit(1000);
+    (transferLogs || []).forEach((t: any) => {
+      if (t.from_user_name && agentStats[t.from_user_name]) {
+        agentStats[t.from_user_name].transferredOut++;
+      }
     });
 
     // Previous period agent stats
