@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { 
   ChevronDown,
@@ -41,6 +41,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useUnreadMessages } from '@/hooks/useUnreadMessages';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -66,11 +67,12 @@ interface NavItem {
   label: string;
   path: string;
   badge?: number;
+  pulse?: boolean;
   isSettings?: boolean;
   children?: NavItem[];
 }
 
-const getNavItems = (queueCount: number, activeConversationsCount: number, internalUnreadCount: number, showRanking: boolean, isSDR: boolean): NavItem[] => {
+const getNavItems = (queueCount: number, activeConversationsCount: number, internalUnreadCount: number, showRanking: boolean, isSDR: boolean, unreadAlerts: number = 0): NavItem[] => {
   const items: NavItem[] = [
     { icon: Inbox, label: 'Fila', path: '/fila', badge: queueCount > 0 ? queueCount : undefined },
     { icon: MessageSquare, label: 'Conversas', path: '/conversas', badge: activeConversationsCount > 0 ? activeConversationsCount : undefined },
@@ -85,7 +87,7 @@ const getNavItems = (queueCount: number, activeConversationsCount: number, inter
       { icon: History, label: 'Histórico', path: '/historico' },
       { icon: Trophy, label: 'Ranking', path: '/ranking' },
       { icon: Bot, label: 'Logs IA', path: '/logs-ia' },
-      { icon: Bell, label: 'Notificações', path: '/notificacoes' },
+      { icon: Bell, label: 'Alertas', path: '/notificacoes', badge: unreadAlerts > 0 ? unreadAlerts : undefined, pulse: unreadAlerts > 0 },
     ]});
   } else {
     items.push({ icon: History, label: 'Histórico', path: '/historico' });
@@ -147,6 +149,29 @@ export function Sidebar({ className, variant = 'desktop', onNavigate }: SidebarP
   const location = useLocation();
   const navigate = useNavigate();
   const isAdmin = location.pathname.startsWith('/admin');
+  const [unreadAlerts, setUnreadAlerts] = useState(0);
+  
+  // Fetch unread agent notifications count
+  const fetchUnreadAlerts = useCallback(async () => {
+    if (!user?.id) return;
+    const { count, error } = await supabase
+      .from('agent_notifications' as any)
+      .select('*', { count: 'exact', head: true })
+      .eq('agent_id', user.id)
+      .eq('is_read', false);
+    if (!error && count != null) setUnreadAlerts(count);
+  }, [user?.id]);
+
+  useEffect(() => {
+    fetchUnreadAlerts();
+    const channel = supabase
+      .channel('sidebar-alerts')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'agent_notifications' }, () => {
+        fetchUnreadAlerts();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchUnreadAlerts]);
   
   // Verificar se o usuário pertence ao departamento Suporte
   const suporteDeptId = departments.find(d => d.name.toLowerCase() === 'suporte')?.id;
@@ -160,7 +185,7 @@ export function Sidebar({ className, variant = 'desktop', onNavigate }: SidebarP
   const activeConversationsCount = conversations.filter(c => 
     c.status !== 'finalizada' && c.status !== 'em_fila'
   ).length;
-  const navItems = isAdmin ? adminNavItems : getNavItems(queueCount, activeConversationsCount, unreadCount.internalChat, userBelongsToSuport, userBelongsToComercial);
+  const navItems = isAdmin ? adminNavItems : getNavItems(queueCount, activeConversationsCount, unreadCount.internalChat, userBelongsToSuport, userBelongsToComercial, unreadAlerts);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
@@ -341,8 +366,11 @@ export function Sidebar({ className, variant = 'desktop', onNavigate }: SidebarP
                             )
                           }
                         >
-                          <child.icon className="w-4 h-4 shrink-0" />
+                          <child.icon className={cn("w-4 h-4 shrink-0", child.pulse && "animate-pulse text-primary")} />
                           <span className="flex-1">{child.label}</span>
+                          {child.badge && (
+                            <span className="queue-counter bg-primary text-primary-foreground animate-pulse">{child.badge}</span>
+                          )}
                         </NavLink>
                       ))}
                     </div>
