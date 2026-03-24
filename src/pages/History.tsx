@@ -19,7 +19,7 @@ import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { getTagColorClasses, SUPORTE_TAXONOMY_TAGS } from '@/lib/tagColors';
 import { extractCidade } from '@/lib/phoneUtils';
-import { cn } from '@/lib/utils';
+import { cn, priorityLabel } from '@/lib/utils';
 
 interface ConversationLog {
   id: string;
@@ -440,7 +440,7 @@ export default function History() {
                                 }
                                 return (
                                   <Badge className={priorityColors[log.priority] || priorityColors.normal}>
-                                    {log.priority}
+                                    {priorityLabel(log.priority)}
                                   </Badge>
                                 );
                               })()}

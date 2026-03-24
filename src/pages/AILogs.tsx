@@ -18,7 +18,7 @@ import { format, startOfDay, endOfDay, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { getTagColorClasses, getTagDotColor, LEGACY_TAG_MAP, SUPORTE_TAXONOMY_TAGS } from '@/lib/tagColors';
 import { extractCidade } from '@/lib/phoneUtils';
-import { cn } from '@/lib/utils';
+import { cn, priorityLabel } from '@/lib/utils';
 import { toast } from 'sonner';
 
 function renderMarkdown(text: string): string {
@@ -469,7 +469,7 @@ export default function AILogs() {
                                 </Badge>
                               ) : (
                                 <Badge className={priorityColors[log.priority] || priorityColors.normal}>
-                                  {log.priority}
+                                  {priorityLabel(log.priority)}
                                 </Badge>
                               )}
                               {log.tags?.filter(t => !SUPORTE_TAXONOMY_TAGS.some(st => t === st)).map(tag => (

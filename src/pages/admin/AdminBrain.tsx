@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
+import { cn, priorityLabel } from '@/lib/utils';
 
 interface AgentStat {
   name: string;
@@ -376,7 +376,7 @@ const AdminBrain = () => {
                   <CardContent>
                     <div className="flex flex-wrap gap-2">
                       {Object.entries(metrics.priorityCounts).map(([priority, count]) => (
-                        <Badge key={priority} className={cn("text-sm", priorityColors[priority] || 'bg-muted text-muted-foreground')}>{priority}: {count}</Badge>
+                        <Badge key={priority} className={cn("text-sm", priorityColors[priority] || 'bg-muted text-muted-foreground')}>{priorityLabel(priority)}: {count}</Badge>
                       ))}
                     </div>
                   </CardContent>
@@ -512,7 +512,7 @@ const AdminBrain = () => {
                         <div className="flex flex-wrap gap-2">
                           {Object.entries(byPriority).sort((a, b) => b[1] - a[1]).map(([priority, count]) => (
                             <Badge key={priority} className={cn("text-sm gap-1", priorityColors[priority] || 'bg-muted text-muted-foreground')}>
-                              {priority} <span className="font-bold">{count}</span>
+                              {priorityLabel(priority)} <span className="font-bold">{count}</span>
                             </Badge>
                           ))}
                         </div>
