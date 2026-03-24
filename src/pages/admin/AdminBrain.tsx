@@ -269,13 +269,43 @@ const AdminBrain = () => {
     return parseInt(period);
   }, [period, customDateRange]);
 
+  const getEffectiveDateRange = useCallback(() => {
+    const now = new Date();
+    // Use São Paulo timezone offset (UTC-3)
+    const spNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    const todayMidnight = new Date(spNow);
+    todayMidnight.setHours(0, 0, 0, 0);
+
+    if (period === 'today') {
+      return { start: todayMidnight.toISOString(), end: now.toISOString(), days: 1 };
+    }
+    if (period === 'yesterday') {
+      const yesterdayMidnight = new Date(todayMidnight);
+      yesterdayMidnight.setDate(yesterdayMidnight.getDate() - 1);
+      return { start: yesterdayMidnight.toISOString(), end: todayMidnight.toISOString(), days: 1 };
+    }
+    if (period === 'custom' && customDateRange.from && customDateRange.to) {
+      const from = new Date(customDateRange.from);
+      from.setHours(0, 0, 0, 0);
+      const to = new Date(customDateRange.to);
+      to.setHours(23, 59, 59, 999);
+      const days = Math.max(1, differenceInDays(customDateRange.to, customDateRange.from) + 1);
+      return { start: from.toISOString(), end: to.toISOString(), days };
+    }
+    const days = parseInt(period);
+    const startDate = new Date(todayMidnight);
+    startDate.setDate(startDate.getDate() - days);
+    return { start: startDate.toISOString(), end: now.toISOString(), days };
+  }, [period, customDateRange]);
+
   const fetchMetrics = useCallback(async (showToast = false) => {
     setLoadingMetrics(true);
     setFetchError(false);
     try {
       const effectivePeriod = getEffectivePeriod();
+      const dateRange = getEffectiveDateRange();
       const { data, error } = await supabase.functions.invoke('brain-analysis', {
-        body: { period: effectivePeriod, metricsOnly: true },
+        body: { period: effectivePeriod, metricsOnly: true, periodStart: dateRange.start, periodEnd: dateRange.end },
       });
       if (error) throw error;
       setMetrics(filterMetrics(data.metrics));
@@ -288,7 +318,7 @@ const AdminBrain = () => {
     } finally {
       setLoadingMetrics(false);
     }
-  }, [getEffectivePeriod]);
+  }, [getEffectivePeriod, getEffectiveDateRange]);
 
   const [reportProvider, setReportProvider] = useState<string>('');
   const [reportFallback, setReportFallback] = useState(false);
@@ -297,8 +327,9 @@ const AdminBrain = () => {
     setLoadingReport(true);
     try {
       const effectivePeriod = getEffectivePeriod();
+      const dateRange = getEffectiveDateRange();
       const { data, error } = await supabase.functions.invoke('brain-analysis', {
-        body: { period: effectivePeriod, userContext: reportContext || undefined },
+        body: { period: effectivePeriod, userContext: reportContext || undefined, periodStart: dateRange.start, periodEnd: dateRange.end },
       });
       if (error) throw error;
       setMetrics(filterMetrics(data.metrics));
