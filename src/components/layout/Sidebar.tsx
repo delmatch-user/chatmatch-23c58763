@@ -107,8 +107,10 @@ const adminNavItems: NavItem[] = [
   { icon: Users, label: 'Usuários', path: '/admin/usuarios' },
   { icon: Building2, label: 'Departamentos', path: '/admin/departamentos' },
   { icon: Bot, label: 'Robôs', path: '/admin/robos' },
-  { icon: Sparkles, label: 'IAs', path: '/admin/ias' },
-  { icon: Smartphone, label: 'WhatsApp', path: '/admin/whatsapp' },
+  { icon: Share, label: 'Integrações', path: '/admin/ias', children: [
+    { icon: Sparkles, label: 'IAs', path: '/admin/ias' },
+    { icon: Smartphone, label: 'WhatsApp', path: '/admin/whatsapp' },
+  ]},
   { icon: BarChart3, label: 'Geral', path: '/admin/relatorios', children: [
     { icon: FileText, label: 'Logs', path: '/admin/logs' },
     { icon: Trash2, label: 'Exclusões', path: '/admin/exclusoes' },
