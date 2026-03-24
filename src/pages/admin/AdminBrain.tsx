@@ -246,7 +246,7 @@ const AdminBrain = () => {
   const [maturityHistory, setMaturityHistory] = useState<Array<{ date: string; score: number }>>([]);
 
   // Agent live status
-  const [agentLiveStatus, setAgentLiveStatus] = useState<Record<string, { status: string; openConversations: number }>>({});
+  const [agentLiveStatus, setAgentLiveStatus] = useState<Record<string, { status: string; openConversations: number; profileId: string }>>({});
 
   // Report scheduling
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
