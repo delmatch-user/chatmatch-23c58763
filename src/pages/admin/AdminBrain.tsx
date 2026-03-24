@@ -1278,10 +1278,24 @@ const AdminBrain = () => {
                           <p className="text-xs text-muted-foreground mt-2 text-center">
                             {knowledgeData.maturityScore >= 70 ? 'Operação madura' : knowledgeData.maturityScore >= 40 ? 'Em evolução' : 'Precisa de atenção'}
                           </p>
+                          {/* Score History */}
+                          {maturityHistory.length > 1 && (
+                            <div className="mt-3">
+                              <p className="text-[10px] text-muted-foreground mb-1">Histórico (30 dias)</p>
+                              <div className="h-[50px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <LineChart data={maturityHistory}>
+                                    <Line type="monotone" dataKey="score" stroke={knowledgeData.maturityScore >= 70 ? 'hsl(var(--success))' : knowledgeData.maturityScore >= 40 ? 'hsl(48, 96%, 53%)' : 'hsl(var(--destructive))'} strokeWidth={2} dot={false} />
+                                    <Tooltip contentStyle={{ background: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', borderRadius: '6px', fontSize: '11px' }} formatter={(v: number) => [v, 'Score']} labelFormatter={(l) => l} />
+                                  </LineChart>
+                                </ResponsiveContainer>
+                              </div>
+                            </div>
+                          )}
                         </CardContent>
                       </Card>
 
-                      <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
+
                         <Card className="border-primary/20">
                           <CardContent className="pt-5 pb-4">
                             <div className="flex items-center gap-3 mb-2">
