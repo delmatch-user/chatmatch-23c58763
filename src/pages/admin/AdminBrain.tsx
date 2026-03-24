@@ -395,7 +395,7 @@ const AdminBrain = () => {
   const loadAgentLiveStatus = useCallback(async () => {
     try {
       const { data: profiles } = await supabase.from('profiles').select('id, name, status');
-      const { data: conversations } = await supabase.from('conversations').select('assigned_to').neq('status', 'finalized');
+      const { data: conversations } = await supabase.from('conversations').select('assigned_to').neq('status', 'finalizada');
       if (profiles && conversations) {
         const openCounts: Record<string, number> = {};
         conversations.forEach((c: any) => {
