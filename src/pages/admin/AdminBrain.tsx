@@ -1219,14 +1219,25 @@ const AdminBrain = () => {
                   const countTrend = agent.prevCount > 0 ? Math.round(((agent.count - agent.prevCount) / agent.prevCount) * 100) : null;
                   const channelData = agent.channels ? Object.entries(agent.channels).map(([ch, v]) => ({ name: ch, value: v, fill: CHANNEL_COLORS[ch] || 'hsl(var(--primary))' })) : [];
 
+                  const agentProfileId = agentLiveStatus[agent.name]?.profileId;
+                  const isNotified = agentProfileId ? !!agentNotifications[agentProfileId] : false;
+
                   return (
-                    <Card key={agent.name} className={cn("relative overflow-hidden cursor-pointer hover:border-primary/30 transition-colors", status === 'red' && "border-destructive/20")} onClick={() => { setSelectedAgent(agent); setAgentSheetOpen(true); }}>
+                    <Card key={agent.name} className={cn("relative overflow-hidden hover:border-primary/30 transition-colors", status === 'red' && "border-destructive/20")}>
                       {status === 'red' && (
-                        <div className="absolute top-2 right-2">
+                        <div className="absolute top-2 right-10">
                           <AlertTriangle className="w-4 h-4 text-destructive animate-pulse" />
                         </div>
                       )}
-                      <CardContent className="pt-6 space-y-3">
+                      {/* Notification status indicator */}
+                      <div className="absolute top-2 right-2" title={isNotified ? 'Notificado neste período' : 'Pendente de notificação'}>
+                        {isNotified ? (
+                          <CheckCircle2 className="w-4 h-4 text-success" />
+                        ) : (
+                          <Clock className="w-4 h-4 text-warning" />
+                        )}
+                      </div>
+                      <CardContent className="pt-6 space-y-3 cursor-pointer" onClick={() => { setSelectedAgent(agent); setAgentSheetOpen(true); }}>
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2 min-w-0">
                             {agentLiveStatus[agent.name] && (
@@ -1243,7 +1254,7 @@ const AdminBrain = () => {
                               </Badge>
                             )}
                           </div>
-                          <Badge className={cn("text-xs", statusColors[status])}>{statusLabels[status]}</Badge>
+                          <Badge className={cn("text-xs mr-6", statusColors[status])}>{statusLabels[status]}</Badge>
                         </div>
                         <div className="grid grid-cols-3 gap-2 text-sm">
                           <div>
@@ -1290,6 +1301,23 @@ const AdminBrain = () => {
                           </div>
                         )}
                       </CardContent>
+                      {/* Notify button */}
+                      <div className="px-6 pb-4">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full gap-2 text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setNotifyAgent(agent);
+                            setNotifyMessage('');
+                            setNotifyModalOpen(true);
+                          }}
+                        >
+                          <Bell className="w-3.5 h-3.5" />
+                          {isNotified ? 'Reenviar Notificação' : 'Notificar Atendente'}
+                        </Button>
+                      </div>
                     </Card>
                   );
                 })}
