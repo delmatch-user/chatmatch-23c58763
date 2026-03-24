@@ -206,12 +206,16 @@ serve(async (req) => {
                 'Content-Type': 'application/json'
               },
               body: JSON.stringify({
-                model: 'claude-haiku-3-5-20241022',
+                model: 'claude-3-5-haiku-20241022',
                 max_tokens: 5,
                 messages: [{ role: 'user', content: 'Hi' }]
               })
             });
             success = resp.ok;
+            if (!success) {
+              const errorBody = await resp.text();
+              console.error('Anthropic test error:', resp.status, errorBody);
+            }
             message = success ? 'Conexão bem sucedida!' : `Erro: ${resp.status}`;
           } catch (e) {
             message = 'Erro de conexão';
