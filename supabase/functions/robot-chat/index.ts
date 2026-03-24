@@ -345,9 +345,8 @@ function buildSystemPrompt(config: RobotConfig, availableDepartments?: { id: str
   prompt += `\n## Taxonomia de Prioridade (Tags)\n`;
   prompt += `Ao transferir para humano, SEMPRE classifique o atendimento com UMA das tags abaixo no campo "taxonomy_tag":\n`;
   prompt += `- Acidente - Urgente – Acidentes, emergências, risco físico. Fura fila.\n`;
-  prompt += `- Operacional - Pendente – Bugs no app, erros de código, problemas técnicos.\n`;
   prompt += `- Financeiro - Normal – Repasses, saques, questões financeiras.\n`;
-  prompt += `- Duvida - Geral – Perguntas simples, dúvidas gerais.\n`;
+  prompt += `- Duvida - Geral – Perguntas simples, dúvidas gerais, problemas operacionais, bugs no app.\n`;
   prompt += `- Comercial - B2B – Exclusivo para donos de lojas, gerentes, questões B2B.\n`;
 
   prompt += `\n## Procedimento de Pedidos Duplicados\n`;
@@ -435,7 +434,6 @@ function buildOpenAITools(config: RobotConfig, availableDepartments?: { id: stri
               description: "Tag de prioridade para classificar o atendimento",
               enum: [
                 "Acidente - Urgente",
-                "Operacional - Pendente",
                 "Financeiro - Normal",
                 "Duvida - Geral",
                 "Comercial - B2B"
@@ -554,7 +552,7 @@ function buildOpenAITools(config: RobotConfig, availableDepartments?: { id: stri
             taxonomy_tag: {
               type: "string",
               description: "Tag de classificação do atendimento baseada no assunto da conversa",
-              enum: ["Acidente - Urgente", "Operacional - Pendente", "Financeiro - Normal", "Duvida - Geral", "Comercial - B2B"]
+              enum: ["Acidente - Urgente", "Financeiro - Normal", "Duvida - Geral", "Comercial - B2B"]
             }
           },
           required: ["farewell_message", "resolution_summary", "taxonomy_tag"]

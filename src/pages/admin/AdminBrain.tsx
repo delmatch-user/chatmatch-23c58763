@@ -63,7 +63,6 @@ interface BrainMetrics {
 }
 
 const TAG_NORMALIZATION: Record<string, string> = {
-  'OPERACIONAL_PENDENTE': 'Operacional - Pendente',
   'ACIDENTE_URGENTE': 'Acidente - Urgente',
   'FINANCEIRO_NORMAL': 'Financeiro - Normal',
   'DUVIDA_GERAL': 'Duvida - Geral',
@@ -410,7 +409,6 @@ const AdminBrain = () => {
                   .sort((a, b) => b.value - a.value);
                 const barColors: Record<string, string> = {
                   'Acidente - Urgente': 'hsl(0, 72%, 51%)',
-                  'Operacional - Pendente': 'hsl(25, 95%, 53%)',
                   'Financeiro - Normal': 'hsl(217, 91%, 60%)',
                   'Duvida - Geral': 'hsl(160, 84%, 39%)',
                   'Comercial - B2B': 'hsl(48, 96%, 53%)',
