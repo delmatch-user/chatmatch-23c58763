@@ -107,7 +107,7 @@ Classifique cada conversa em EXATAMENTE UMA das seguintes categorias:
 4. "Duvida - Geral" - Dúvidas gerais, informações, como funciona, cadastro, perguntas simples
 5. "Comercial - B2B" - Assuntos comerciais B2B: parcerias, novos estabelecimentos, propostas comerciais, negociações
 
-Responda APENAS com um JSON array onde cada item tem "id" (o ID da conversa) e "tag" (uma das 4 categorias acima, exatamente como escrita).
+Responda APENAS com um JSON array onde cada item tem "id" (o ID da conversa) e "tag" (uma das 5 categorias acima, exatamente como escrita).
 Exemplo: [{"id":"abc","tag":"Duvida - Geral"}]`;
 
       const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
