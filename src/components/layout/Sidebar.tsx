@@ -366,8 +366,11 @@ export function Sidebar({ className, variant = 'desktop', onNavigate }: SidebarP
                             )
                           }
                         >
-                          <child.icon className="w-4 h-4 shrink-0" />
+                          <child.icon className={cn("w-4 h-4 shrink-0", child.pulse && "animate-pulse text-primary")} />
                           <span className="flex-1">{child.label}</span>
+                          {child.badge && (
+                            <span className="queue-counter bg-primary text-primary-foreground animate-pulse">{child.badge}</span>
+                          )}
                         </NavLink>
                       ))}
                     </div>
