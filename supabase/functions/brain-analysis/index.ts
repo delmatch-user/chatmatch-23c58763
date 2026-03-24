@@ -97,7 +97,51 @@ serve(async (req) => {
     const errorLogs = logs.filter(l =>
       l.priority === 'urgent' || l.priority === 'high' ||
       (l.tags || []).some((t: string) => t.toLowerCase().includes('erro') || t.toLowerCase().includes('reclamação') || t.toLowerCase().includes('insatisf'))
-    ).slice(0, 20);
+    ).slice(0, 50);
+
+    const taxonomyTags = ['Acidente - Urgente', 'Operacional - Pendente', 'Financeiro - Normal', 'Duvida - Geral', 'Comercial - B2B'];
+
+    const mapErrorLog = (l: any) => ({
+      id: l.id,
+      contact_name: l.contact_name,
+      contact_phone: l.contact_phone,
+      contact_notes: l.contact_notes,
+      priority: l.priority,
+      tags: l.tags,
+      channel: l.channel,
+      assigned_to_name: l.assigned_to_name,
+      finalized_at: l.finalized_at,
+      started_at: l.started_at,
+    });
+
+    // Classify errors by type (Estabelecimento / Motoboy / Outros)
+    const classifyType = (tags: string[]): string => {
+      if (tags.some(t => t === 'Estabelecimento')) return 'estabelecimento';
+      if (tags.some(t => t === 'Motoboy')) return 'motoboy';
+      return 'outros';
+    };
+
+    const buildTypeGroup = (filteredLogs: any[]) => {
+      const motivos: Record<string, number> = {};
+      filteredLogs.forEach(l => {
+        (l.tags || []).forEach((t: string) => {
+          if (taxonomyTags.includes(t)) {
+            motivos[t] = (motivos[t] || 0) + 1;
+          }
+        });
+      });
+      return { total: filteredLogs.length, motivos, logs: filteredLogs.map(mapErrorLog) };
+    };
+
+    const estabLogs = errorLogs.filter(l => classifyType(l.tags || []) === 'estabelecimento');
+    const motoboyLogs = errorLogs.filter(l => classifyType(l.tags || []) === 'motoboy');
+    const outrosLogs = errorLogs.filter(l => classifyType(l.tags || []) === 'outros');
+
+    const errorsByType = {
+      estabelecimento: buildTypeGroup(estabLogs),
+      motoboy: buildTypeGroup(motoboyLogs),
+      outros: buildTypeGroup(outrosLogs),
+    };
 
     const metrics = {
       period,
@@ -117,17 +161,8 @@ serve(async (req) => {
         count: stats.count,
         avgTime: Math.round((stats.totalTime / stats.count) * 10) / 10,
       })).sort((a, b) => b.count - a.count),
-      errorLogs: errorLogs.map(l => ({
-        id: l.id,
-        contact_name: l.contact_name,
-        contact_phone: l.contact_phone,
-        priority: l.priority,
-        tags: l.tags,
-        channel: l.channel,
-        assigned_to_name: l.assigned_to_name,
-        finalized_at: l.finalized_at,
-        started_at: l.started_at,
-      })),
+      errorLogs: errorLogs.map(mapErrorLog),
+      errorsByType,
     };
 
     // If metricsOnly, skip AI call
