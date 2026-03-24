@@ -235,6 +235,14 @@ const AdminBrain = () => {
   const [topTagsChannelFilter, setTopTagsChannelFilter] = useState('all');
   const [groupSimilarTags, setGroupSimilarTags] = useState(false);
 
+  // Phase 3 state
+  const [agentSheetOpen, setAgentSheetOpen] = useState(false);
+  const [selectedAgent, setSelectedAgent] = useState<AgentStat | null>(null);
+  const [reportHistory, setReportHistory] = useState<Array<{ id: string; created_at: string; period: number; provider: string; content: string; context: string | null }>>([]);
+  const [selectedHistoryReport, setSelectedHistoryReport] = useState<string | null>(null);
+  const [reportContext, setReportContext] = useState('');
+  const [reportFallbackError, setReportFallbackError] = useState('');
+
   const getEffectivePeriod = useCallback(() => {
     if (period === 'custom' && customDateRange.from && customDateRange.to) {
       return Math.max(1, differenceInDays(customDateRange.to, customDateRange.from) + 1);
