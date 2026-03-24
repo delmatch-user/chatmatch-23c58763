@@ -204,9 +204,6 @@ const AdminBrain = () => {
   };
 
   const learnings = metrics ? computeLearnings(metrics) : [];
-  const managerialInsights = metrics ? computeManagerialInsights(metrics) : [];
-  const patterns = metrics ? computePatterns(metrics) : null;
-  const recommendations = metrics ? computeRecommendations(metrics) : [];
 
   return (
     <MainLayout>
