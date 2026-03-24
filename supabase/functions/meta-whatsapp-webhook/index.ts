@@ -363,9 +363,9 @@ serve(async (req) => {
               conversationId = existingConv.id;
               assignedRobotId = existingConv.assigned_to_robot;
 
-              // Auto-correção: preencher whatsapp_instance_id se estiver vazio
-              if (!existingConv.whatsapp_instance_id && phoneNumberId) {
-                console.log(`[Meta Webhook] Auto-corrigindo whatsapp_instance_id da conversa ${conversationId} → ${phoneNumberId}`);
+              // Auto-correção: sempre sincronizar com o número oficial que recebeu a mensagem
+              if (phoneNumberId && existingConv.whatsapp_instance_id !== phoneNumberId) {
+                console.log(`[Meta Webhook] Sincronizando whatsapp_instance_id da conversa ${conversationId}: ${existingConv.whatsapp_instance_id || 'null'} → ${phoneNumberId}`);
                 await supabase
                   .from('conversations')
                   .update({ whatsapp_instance_id: phoneNumberId })
