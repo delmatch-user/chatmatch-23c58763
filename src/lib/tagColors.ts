@@ -3,7 +3,7 @@ export const PREDEFINED_TAGS = ['Cardápio Digital', 'Estabelecimento', 'Motoboy
 // Tags de taxonomia exclusivas do departamento Suporte
 export const SUPORTE_TAXONOMY_TAGS = [
   'Acidente - Urgente',
-  'Operacional - Normal',
+  'Operacional - Geral',
   'Financeiro - Normal',
   'Duvida - Geral',
   'Comercial - B2B',
@@ -15,7 +15,9 @@ const TAG_NORMALIZATION: Record<string, string> = {
   'FINANCEIRO_NORMAL': 'Financeiro - Normal',
   'DUVIDA_GERAL': 'Duvida - Geral',
   'COMERCIAL_B2B': 'Comercial - B2B',
-  'OPERACIONAL_PENDENTE': 'Operacional - Normal',
+  'OPERACIONAL_PENDENTE': 'Operacional - Geral',
+  'Operacional - Normal': 'Operacional - Geral',
+  'Operacional - Pendente': 'Operacional - Geral',
 };
 
 /**
@@ -33,7 +35,7 @@ const TAG_COLOR_MAP: Record<string, string> = {
   'Motoboy': 'bg-green-500/20 text-green-400 border-green-500/30',
   'Lead': 'bg-purple-500/20 text-purple-400 border-purple-500/30',
   'Acidente - Urgente': 'bg-red-600/20 text-red-400 border-red-600/30',
-  'Operacional - Normal': 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+  'Operacional - Geral': 'bg-orange-500/20 text-orange-400 border-orange-500/30',
   'Financeiro - Normal': 'bg-blue-500/20 text-blue-400 border-blue-500/30',
   'Duvida - Geral': 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
   'Comercial - B2B': 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
@@ -49,7 +51,7 @@ const TAG_DOT_COLOR_MAP: Record<string, string> = {
   'Motoboy': 'bg-green-400',
   'Lead': 'bg-purple-400',
   'Acidente - Urgente': 'bg-red-500',
-  'Operacional - Normal': 'bg-orange-400',
+  'Operacional - Geral': 'bg-orange-400',
   'Financeiro - Normal': 'bg-blue-400',
   'Duvida - Geral': 'bg-emerald-400',
   'Comercial - B2B': 'bg-yellow-400',
