@@ -281,14 +281,31 @@ const AdminBrain = () => {
     try {
       const effectivePeriod = getEffectivePeriod();
       const { data, error } = await supabase.functions.invoke('brain-analysis', {
-        body: { period: effectivePeriod },
+        body: { period: effectivePeriod, userContext: reportContext || undefined },
       });
       if (error) throw error;
       setMetrics(filterMetrics(data.metrics));
       setAiAnalysis(data.aiAnalysis);
       setReportProvider(data.providerUsed || '');
       setReportFallback(data.fallbackUsed || false);
+      setReportFallbackError(data.fallbackError || '');
       setLastUpdated(new Date());
+
+      // Save to brain_reports
+      if (data.aiAnalysis) {
+        try {
+          await supabase.from('brain_reports' as any).insert({
+            period: effectivePeriod,
+            provider: data.providerUsed || 'unknown',
+            content: data.aiAnalysis,
+            context: reportContext || null,
+          });
+          loadReportHistory();
+        } catch (saveErr) {
+          console.warn('Could not save report:', saveErr);
+        }
+      }
+
       if (data.fallbackUsed) {
         toast.info(`Relatório gerado via ${data.providerUsed || 'fallback'} (provedor principal indisponível)`);
       } else {
@@ -299,6 +316,36 @@ const AdminBrain = () => {
       toast.error('Erro ao gerar relatório: ' + (e.message || 'Erro desconhecido'));
     } finally {
       setLoadingReport(false);
+    }
+  };
+
+  const loadReportHistory = async () => {
+    try {
+      const { data } = await supabase
+        .from('brain_reports' as any)
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(20);
+      setReportHistory((data as any[]) || []);
+    } catch {
+      // silently fail
+    }
+  };
+
+  const exportPdf = async () => {
+    const element = document.getElementById('brain-report-content');
+    if (!element) return;
+    try {
+      const html2pdf = (await import('html2pdf.js')).default;
+      html2pdf().set({
+        margin: [10, 10],
+        filename: `relatorio-delma-${format(new Date(), 'yyyy-MM-dd')}.pdf`,
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      }).from(element).save();
+      toast.success('PDF exportado!');
+    } catch {
+      toast.error('Erro ao exportar PDF');
     }
   };
 
