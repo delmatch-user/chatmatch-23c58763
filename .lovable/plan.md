@@ -1,38 +1,50 @@
 
 
-# Corrigir: Observações manuais devem ser a prioridade do relatório
+# Enriquecer dados enviados à Delma para relatórios específicos
 
 ## Problema
 
-As observações manuais do gestor são inseridas no final do prompt como uma nota secundária (`**Observações manuais do gestor:** ...`). A IA trata isso como contexto adicional e gera o relatório padrão, ignorando o pedido específico (ex: "relatório do atendente Alex dos últimos 3 dias").
+O `metricsBlock` enviado à IA contém apenas resumos agregados por agente (total de conversas, TMA médio). Quando o gestor pede "relatório do Alex dos últimos 3 dias", a IA não tem dados diários por agente, nem logs problemáticos por agente, então diz que não consegue gerar.
 
 ## Solução
 
-Quando há observações manuais, reestruturar o prompt para que a instrução do gestor seja a **diretriz principal** do relatório, não um apêndice.
+Expandir o `metricsBlock` no `brain-analysis/index.ts` para incluir dados granulares que já são calculados mas não são passados à IA:
 
-## Mudança
+### Dados a adicionar no prompt
+
+1. **Breakdown diário por agente** — já existe `dailyBuckets` global, criar um equivalente por agente com conversas/dia, TMA/dia, TME/dia
+2. **Conversas problemáticas por agente** — filtrar `errorLogs` por `assigned_to_name` e listar no prompt
+3. **Tags detalhadas por agente** — já calculadas em `agentStats[name].tags`, incluir todas (não só top 3)
+4. **Tendências diárias globais** — já calculadas em `dailyTrends`, incluir no prompt
+
+### Mudança técnica
 
 **Arquivo**: `supabase/functions/brain-analysis/index.ts`
 
-1. **Quando `reqUserContext` existe**: alterar o system prompt e o user prompt para priorizar a solicitação do gestor. O prompt passa a instruir a IA a **focar exclusivamente no que foi pedido**, usando as métricas como base de dados de apoio.
+1. Após calcular `agentStats`, criar `agentDailyStats` — um map `agente → dia → { count, tmaSum, tmaCount, tmeSum, tmeCount }`
+2. Expandir o `metricsBlock` com:
+   - Seção "Dados diários por agente" com tabela por agente mostrando conversas, TMA, TME por dia
+   - Seção "Conversas problemáticas por agente" listando erros/reclamações atribuídos a cada agente
+   - Seção "Tendências diárias globais" com os dados de `dailyTrends`
+   - Todas as tags por agente (não truncadas)
+3. Adicionar instrução no system prompt dizendo que a IA tem acesso a **todos os dados** e deve usá-los diretamente sem pedir mais informações
 
-2. **Quando `reqUserContext` está vazio**: manter o comportamento atual (relatório geral).
+### Exemplo do prompt expandido
 
-Lógica resumida:
+```
+**Dados diários por agente:**
+Alex:
+  2026-03-22: 5 conversas, TMA 12.3min, TME 2.1min
+  2026-03-23: 8 conversas, TMA 9.1min, TME 1.8min
+  2026-03-24: 3 conversas, TMA 15.0min, TME 3.2min
+  Tags: Financeiro - Normal(4), Operacional - Geral(6), Acidente - Urgente(2)
+  Problemáticas: 2 (prioridade alta/urgente)
 
-```typescript
-const systemMessage = reqUserContext
-  ? "Você é a Delma, gerente de suporte. O gestor fez uma solicitação específica. " +
-    "Você DEVE responder EXATAMENTE o que foi pedido, usando as métricas disponíveis. " +
-    "NÃO gere um relatório genérico. Foque 100% na solicitação."
-  : "Você é a Delma, uma gerente de suporte altamente analítica e proativa. " +
-    "Gere relatórios claros e acionáveis.";
-
-const userMessage = reqUserContext
-  ? `**SOLICITAÇÃO DO GESTOR (PRIORIDADE MÁXIMA):**\n${reqUserContext}\n\n` +
-    `Use os dados abaixo para atender a solicitação acima:\n\n${metricsBlock}`
-  : analysisPrompt; // prompt atual com estrutura fixa
+**Tendências diárias globais:**
+  2026-03-22: TMA 10.5min, TME 2.0min, Urgentes: 3
+  2026-03-23: TMA 8.2min, TME 1.5min, Urgentes: 1
+  ...
 ```
 
-Isso garante que ao digitar "quero um relatório do atendente Alex dos últimos 3 dias", a IA filtre e foque nos dados desse atendente específico.
+Isso garante que a Delma tem tudo que precisa para gerar qualquer relatório específico sem pedir dados ao gestor.
 
