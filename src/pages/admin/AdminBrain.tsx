@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Brain, TrendingUp, TrendingDown, Clock, Users, Bot, AlertTriangle, Sparkles, RefreshCw, MessageSquare, Lightbulb, Activity, Store, Bike, BookOpen, Link2, FileText, CheckCircle2, XCircle, Zap, BarChart3, Target, ShieldAlert, Gauge, ArrowUpRight, ArrowDownRight, Minus, GraduationCap, Trophy, AlertCircle, Rocket, CheckSquare, CircleDot, UserX, Star, Wifi, WifiOff, CalendarDays, ChevronDown, ChevronRight, Flame, Repeat2, Filter } from 'lucide-react';
+import { Brain, TrendingUp, TrendingDown, Clock, Users, Bot, AlertTriangle, Sparkles, RefreshCw, MessageSquare, Lightbulb, Activity, Store, Bike, BookOpen, Link2, FileText, CheckCircle2, XCircle, Zap, BarChart3, Target, ShieldAlert, Gauge, ArrowUpRight, ArrowDownRight, Minus, GraduationCap, Trophy, AlertCircle, Rocket, CheckSquare, CircleDot, UserX, Star, Wifi, WifiOff, CalendarDays, ChevronDown, ChevronRight, Flame, Repeat2, Filter, Medal, Crown, Eye, Download, CalendarClock, FileDown, History, Info } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line, PieChart, Pie, Legend } from 'recharts';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -12,6 +12,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
