@@ -113,6 +113,17 @@ const filterMetrics = (raw: any): BrainMetrics => ({
   } : undefined,
 });
 
+interface RobotKnowledge {
+  id: string;
+  name: string;
+  status: string;
+  qaPairs: any[];
+  referenceLinks: any[];
+  instructions: string;
+  departments: string[];
+  channels: string[];
+}
+
 const AdminBrain = () => {
   const [period, setPeriod] = useState('7');
   const [metrics, setMetrics] = useState<BrainMetrics | null>(null);
@@ -122,6 +133,7 @@ const AdminBrain = () => {
   const [loadingMetrics, setLoadingMetrics] = useState(false);
   const [loadingReport, setLoadingReport] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [robots, setRobots] = useState<RobotKnowledge[]>([]);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchMetrics = useCallback(async (showToast = false) => {
