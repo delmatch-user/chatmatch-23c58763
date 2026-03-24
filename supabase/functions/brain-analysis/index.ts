@@ -398,19 +398,40 @@ ${dailyTrendsBlock || 'Sem dados'}
 **Conversas problemáticas por agente:**
 ${agentErrorBlock || 'Nenhuma conversa problemática atribuída a agentes'}`;
 
+    // Build conversation details block when manager has a specific question
+    let conversationDetailsBlock = '';
+    if (reqUserContext) {
+      const detailLogs = logs
+        .filter((l: any) => l.assigned_to_name && l.department_name?.toLowerCase() === 'suporte')
+        .slice(0, 100);
+      
+      conversationDetailsBlock = detailLogs.map((l: any) => {
+        const msgs = Array.isArray(l.messages) ? l.messages.slice(0, 5) : [];
+        const msgLines = msgs.map((m: any) => 
+          `    [${m.created_at || m.timestamp || ''}] ${m.sender_name || m.sender || 'Desconhecido'}: ${(m.content || m.text || '').substring(0, 200)}`
+        ).join('\n');
+        return `Conversa: ${l.contact_name} (${l.contact_phone || 'sem telefone'})
+  Agente: ${l.assigned_to_name}
+  Início: ${l.started_at} | Fim: ${l.finalized_at}
+  Tags: ${(l.tags || []).join(', ')}
+  Mensagens:
+${msgLines || '    (sem mensagens)'}`;
+      }).join('\n---\n');
+    }
+
     const systemMessage = reqUserContext
       ? "Você é a Delma, gerente inteligente do departamento de Suporte. O gestor fez uma solicitação específica abaixo. " +
-        "Você tem acesso a TODOS os dados necessários — dados diários por agente, tags, conversas problemáticas, tendências globais. " +
+        "Você tem acesso a TODOS os dados necessários — dados diários por agente, tags, conversas problemáticas, tendências globais E o conteúdo real das mensagens de cada conversa. " +
         "NUNCA diga que não tem dados ou que não consegue puxar informações. Todos os dados estão abaixo. " +
         "Você DEVE responder EXATAMENTE o que foi pedido, usando os dados disponíveis. " +
         "NÃO gere um relatório genérico. Foque 100% na solicitação do gestor. " +
-        "Se o gestor pedir sobre um atendente específico, foque APENAS nesse atendente usando os dados diários detalhados. " +
+        "Se o gestor pedir sobre um atendente específico, foque APENAS nesse atendente usando os dados diários detalhados e as mensagens reais. " +
         "Se pedir uma análise específica, faça APENAS essa análise. " +
         "Responda em português brasileiro com markdown."
       : "Você é a Delma, uma gerente de suporte altamente analítica e proativa. Você tem acesso a todos os dados do período. Gere relatórios claros e acionáveis. NUNCA diga que não tem dados.";
 
     const userMessage = reqUserContext
-      ? `## SOLICITAÇÃO DO GESTOR (PRIORIDADE MÁXIMA — SIGA À RISCA):\n\n${reqUserContext}\n\n---\n\nDados disponíveis para embasar sua resposta:\n\n${metricsBlock}`
+      ? `## SOLICITAÇÃO DO GESTOR (PRIORIDADE MÁXIMA — SIGA À RISCA):\n\n${reqUserContext}\n\n---\n\nDados disponíveis para embasar sua resposta:\n\n${metricsBlock}${conversationDetailsBlock ? `\n\n**Conversas detalhadas do período (mensagens reais):**\n${conversationDetailsBlock}` : ''}`
       : `Analise as métricas abaixo e gere um relatório executivo em markdown com:
 
 ## Resumo Executivo
