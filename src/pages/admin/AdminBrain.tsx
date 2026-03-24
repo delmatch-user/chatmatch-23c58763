@@ -1522,10 +1522,11 @@ const AdminBrain = () => {
             </TabsContent>
 
             {/* ======================== AI REPORT TAB ======================== */}
-            <TabsContent value="ai-report">
+            <TabsContent value="ai-report" className="space-y-6">
+              {/* Context field */}
               <Card>
                 <CardHeader>
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between flex-wrap gap-3">
                     <div>
                       <CardTitle className="flex items-center gap-2">
                         <Sparkles className="w-5 h-5 text-primary" />
@@ -1533,23 +1534,94 @@ const AdminBrain = () => {
                       </CardTitle>
                       <CardDescription>Análise profunda gerada por IA sob demanda</CardDescription>
                     </div>
-                    <Button onClick={fetchReport} disabled={loadingReport} className="gap-2">
-                      {loadingReport ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                      {loadingReport ? 'Gerando...' : aiAnalysis ? 'Regenerar Relatório' : 'Gerar Relatório'}
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      {aiAnalysis && (
+                        <Button variant="outline" size="sm" onClick={exportPdf} className="gap-2">
+                          <FileDown className="w-4 h-4" />
+                          Exportar PDF
+                        </Button>
+                      )}
+                      <Button onClick={fetchReport} disabled={loadingReport} className="gap-2">
+                        {loadingReport ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                        {loadingReport ? 'Gerando...' : aiAnalysis ? 'Regenerar' : 'Gerar Relatório'}
+                      </Button>
+                    </div>
                   </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-4">
+                  {/* Context input */}
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1.5">Observações manuais (opcional) — a IA considerará na análise</p>
+                    <Textarea
+                      placeholder="Ex: Houve uma promoção esta semana, tivemos problema no sistema na terça-feira..."
+                      value={reportContext}
+                      onChange={(e) => setReportContext(e.target.value)}
+                      rows={2}
+                      className="text-sm"
+                    />
+                  </div>
+
+                  {/* Fallback indicator with error detail */}
                   {reportFallback && reportProvider && (
-                    <div className="mb-4 p-3 rounded-lg bg-warning/10 border border-warning/20 flex items-center gap-2 text-sm">
-                      <AlertCircle className="w-4 h-4 text-warning flex-shrink-0" />
-                      <span className="text-warning">
-                        Relatório gerado via <strong>{reportProvider}</strong> — provedor principal indisponível.
-                      </span>
+                    <div className="p-3 rounded-lg bg-warning/10 border border-warning/20 space-y-1">
+                      <div className="flex items-center gap-2 text-sm">
+                        <AlertCircle className="w-4 h-4 text-warning flex-shrink-0" />
+                        <span className="text-warning">
+                          Relatório gerado via <strong>{reportProvider}</strong> — provedor principal indisponível.
+                        </span>
+                      </div>
+                      {reportFallbackError && (
+                        <p className="text-xs text-muted-foreground ml-6">{reportFallbackError}</p>
+                      )}
                     </div>
                   )}
+
+                  {/* Comparison table */}
+                  {aiAnalysis && metrics && (
+                    <Card className="border-border/50">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm flex items-center gap-2"><Target className="w-4 h-4" />Comparativo de Períodos</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b">
+                                <th className="text-left py-2 text-muted-foreground font-medium">Métrica</th>
+                                <th className="text-right py-2 text-muted-foreground font-medium">Atual</th>
+                                <th className="text-right py-2 text-muted-foreground font-medium">Anterior</th>
+                                <th className="text-right py-2 text-muted-foreground font-medium">Variação</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {[
+                                { label: 'Total Conversas', curr: metrics.totalConversas, prev: metrics.prevTotalConversas, inv: false, fmt: (v: number) => String(v) },
+                                { label: 'TMA', curr: metrics.tma, prev: metrics.prevTma, inv: true, fmt: (v: number) => `${v} min` },
+                                { label: 'TME', curr: metrics.tme, prev: metrics.prevTme, inv: true, fmt: (v: number) => `${v} min` },
+                              ].map(row => {
+                                const diff = row.prev > 0 ? Math.round(((row.curr - row.prev) / row.prev) * 100) : null;
+                                const isGood = diff !== null ? (row.inv ? diff < 0 : diff > 0) : null;
+                                return (
+                                  <tr key={row.label} className="border-b border-border/30">
+                                    <td className="py-2 font-medium">{row.label}</td>
+                                    <td className="py-2 text-right">{row.fmt(row.curr)}</td>
+                                    <td className="py-2 text-right text-muted-foreground">{row.fmt(row.prev)}</td>
+                                    <td className={cn("py-2 text-right font-medium", isGood === true ? "text-success" : isGood === false ? "text-destructive" : "")}>
+                                      {diff !== null ? `${diff > 0 ? '+' : ''}${diff}%` : '—'}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Report content */}
                   {aiAnalysis ? (
-                    <div className="prose prose-sm dark:prose-invert max-w-none">
+                    <div id="brain-report-content" className="prose prose-sm dark:prose-invert max-w-none">
                       <div dangerouslySetInnerHTML={{ __html: renderMarkdown(aiAnalysis) }} />
                     </div>
                   ) : (
@@ -1563,6 +1635,50 @@ const AdminBrain = () => {
                   )}
                 </CardContent>
               </Card>
+
+              {/* Report History */}
+              {reportHistory.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <History className="w-4 h-4" />
+                      Histórico de Relatórios
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {reportHistory.map(report => (
+                        <div key={report.id} className="flex items-center justify-between p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium">
+                                {new Date(report.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {report.provider} • {report.period} dias
+                                {report.context && ' • Com contexto'}
+                              </p>
+                            </div>
+                          </div>
+                          <Button variant="ghost" size="sm" className="gap-1" onClick={() => {
+                            if (selectedHistoryReport === report.id) {
+                              setSelectedHistoryReport(null);
+                            } else {
+                              setSelectedHistoryReport(report.id);
+                              setAiAnalysis(report.content);
+                              setReportProvider(report.provider);
+                            }
+                          }}>
+                            <Eye className="w-4 h-4" />
+                            {selectedHistoryReport === report.id ? 'Ativo' : 'Abrir'}
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </TabsContent>
           </Tabs>
         )}
