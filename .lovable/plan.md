@@ -1,26 +1,38 @@
 
 
-# Diagnóstico: Resposta do agente sai pelo número errado (Baileys em vez de Meta API)
+# Corrigir: Observações manuais devem ser a prioridade do relatório
 
-## Causa raiz
+## Problema
 
-No webhook da Meta (`meta-whatsapp-webhook`), quando uma conversa é criada (linha 366-378), o campo `whatsapp_instance_id` **não é preenchido**. Já o webhook do Baileys preenche esse campo corretamente.
-
-Fluxo atual quebrado:
-1. Cliente envia mensagem para o número oficial (Meta API)
-2. Webhook cria conversa **sem** `whatsapp_instance_id`
-3. Agente responde: `getConnectionByInstanceId(null)` retorna null
-4. Fallback `getConnectionForDepartment()` **prioriza Baileys** por design
-5. Resposta sai pelo número QR Code em vez do oficial
+As observações manuais do gestor são inseridas no final do prompt como uma nota secundária (`**Observações manuais do gestor:** ...`). A IA trata isso como contexto adicional e gera o relatório padrão, ignorando o pedido específico (ex: "relatório do atendente Alex dos últimos 3 dias").
 
 ## Solução
 
-**Arquivo**: `supabase/functions/meta-whatsapp-webhook/index.ts`
+Quando há observações manuais, reestruturar o prompt para que a instrução do gestor seja a **diretriz principal** do relatório, não um apêndice.
 
-Duas mudanças:
+## Mudança
 
-1. **Ao criar conversa nova** (insert): adicionar `whatsapp_instance_id: phoneNumberId` no objeto de insert
-2. **Ao encontrar conversa existente** sem `whatsapp_instance_id`: fazer update para preencher com o `phoneNumberId` atual (auto-correção para conversas que já existem sem o campo)
+**Arquivo**: `supabase/functions/brain-analysis/index.ts`
 
-Isso garante que quando o agente responder, o sistema encontre a conexão Meta API pelo `whatsapp_instance_id` e envie pelo número correto.
+1. **Quando `reqUserContext` existe**: alterar o system prompt e o user prompt para priorizar a solicitação do gestor. O prompt passa a instruir a IA a **focar exclusivamente no que foi pedido**, usando as métricas como base de dados de apoio.
+
+2. **Quando `reqUserContext` está vazio**: manter o comportamento atual (relatório geral).
+
+Lógica resumida:
+
+```typescript
+const systemMessage = reqUserContext
+  ? "Você é a Delma, gerente de suporte. O gestor fez uma solicitação específica. " +
+    "Você DEVE responder EXATAMENTE o que foi pedido, usando as métricas disponíveis. " +
+    "NÃO gere um relatório genérico. Foque 100% na solicitação."
+  : "Você é a Delma, uma gerente de suporte altamente analítica e proativa. " +
+    "Gere relatórios claros e acionáveis.";
+
+const userMessage = reqUserContext
+  ? `**SOLICITAÇÃO DO GESTOR (PRIORIDADE MÁXIMA):**\n${reqUserContext}\n\n` +
+    `Use os dados abaixo para atender a solicitação acima:\n\n${metricsBlock}`
+  : analysisPrompt; // prompt atual com estrutura fixa
+```
+
+Isso garante que ao digitar "quero um relatório do atendente Alex dos últimos 3 dias", a IA filtre e foque nos dados desse atendente específico.
 
