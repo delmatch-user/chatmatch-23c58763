@@ -6,6 +6,21 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const TAG_NORMALIZATION: Record<string, string> = {
+  'ACIDENTE_URGENTE': 'Acidente - Urgente',
+  'FINANCEIRO_NORMAL': 'Financeiro - Normal',
+  'DUVIDA_GERAL': 'Duvida - Geral',
+  'COMERCIAL_B2B': 'Comercial - B2B',
+  'OPERACIONAL_PENDENTE': 'Operacional - Geral',
+  'Operacional - Normal': 'Operacional - Geral',
+  'Operacional - Pendente': 'Operacional - Geral',
+};
+
+function normalizeTag(tag: string): string {
+  const clean = tag.replace(/^[^\w\sÀ-ú-]+\s*/u, '').trim();
+  return TAG_NORMALIZATION[clean] || clean;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -71,7 +86,7 @@ serve(async (req) => {
 
     // Top tags
     const tagCounts: Record<string, number> = {};
-    logs.forEach(l => (l.tags || []).forEach((t: string) => { tagCounts[t] = (tagCounts[t] || 0) + 1; }));
+    logs.forEach(l => (l.tags || []).forEach((t: string) => { const nt = normalizeTag(t); tagCounts[nt] = (tagCounts[nt] || 0) + 1; }));
     const topTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
 
     // Channel breakdown
@@ -95,7 +110,7 @@ serve(async (req) => {
         agentStats[name].totalWait += l.wait_time / 60;
         agentStats[name].waitCount++;
       }
-      (l.tags || []).forEach((t: string) => { agentStats[name].tags[t] = (agentStats[name].tags[t] || 0) + 1; });
+      (l.tags || []).forEach((t: string) => { const nt = normalizeTag(t); agentStats[name].tags[nt] = (agentStats[name].tags[nt] || 0) + 1; });
     });
 
     // Previous period agent stats
@@ -123,7 +138,7 @@ serve(async (req) => {
       contact_phone: l.contact_phone,
       contact_notes: l.contact_notes,
       priority: l.priority,
-      tags: l.tags,
+      tags: (l.tags || []).map((t: string) => normalizeTag(t)),
       channel: l.channel,
       assigned_to_name: l.assigned_to_name,
       finalized_at: l.finalized_at,
