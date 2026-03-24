@@ -138,7 +138,7 @@ serve(async (req) => {
       contact_phone: l.contact_phone,
       contact_notes: l.contact_notes,
       priority: l.priority,
-      tags: l.tags,
+      tags: (l.tags || []).map((t: string) => normalizeTag(t)),
       channel: l.channel,
       assigned_to_name: l.assigned_to_name,
       finalized_at: l.finalized_at,
