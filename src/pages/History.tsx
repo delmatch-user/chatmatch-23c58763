@@ -430,7 +430,7 @@ export default function History() {
                                 </span>
                               )}
                               {(() => {
-                                const taxonomyTag = log.tags?.find(t => (SUPORTE_TAXONOMY_TAGS as readonly string[]).includes(t));
+                                const taxonomyTag = log.tags?.map(normalizeTag).find(t => (SUPORTE_TAXONOMY_TAGS as readonly string[]).includes(t));
                                 if (taxonomyTag) {
                                   return (
                                     <Badge className={`${getTagColorClasses(taxonomyTag)} border text-xs`}>
