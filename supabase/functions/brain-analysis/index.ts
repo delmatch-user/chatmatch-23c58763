@@ -25,7 +25,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { period = 7, metricsOnly = false } = await req.json();
+    const { period = 7, metricsOnly = false, userContext: reqUserContext = '' } = await req.json();
     
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
