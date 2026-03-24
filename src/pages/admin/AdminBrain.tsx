@@ -329,46 +329,125 @@ const AdminBrain = () => {
             </TabsContent>
 
             {/* Errors Tab */}
-            <TabsContent value="errors">
+            <TabsContent value="errors" className="space-y-6">
+              {/* Sub-tabs */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {[
+                  { key: 'todos', label: 'Todos', icon: AlertTriangle, count: metrics.errorLogs.length },
+                  { key: 'estabelecimento', label: 'Estabelecimento', icon: Store, count: metrics.errorsByType?.estabelecimento.total || 0 },
+                  { key: 'motoboy', label: 'Motoboy', icon: Bike, count: metrics.errorsByType?.motoboy.total || 0 },
+                ].map(tab => (
+                  <Button
+                    key={tab.key}
+                    variant={errorsSubTab === tab.key ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setErrorsSubTab(tab.key)}
+                    className="gap-2"
+                  >
+                    <tab.icon className="w-4 h-4" />
+                    {tab.label}
+                    <Badge variant="secondary" className="text-xs ml-1">{tab.count}</Badge>
+                  </Button>
+                ))}
+              </div>
+
+              {/* Motivos Chart */}
+              {(() => {
+                const motivos = errorsSubTab === 'todos'
+                  ? mergeMotivos(metrics.errorsByType)
+                  : (metrics.errorsByType?.[errorsSubTab as 'estabelecimento' | 'motoboy']?.motivos || {});
+                const chartData = Object.entries(motivos)
+                  .map(([name, value]) => ({ name, value }))
+                  .sort((a, b) => b.value - a.value);
+                const barColors: Record<string, string> = {
+                  'Acidente - Urgente': 'hsl(0, 72%, 51%)',
+                  'Operacional - Pendente': 'hsl(25, 95%, 53%)',
+                  'Financeiro - Normal': 'hsl(217, 91%, 60%)',
+                  'Duvida - Geral': 'hsl(160, 84%, 39%)',
+                  'Comercial - B2B': 'hsl(48, 96%, 53%)',
+                };
+                return chartData.length > 0 ? (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Principais Motivos</CardTitle>
+                      <CardDescription>
+                        Distribuição das tags de taxonomia nas conversas problemáticas
+                        {errorsSubTab !== 'todos' && ` — ${errorsSubTab === 'estabelecimento' ? 'Estabelecimento' : 'Motoboy'}`}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="h-[250px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={chartData} layout="vertical" margin={{ left: 20, right: 20 }}>
+                            <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
+                            <XAxis type="number" className="text-xs" />
+                            <YAxis dataKey="name" type="category" width={150} className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
+                            <Tooltip
+                              contentStyle={{ background: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }}
+                              labelStyle={{ color: 'hsl(var(--foreground))' }}
+                            />
+                            <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                              {chartData.map((entry, idx) => (
+                                <Cell key={idx} fill={barColors[entry.name] || 'hsl(var(--primary))'} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : null;
+              })()}
+
+              {/* Error Logs List */}
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <AlertTriangle className="w-5 h-5 text-destructive" />
                     Conversas Problemáticas
                   </CardTitle>
-                  <CardDescription>Conversas com alta prioridade, erros ou reclamações identificadas no período</CardDescription>
+                  <CardDescription>
+                    {errorsSubTab === 'todos' ? 'Todas as conversas com alta prioridade, erros ou reclamações' :
+                     errorsSubTab === 'estabelecimento' ? 'Conversas problemáticas de Estabelecimentos' :
+                     'Conversas problemáticas de Motoboys'}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {metrics.errorLogs.length === 0 ? (
-                    <div className="text-center py-8">
-                      <AlertTriangle className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
-                      <p className="text-sm text-muted-foreground">Nenhuma conversa problemática encontrada no período. 🎉</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {metrics.errorLogs.map((log) => (
-                        <div key={log.id} className="p-3 rounded-lg border bg-card hover:bg-secondary/30 transition-colors">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0 flex-1">
-                              <p className="font-medium text-sm truncate">{log.contact_name}</p>
-                              {log.contact_phone && <p className="text-xs text-muted-foreground">{log.contact_phone}</p>}
+                  {(() => {
+                    const filteredLogs = errorsSubTab === 'todos'
+                      ? metrics.errorLogs
+                      : (metrics.errorsByType?.[errorsSubTab as 'estabelecimento' | 'motoboy']?.logs || []);
+                    return filteredLogs.length === 0 ? (
+                      <div className="text-center py-8">
+                        <AlertTriangle className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+                        <p className="text-sm text-muted-foreground">Nenhuma conversa problemática encontrada. 🎉</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {filteredLogs.map((log) => (
+                          <div key={log.id} className="p-3 rounded-lg border bg-card hover:bg-secondary/30 transition-colors">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <p className="font-medium text-sm truncate">{log.contact_name}</p>
+                                {log.contact_phone && <p className="text-xs text-muted-foreground">{log.contact_phone}</p>}
+                              </div>
+                              <Badge className={cn("shrink-0", priorityColors[log.priority] || '')}>{log.priority}</Badge>
                             </div>
-                            <Badge className={cn("shrink-0", priorityColors[log.priority] || '')}>{log.priority}</Badge>
-                          </div>
-                          <div className="flex items-center gap-2 mt-2 flex-wrap">
-                            {log.channel && <Badge variant="outline" className="text-xs">{log.channel}</Badge>}
-                            {log.assigned_to_name && <span className="text-xs text-muted-foreground">Agente: {log.assigned_to_name}</span>}
-                            <span className="text-xs text-muted-foreground">{new Date(log.finalized_at).toLocaleDateString('pt-BR')}</span>
-                          </div>
-                          {log.tags.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-2">
-                              {log.tags.map((tag) => (<Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>))}
+                            <div className="flex items-center gap-2 mt-2 flex-wrap">
+                              {log.channel && <Badge variant="outline" className="text-xs">{log.channel}</Badge>}
+                              {log.assigned_to_name && <span className="text-xs text-muted-foreground">Agente: {log.assigned_to_name}</span>}
+                              <span className="text-xs text-muted-foreground">{new Date(log.finalized_at).toLocaleDateString('pt-BR')}</span>
                             </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                            {log.tags.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-2">
+                                {log.tags.map((tag) => (<Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </CardContent>
               </Card>
             </TabsContent>
