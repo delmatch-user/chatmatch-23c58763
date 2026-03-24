@@ -297,10 +297,42 @@ Seja direta, objetiva e use dados para embasar cada ponto. Responda em portuguê
         if (anthropicResp.ok) {
           const anthropicData = await anthropicResp.json();
           aiAnalysis = anthropicData.content?.[0]?.text || "";
-          providerUsed = "Anthropic Claude";
-          console.log("[brain-analysis] Anthropic Claude OK");
+          providerUsed = "Anthropic Claude Sonnet";
+          console.log("[brain-analysis] Anthropic Claude Sonnet OK");
         } else {
-          console.warn("[brain-analysis] Anthropic falhou:", anthropicResp.status);
+          const errBody = await anthropicResp.text();
+          console.warn("[brain-analysis] Anthropic Sonnet falhou:", anthropicResp.status, errBody);
+          
+          // Try Claude Haiku as model fallback
+          try {
+            console.log("[brain-analysis] Tentando Anthropic Claude Haiku...");
+            const haikuResp = await fetch("https://api.anthropic.com/v1/messages", {
+              method: "POST",
+              headers: {
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                model: "claude-3-5-haiku-20241022",
+                max_tokens: 2000,
+                system: aiMessages[0].content,
+                messages: [{ role: "user", content: analysisPrompt }],
+              }),
+            });
+            if (haikuResp.ok) {
+              const haikuData = await haikuResp.json();
+              aiAnalysis = haikuData.content?.[0]?.text || "";
+              providerUsed = "Anthropic Claude Haiku";
+              fallbackUsed = true;
+              console.log("[brain-analysis] Anthropic Claude Haiku OK");
+            } else {
+              const haikuErr = await haikuResp.text();
+              console.warn("[brain-analysis] Anthropic Haiku falhou:", haikuResp.status, haikuErr);
+            }
+          } catch (haikuE) {
+            console.error("[brain-analysis] Haiku error:", haikuE);
+          }
         }
       } catch (e) {
         console.error("[brain-analysis] Anthropic error:", e);
