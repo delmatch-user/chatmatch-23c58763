@@ -15,6 +15,10 @@ interface AgentStat {
   name: string;
   count: number;
   avgTime: number;
+  avgWaitTime: number;
+  topTags: [string, number][];
+  prevCount: number;
+  prevAvgTime: number;
 }
 
 interface ErrorLog {
@@ -202,9 +206,10 @@ const AdminBrain = () => {
 
         {metrics && (
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="mb-4">
+             <TabsList className="mb-4">
               <TabsTrigger value="overview">Painel</TabsTrigger>
               <TabsTrigger value="errors">Erros & Gaps</TabsTrigger>
+              <TabsTrigger value="agents">Atendentes</TabsTrigger>
               <TabsTrigger value="ai-report">Relatório IA</TabsTrigger>
             </TabsList>
 
@@ -452,7 +457,113 @@ const AdminBrain = () => {
               </Card>
             </TabsContent>
 
-            {/* AI Report Tab — On demand */}
+            {/* Agents Tab */}
+            <TabsContent value="agents" className="space-y-6">
+              {/* TMA Comparison Chart */}
+              {metrics.agentStats.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Users className="w-4 h-4" />
+                      Comparativo de TMA por Atendente
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-[300px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={metrics.agentStats.slice(0, 10)} layout="vertical" margin={{ left: 20, right: 20 }}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
+                          <XAxis type="number" className="text-xs" />
+                          <YAxis dataKey="name" type="category" width={120} className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
+                          <Tooltip
+                            contentStyle={{ background: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }}
+                            formatter={(value: number) => [`${value} min`, 'TMA']}
+                          />
+                          <Bar dataKey="avgTime" radius={[0, 4, 4, 0]}>
+                            {metrics.agentStats.slice(0, 10).map((agent, idx) => {
+                              const avgAll = metrics.agentStats.reduce((s, a) => s + a.avgTime, 0) / metrics.agentStats.length;
+                              const color = agent.avgTime <= avgAll * 0.8 ? 'hsl(var(--success))' : agent.avgTime <= avgAll * 1.2 ? 'hsl(var(--warning, 48 96% 53%))' : 'hsl(var(--destructive))';
+                              return <Cell key={idx} fill={color} />;
+                            })}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Agent Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {metrics.agentStats.map((agent) => {
+                  const avgAll = metrics.agentStats.reduce((s, a) => s + a.avgTime, 0) / metrics.agentStats.length;
+                  const status = agent.avgTime <= avgAll * 0.8 ? 'green' : agent.avgTime <= avgAll * 1.2 ? 'yellow' : 'red';
+                  const statusColors = { green: 'bg-success/20 text-success', yellow: 'bg-warning/20 text-warning', red: 'bg-destructive/20 text-destructive' };
+                  const statusLabels = { green: 'Abaixo da média', yellow: 'Na média', red: 'Acima da média' };
+                  const tmaTrend = agent.prevAvgTime > 0 ? Math.round(((agent.avgTime - agent.prevAvgTime) / agent.prevAvgTime) * 100) : null;
+                  const countTrend = agent.prevCount > 0 ? Math.round(((agent.count - agent.prevCount) / agent.prevCount) * 100) : null;
+
+                  return (
+                    <Card key={agent.name} className="relative overflow-hidden">
+                      <CardContent className="pt-6 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-sm truncate">{agent.name}</span>
+                          <Badge className={cn("text-xs", statusColors[status])}>{statusLabels[status]}</Badge>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 text-sm">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Conversas</p>
+                            <p className="font-bold">{agent.count}
+                              {countTrend !== null && (
+                                <span className={cn("text-xs ml-1", countTrend >= 0 ? "text-success" : "text-destructive")}>
+                                  {countTrend >= 0 ? '↑' : '↓'}{Math.abs(countTrend)}%
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">TMA</p>
+                            <p className="font-bold">{formatTime(agent.avgTime)}
+                              {tmaTrend !== null && (
+                                <span className={cn("text-xs ml-1", tmaTrend <= 0 ? "text-success" : "text-destructive")}>
+                                  {tmaTrend <= 0 ? '↓' : '↑'}{Math.abs(tmaTrend)}%
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">TME</p>
+                            <p className="font-bold">{formatTime(agent.avgWaitTime)}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Período ant.</p>
+                            <p className="font-bold text-muted-foreground">{agent.prevCount} conv.</p>
+                          </div>
+                        </div>
+                        {agent.topTags.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {agent.topTags.map(([tag, count]) => (
+                              <Badge key={tag} variant="outline" className="text-xs">{tag} ({count})</Badge>
+                            ))}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+
+              {metrics.agentStats.length === 0 && (
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <Users className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+                    <p className="text-sm text-muted-foreground">Sem dados de atendentes no período.</p>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+
+
             <TabsContent value="ai-report">
               <Card>
                 <CardHeader>
@@ -566,6 +677,34 @@ function computeLearnings(m: BrainMetrics): string[] {
     const fastest = sorted[sorted.length - 1];
     if (slowest.avgTime > fastest.avgTime * 2 && slowest.count > 3) {
       insights.push(`${slowest.name} tem TMA ${Math.round(slowest.avgTime)}min — ${Math.round(slowest.avgTime / fastest.avgTime)}x mais que ${fastest.name}.`);
+    }
+  }
+
+  // Overloaded agent (>30% volume)
+  if (m.agentStats.length > 2 && m.totalConversas > 10) {
+    const overloaded = m.agentStats.find(a => a.count / m.totalConversas > 0.3);
+    if (overloaded) {
+      insights.push(`⚠️ ${overloaded.name} está concentrando ${Math.round((overloaded.count / m.totalConversas) * 100)}% do volume — considere redistribuir a carga.`);
+    }
+  }
+
+  // Best improvement in TMA
+  if (m.agentStats.length > 1) {
+    const improved = m.agentStats
+      .filter(a => a.prevAvgTime > 0 && a.count > 3)
+      .map(a => ({ ...a, improvement: ((a.prevAvgTime - a.avgTime) / a.prevAvgTime) * 100 }))
+      .sort((a, b) => b.improvement - a.improvement);
+    if (improved.length > 0 && improved[0].improvement > 10) {
+      insights.push(`🏆 ${improved[0].name} melhorou o TMA em ${Math.round(improved[0].improvement)}% comparado ao período anterior!`);
+    }
+  }
+
+  // Agent with TME much above average
+  if (m.agentStats.length > 2) {
+    const avgWait = m.agentStats.reduce((s, a) => s + a.avgWaitTime, 0) / m.agentStats.length;
+    const slowWait = m.agentStats.find(a => a.avgWaitTime > avgWait * 2 && a.count > 3);
+    if (slowWait && avgWait > 0) {
+      insights.push(`⚠️ Clientes de ${slowWait.name} esperam ${Math.round(slowWait.avgWaitTime)}min na fila — ${Math.round(slowWait.avgWaitTime / avgWait)}x acima da média.`);
     }
   }
 
