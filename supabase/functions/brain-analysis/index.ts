@@ -82,14 +82,30 @@ serve(async (req) => {
     const priorityCounts: Record<string, number> = {};
     logs.forEach(l => { priorityCounts[l.priority] = (priorityCounts[l.priority] || 0) + 1; });
 
-    // Agent performance
-    const agentStats: Record<string, { count: number; totalTime: number }> = {};
+    // Agent performance (enriched)
+    const agentStats: Record<string, { count: number; totalTime: number; totalWait: number; waitCount: number; tags: Record<string, number> }> = {};
     logs.filter(l => l.assigned_to_name).forEach(l => {
       const name = l.assigned_to_name!;
-      if (!agentStats[name]) agentStats[name] = { count: 0, totalTime: 0 };
+      if (!agentStats[name]) agentStats[name] = { count: 0, totalTime: 0, totalWait: 0, waitCount: 0, tags: {} };
       agentStats[name].count++;
       if (l.started_at && l.finalized_at) {
         agentStats[name].totalTime += (new Date(l.finalized_at).getTime() - new Date(l.started_at).getTime()) / 60000;
+      }
+      if (l.wait_time != null) {
+        agentStats[name].totalWait += l.wait_time / 60;
+        agentStats[name].waitCount++;
+      }
+      (l.tags || []).forEach((t: string) => { agentStats[name].tags[t] = (agentStats[name].tags[t] || 0) + 1; });
+    });
+
+    // Previous period agent stats
+    const prevAgentStats: Record<string, { count: number; totalTime: number }> = {};
+    prev.filter(l => l.assigned_to_name).forEach(l => {
+      const name = l.assigned_to_name!;
+      if (!prevAgentStats[name]) prevAgentStats[name] = { count: 0, totalTime: 0 };
+      prevAgentStats[name].count++;
+      if (l.started_at && l.finalized_at) {
+        prevAgentStats[name].totalTime += (new Date(l.finalized_at).getTime() - new Date(l.started_at).getTime()) / 60000;
       }
     });
 
@@ -174,11 +190,19 @@ serve(async (req) => {
       topTags,
       channelCounts,
       priorityCounts,
-      agentStats: Object.entries(agentStats).map(([name, stats]) => ({
-        name,
-        count: stats.count,
-        avgTime: Math.round((stats.totalTime / stats.count) * 10) / 10,
-      })).sort((a, b) => b.count - a.count),
+      agentStats: Object.entries(agentStats).map(([name, stats]) => {
+        const prevS = prevAgentStats[name];
+        const topTags = Object.entries(stats.tags).sort((a, b) => b[1] - a[1]).slice(0, 3);
+        return {
+          name,
+          count: stats.count,
+          avgTime: Math.round((stats.totalTime / stats.count) * 10) / 10,
+          avgWaitTime: stats.waitCount > 0 ? Math.round((stats.totalWait / stats.waitCount) * 10) / 10 : 0,
+          topTags,
+          prevCount: prevS?.count || 0,
+          prevAvgTime: prevS ? Math.round((prevS.totalTime / prevS.count) * 10) / 10 : 0,
+        };
+      }).sort((a, b) => b.count - a.count),
       errorLogs: errorLogs.map(mapErrorLog),
       errorsByType,
     };
