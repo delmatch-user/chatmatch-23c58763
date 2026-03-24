@@ -113,17 +113,6 @@ const filterMetrics = (raw: any): BrainMetrics => ({
   } : undefined,
 });
 
-interface RobotKnowledge {
-  id: string;
-  name: string;
-  status: string;
-  qaPairs: any[];
-  referenceLinks: any[];
-  instructions: string;
-  departments: string[];
-  channels: string[];
-}
-
 const AdminBrain = () => {
   const [period, setPeriod] = useState('7');
   const [metrics, setMetrics] = useState<BrainMetrics | null>(null);
@@ -133,7 +122,6 @@ const AdminBrain = () => {
   const [loadingMetrics, setLoadingMetrics] = useState(false);
   const [loadingReport, setLoadingReport] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [robots, setRobots] = useState<RobotKnowledge[]>([]);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchMetrics = useCallback(async (showToast = false) => {
@@ -192,28 +180,8 @@ const AdminBrain = () => {
     return () => { supabase.removeChannel(channel); };
   }, [fetchMetrics]);
 
-  // Fetch robots for knowledge tab
-  useEffect(() => {
-    const fetchRobots = async () => {
-      const { data } = await supabase
-        .from('robots')
-        .select('id, name, status, qa_pairs, reference_links, instructions, departments, channels')
-        .order('name');
-      if (data) {
-        setRobots(data.map((r: any) => ({
-          id: r.id,
-          name: r.name,
-          status: r.status,
-          qaPairs: Array.isArray(r.qa_pairs) ? r.qa_pairs : [],
-          referenceLinks: Array.isArray(r.reference_links) ? r.reference_links : [],
-          instructions: r.instructions || '',
-          departments: r.departments || [],
-          channels: r.channels || [],
-        })));
-      }
-    };
-    fetchRobots();
-  }, []);
+
+
 
   const getTrend = (current: number, previous: number, inverted = false) => {
     if (previous === 0) return null;
