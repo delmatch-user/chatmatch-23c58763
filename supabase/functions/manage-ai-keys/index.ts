@@ -63,6 +63,7 @@ serve(async (req) => {
       const keys: Record<string, boolean> = {
         openai: !!Deno.env.get('OPENAI_API_KEY'),
         google: !!Deno.env.get('GOOGLE_GEMINI_API_KEY'),
+        anthropic: !!Deno.env.get('ANTHROPIC_API_KEY'),
       };
 
       return new Response(JSON.stringify({ keys }), {
@@ -183,6 +184,31 @@ serve(async (req) => {
                 model: 'gemini-2.5-flash-lite',
                 messages: [{ role: 'user', content: 'Hi' }],
                 max_tokens: 5
+              })
+            });
+            success = resp.ok;
+            message = success ? 'Conexão bem sucedida!' : `Erro: ${resp.status}`;
+          } catch (e) {
+            message = 'Erro de conexão';
+          }
+        }
+      } else if (provider === 'anthropic') {
+        const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
+        if (!apiKey) {
+          message = 'API Key não configurada';
+        } else {
+          try {
+            const resp = await fetch('https://api.anthropic.com/v1/messages', {
+              method: 'POST',
+              headers: {
+                'x-api-key': apiKey,
+                'anthropic-version': '2023-06-01',
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                model: 'claude-haiku-3-5-20241022',
+                max_tokens: 5,
+                messages: [{ role: 'user', content: 'Hi' }]
               })
             });
             success = resp.ok;

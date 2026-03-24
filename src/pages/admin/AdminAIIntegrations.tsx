@@ -24,13 +24,19 @@ const providerIcons: Record<string, React.ReactNode> = {
     <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-[#4285f4]/10 flex items-center justify-center shrink-0">
       <Sparkles className="w-5 h-5 sm:w-6 sm:h-6 text-[#4285f4]" />
     </div>
+  ),
+  anthropic: (
+    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-[#D97757]/10 flex items-center justify-center shrink-0">
+      <Bot className="w-5 h-5 sm:w-6 sm:h-6 text-[#D97757]" />
+    </div>
   )
 };
 
 // Map provider to secret name
 const providerSecretNames: Record<string, string> = {
   openai: 'OPENAI_API_KEY',
-  google: 'GOOGLE_GEMINI_API_KEY'
+  google: 'GOOGLE_GEMINI_API_KEY',
+  anthropic: 'ANTHROPIC_API_KEY'
 };
 
 export default function AdminAIIntegrations() {
@@ -210,6 +216,14 @@ export default function AdminAIIntegrations() {
                           </a>
                         </p>
                       )}
+                      {provider.provider === 'anthropic' && (
+                        <p className="mt-1">
+                          Obtenha sua chave em{' '}
+                          <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                            Anthropic Console
+                          </a>
+                        </p>
+                      )}
                     </div>
                   )}
 
@@ -295,7 +309,8 @@ export default function AdminAIIntegrations() {
                 <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
                   Os robôs utilizam automaticamente o provedor correto com base na inteligência selecionada.
                   Modelos Gemini (Novato, Flash, Pro) usam a API Key do Google, 
-                  e o modelo Maestro usa a API Key da OpenAI. 
+                  o modelo Maestro usa a API Key da OpenAI,
+                  e o modelo Delma Cérebro usa a API Key da Anthropic (Claude). 
                   Configure as chaves aqui e ative os provedores para sincronizar com seus agentes IA.
                 </p>
               </div>
