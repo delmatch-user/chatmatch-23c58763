@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Brain, TrendingUp, TrendingDown, Clock, Users, Bot, AlertTriangle, Sparkles, RefreshCw, MessageSquare, Lightbulb, Activity, Store, Bike, BookOpen, Link2, FileText, CheckCircle2, XCircle, Zap, BarChart3, Target, ShieldAlert, Gauge, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react';
+import { Brain, TrendingUp, TrendingDown, Clock, Users, Bot, AlertTriangle, Sparkles, RefreshCw, MessageSquare, Lightbulb, Activity, Store, Bike, BookOpen, Link2, FileText, CheckCircle2, XCircle, Zap, BarChart3, Target, ShieldAlert, Gauge, ArrowUpRight, ArrowDownRight, Minus, GraduationCap, Trophy, AlertCircle, Rocket, CheckSquare, CircleDot } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -204,9 +204,6 @@ const AdminBrain = () => {
   };
 
   const learnings = metrics ? computeLearnings(metrics) : [];
-  const managerialInsights = metrics ? computeManagerialInsights(metrics) : [];
-  const patterns = metrics ? computePatterns(metrics) : null;
-  const recommendations = metrics ? computeRecommendations(metrics) : [];
 
   return (
     <MainLayout>
@@ -665,217 +662,209 @@ const AdminBrain = () => {
               )}
             </TabsContent>
 
-            {/* Knowledge Tab - Managerial View */}
+            {/* Knowledge Tab - Learning & Growth View */}
             <TabsContent value="knowledge" className="space-y-6">
-              {/* What Delma Learned */}
-              <Card className="border-primary/20 bg-primary/5">
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Brain className="w-4 h-4 text-primary" />
-                    O que a Delma Aprendeu
-                  </CardTitle>
-                  <CardDescription>Insights que a Delma identificou analisando o suporte nos últimos {period} dias</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {managerialInsights.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-4">Dados insuficientes para gerar insights neste período.</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {managerialInsights.map((insight, i) => {
-                        const Icon = insight.icon;
-                        const severityStyles = {
-                          info: 'bg-primary/10 border-primary/20',
-                          warning: 'bg-warning/10 border-warning/20',
-                          critical: 'bg-destructive/10 border-destructive/20',
-                        };
-                        const iconStyles = {
-                          info: 'text-primary',
-                          warning: 'text-warning',
-                          critical: 'text-destructive',
-                        };
-                        const categoryLabels: Record<string, string> = {
-                          volume: 'Volume',
-                          performance: 'Performance',
-                          automation: 'Automação',
-                          alert: 'Alerta',
-                          team: 'Equipe',
-                        };
-                        return (
-                          <div key={i} className={cn("flex items-start gap-3 p-3 rounded-lg border", severityStyles[insight.severity])}>
-                            <Icon className={cn("w-4 h-4 mt-0.5 shrink-0", iconStyles[insight.severity])} />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1">
-                                <Badge variant="outline" className="text-[10px] px-1.5 py-0">{categoryLabels[insight.category] || insight.category}</Badge>
-                              </div>
-                              <span className="text-sm text-foreground">{insight.text}</span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Detected Patterns */}
-              {patterns && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Tag Trends */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <BarChart3 className="w-4 h-4" />
-                        Temas em Tendência
-                      </CardTitle>
-                      <CardDescription>Tags mais recorrentes e sua evolução</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      {patterns.tagTrends.length === 0 ? (
-                        <p className="text-sm text-muted-foreground text-center py-4">Sem dados suficientes.</p>
-                      ) : (
-                        <div className="space-y-2">
-                          {patterns.tagTrends.map((t, i) => (
-                            <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-secondary/30">
-                              <span className="text-sm font-medium truncate">{t.tag}</span>
-                              <div className="flex items-center gap-2 shrink-0">
-                                <Badge variant="secondary" className="text-xs">{t.count}x</Badge>
-                                <span className="text-xs font-medium">
-                                  {t.pct}%
-                                </span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-
-                  {/* Workload Distribution */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <Users className="w-4 h-4" />
-                        Distribuição de Carga
-                      </CardTitle>
-                      <CardDescription>Como o volume está dividido entre atendentes</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      {patterns.workload.length === 0 ? (
-                        <p className="text-sm text-muted-foreground text-center py-4">Sem dados de atendentes.</p>
-                      ) : (
-                        <div className="space-y-2">
-                          {patterns.workload.map((w, i) => (
-                            <div key={i} className="space-y-1">
-                              <div className="flex items-center justify-between text-sm">
-                                <span className="truncate">{w.name}</span>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-muted-foreground">{w.count} ({w.pct}%)</span>
-                                  {w.overloaded && <ShieldAlert className="w-3.5 h-3.5 text-warning" />}
-                                </div>
-                              </div>
-                              <div className="h-1.5 rounded-full bg-secondary">
-                                <div className={cn("h-full rounded-full transition-all", w.overloaded ? "bg-warning" : "bg-primary")} style={{ width: `${w.pct}%` }} />
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-
-                  {/* AI vs Human Resolution */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <Bot className="w-4 h-4" />
-                        Resolução IA vs Humana
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      {patterns.resolutionRate ? (
-                        <div className="space-y-4">
-                          <div className="flex items-center gap-4">
-                            <div className="flex-1 text-center p-3 rounded-lg bg-primary/10">
-                              <p className="text-2xl font-bold text-primary">{patterns.resolutionRate.aiPct}%</p>
-                              <p className="text-xs text-muted-foreground">IA</p>
-                            </div>
-                            <div className="flex-1 text-center p-3 rounded-lg bg-secondary">
-                              <p className="text-2xl font-bold">{patterns.resolutionRate.humanPct}%</p>
-                              <p className="text-xs text-muted-foreground">Humano</p>
-                            </div>
-                          </div>
-                          <p className="text-xs text-muted-foreground text-center">
-                            {metrics!.aiResolved} resolvidos por IA / {metrics!.humanResolved} por humanos
-                          </p>
-                        </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground text-center py-4">Sem dados de resolução.</p>
-                      )}
-                    </CardContent>
-                  </Card>
-
-                  {/* Channel Performance */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <MessageSquare className="w-4 h-4" />
-                        Canais de Atendimento
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      {Object.keys(patterns.channels).length === 0 ? (
-                        <p className="text-sm text-muted-foreground text-center py-4">Sem dados de canais.</p>
-                      ) : (
-                        <div className="space-y-2">
-                          {Object.entries(patterns.channels).sort((a, b) => b[1] - a[1]).map(([ch, count]) => (
-                            <div key={ch} className="flex items-center justify-between p-2 rounded-lg bg-secondary/30">
-                              <span className="text-sm font-medium">{ch}</span>
-                              <Badge variant="secondary" className="text-xs">{count} conversas</Badge>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </div>
-              )}
-
-              {/* Flow Recommendations */}
-              {recommendations.length > 0 && (
-                <Card className="border-primary/20">
-                  <CardHeader>
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <Target className="w-4 h-4 text-primary" />
-                      Recomendações da Delma
-                    </CardTitle>
-                    <CardDescription>Ações sugeridas para melhorar o fluxo de atendimento</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      {recommendations.map((rec, i) => {
-                        const Icon = rec.icon;
-                        const typeStyles: Record<string, string> = {
-                          redistribute: 'bg-primary/10 text-primary',
-                          training: 'bg-warning/10 text-warning',
-                          automation: 'bg-success/10 text-success',
-                          alert: 'bg-destructive/10 text-destructive',
-                        };
-                        return (
-                          <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-background border">
-                            <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center shrink-0", typeStyles[rec.type] || 'bg-muted')}>
-                              <Icon className="w-4 h-4" />
+              {(() => {
+                const knowledgeData = computeKnowledgeData(metrics);
+                return (
+                  <>
+                    {/* Evolution KPIs */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <Card className="border-primary/20">
+                        <CardContent className="pt-5 pb-4">
+                          <div className="flex items-center gap-3 mb-2">
+                            <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
+                              <GraduationCap className="w-5 h-5 text-primary" />
                             </div>
                             <div>
-                              <p className="text-sm font-medium text-foreground">{rec.title}</p>
-                              <p className="text-xs text-muted-foreground mt-0.5">{rec.description}</p>
+                              <p className="text-2xl font-bold">{knowledgeData.masteredCount}</p>
+                              <p className="text-xs text-muted-foreground">Temas Dominados</p>
                             </div>
                           </div>
-                        );
-                      })}
+                        </CardContent>
+                      </Card>
+                      <Card className={knowledgeData.improvementPct > 0 ? "border-success/20" : "border-warning/20"}>
+                        <CardContent className="pt-5 pb-4">
+                          <div className="flex items-center gap-3 mb-2">
+                            <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center", knowledgeData.improvementPct >= 0 ? "bg-success/10" : "bg-warning/10")}>
+                              {knowledgeData.improvementPct >= 0 ? <TrendingUp className="w-5 h-5 text-success" /> : <TrendingDown className="w-5 h-5 text-warning" />}
+                            </div>
+                            <div>
+                              <p className="text-2xl font-bold">{knowledgeData.improvementPct >= 0 ? '+' : ''}{knowledgeData.improvementPct}%</p>
+                              <p className="text-xs text-muted-foreground">Taxa de Melhoria (TMA)</p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                      <Card className="border-warning/20">
+                        <CardContent className="pt-5 pb-4">
+                          <div className="flex items-center gap-3 mb-2">
+                            <div className="w-9 h-9 rounded-lg bg-warning/10 flex items-center justify-center">
+                              <AlertCircle className="w-5 h-5 text-warning" />
+                            </div>
+                            <div>
+                              <p className="text-2xl font-bold">{knowledgeData.gapCount}</p>
+                              <p className="text-xs text-muted-foreground">Gaps Identificados</p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                      <Card className={cn(knowledgeData.maturityScore >= 70 ? "border-success/20" : knowledgeData.maturityScore >= 40 ? "border-warning/20" : "border-destructive/20")}>
+                        <CardContent className="pt-5 pb-4">
+                          <div className="flex items-center gap-3 mb-2">
+                            <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center",
+                              knowledgeData.maturityScore >= 70 ? "bg-success/10" : knowledgeData.maturityScore >= 40 ? "bg-warning/10" : "bg-destructive/10"
+                            )}>
+                              <Gauge className={cn("w-5 h-5",
+                                knowledgeData.maturityScore >= 70 ? "text-success" : knowledgeData.maturityScore >= 40 ? "text-warning" : "text-destructive"
+                              )} />
+                            </div>
+                            <div>
+                              <p className="text-2xl font-bold">{knowledgeData.maturityScore}<span className="text-sm text-muted-foreground font-normal">/100</span></p>
+                              <p className="text-xs text-muted-foreground">Score de Maturidade</p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
                     </div>
-                  </CardContent>
-                </Card>
-              )}
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      {/* What Delma Already Knows */}
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="text-base flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4 text-success" />
+                            O que a Delma já Sabe
+                          </CardTitle>
+                          <CardDescription>Temas que a Delma domina com boa taxa de resolução</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          {knowledgeData.masteredTopics.length === 0 ? (
+                            <p className="text-sm text-muted-foreground text-center py-6">Dados insuficientes para identificar temas dominados.</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {knowledgeData.masteredTopics.map((topic, i) => (
+                                <div key={i} className="flex items-center justify-between p-2.5 rounded-lg bg-secondary/30">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <CircleDot className={cn("w-3.5 h-3.5 shrink-0", topic.mastered ? "text-success" : "text-warning")} />
+                                    <span className="text-sm font-medium truncate">{topic.tag}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <span className="text-xs text-muted-foreground">{topic.count}x</span>
+                                    <Badge className={cn("text-[10px]", topic.mastered ? "bg-success/15 text-success border-success/20" : "bg-warning/15 text-warning border-warning/20")}>
+                                      {topic.mastered ? 'Dominado' : 'Aprendendo'}
+                                    </Badge>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+
+                      {/* What Delma Learned (improvements) */}
+                      <Card className="border-primary/20 bg-primary/5">
+                        <CardHeader>
+                          <CardTitle className="text-base flex items-center gap-2">
+                            <Trophy className="w-4 h-4 text-primary" />
+                            O que a Delma Aprendeu
+                          </CardTitle>
+                          <CardDescription>Evoluções concretas comparando com o período anterior</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          {knowledgeData.improvements.length === 0 ? (
+                            <p className="text-sm text-muted-foreground text-center py-6">Sem melhorias detectadas no período — dados do período anterior podem ser insuficientes.</p>
+                          ) : (
+                            <div className="space-y-2.5">
+                              {knowledgeData.improvements.map((item, i) => (
+                                <div key={i} className="flex items-start gap-2.5 p-2.5 rounded-lg bg-background/60 border border-border/50">
+                                  <div className={cn("w-6 h-6 rounded-md flex items-center justify-center shrink-0 mt-0.5",
+                                    item.positive ? "bg-success/15" : "bg-destructive/15"
+                                  )}>
+                                    {item.positive ? <TrendingUp className="w-3.5 h-3.5 text-success" /> : <TrendingDown className="w-3.5 h-3.5 text-destructive" />}
+                                  </div>
+                                  <span className="text-sm text-foreground">{item.text}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    {/* Where Delma Needs to Improve */}
+                    <Card className="border-warning/20">
+                      <CardHeader>
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-warning" />
+                          Onde a Delma Precisa Melhorar
+                        </CardTitle>
+                        <CardDescription>Gaps e áreas que precisam de atenção para evoluir</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {knowledgeData.gaps.length === 0 ? (
+                          <p className="text-sm text-muted-foreground text-center py-6">Nenhum gap significativo encontrado — excelente! 🎉</p>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {knowledgeData.gaps.map((gap, i) => {
+                              const Icon = gap.icon;
+                              const priorityStyle = gap.priority === 'high'
+                                ? 'bg-destructive/10 text-destructive border-destructive/20'
+                                : gap.priority === 'medium'
+                                  ? 'bg-warning/10 text-warning border-warning/20'
+                                  : 'bg-muted text-muted-foreground border-border';
+                              return (
+                                <div key={i} className="flex items-start gap-3 p-3 rounded-lg border bg-background">
+                                  <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center shrink-0", priorityStyle)}>
+                                    <Icon className="w-4 h-4" />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-medium text-foreground">{gap.title}</p>
+                                    <p className="text-xs text-muted-foreground mt-0.5">{gap.description}</p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    {/* Next Steps - What to Learn */}
+                    <Card className="border-primary/20">
+                      <CardHeader>
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <Rocket className="w-4 h-4 text-primary" />
+                          Próximo Passo — O que Aprender
+                        </CardTitle>
+                        <CardDescription>Ações priorizadas por impacto estimado</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {knowledgeData.nextSteps.length === 0 ? (
+                          <p className="text-sm text-muted-foreground text-center py-6">Nenhuma ação prioritária identificada.</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {knowledgeData.nextSteps.map((step, i) => (
+                              <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors">
+                                <CheckSquare className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm text-foreground">{step.action}</p>
+                                  <p className="text-xs text-muted-foreground mt-0.5">{step.reason}</p>
+                                </div>
+                                <Badge variant="outline" className={cn("text-[10px] shrink-0",
+                                  step.impact === 'alto' ? 'border-destructive/30 text-destructive' : step.impact === 'médio' ? 'border-warning/30 text-warning' : 'border-muted-foreground/30'
+                                )}>
+                                  Impacto {step.impact}
+                                </Badge>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </>
+                );
+              })()}
             </TabsContent>
 
             <TabsContent value="ai-report">
@@ -931,7 +920,173 @@ function mergeMotivos(errorsByType?: { estabelecimento: ErrorTypeGroup; motoboy:
   return merged;
 }
 
-// Managerial insight interface
+// Knowledge tab data computation
+interface KnowledgeTopic { tag: string; count: number; mastered: boolean }
+interface Improvement { text: string; positive: boolean }
+interface Gap { icon: React.ElementType; title: string; description: string; priority: 'high' | 'medium' | 'low' }
+interface NextStep { action: string; reason: string; impact: 'alto' | 'médio' | 'baixo' }
+interface KnowledgeData {
+  masteredCount: number;
+  improvementPct: number;
+  gapCount: number;
+  maturityScore: number;
+  masteredTopics: KnowledgeTopic[];
+  improvements: Improvement[];
+  gaps: Gap[];
+  nextSteps: NextStep[];
+}
+
+function computeKnowledgeData(m: BrainMetrics): KnowledgeData {
+  const total = m.aiResolved + m.humanResolved;
+  const aiPct = total > 0 ? (m.aiResolved / total) * 100 : 0;
+
+  // Error tags frequency
+  const errorTagCounts: Record<string, number> = {};
+  m.errorLogs.forEach(l => l.tags.forEach(t => { errorTagCounts[t] = (errorTagCounts[t] || 0) + 1; }));
+
+  // Mastered topics: tags with high volume but low error presence
+  const masteredTopics: KnowledgeTopic[] = m.topTags.slice(0, 10).map(([tag, count]) => {
+    const errorCount = errorTagCounts[tag] || 0;
+    const errorRatio = count > 0 ? errorCount / count : 0;
+    return { tag, count, mastered: errorRatio < 0.15 && count >= 3 };
+  });
+  const masteredCount = masteredTopics.filter(t => t.mastered).length;
+
+  // Improvement percentage (TMA)
+  const improvementPct = m.prevTma > 0 ? Math.round(((m.prevTma - m.tma) / m.prevTma) * 100) : 0;
+
+  // Gaps: tags frequent in errors
+  const gapTags = Object.entries(errorTagCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const gapCount = gapTags.length;
+
+  // Maturity score
+  const errorPct = m.totalConversas > 0 ? (m.errorLogs.length / m.totalConversas) * 100 : 0;
+  const tmaBonusPct = Math.max(0, Math.min(100, improvementPct > 0 ? improvementPct * 2 : 0));
+  const maturityScore = Math.round(
+    Math.min(100, Math.max(0, (aiPct * 0.4) + (tmaBonusPct * 0.3) + (Math.max(0, 100 - errorPct * 5) * 0.3)))
+  );
+
+  // Improvements
+  const improvements: Improvement[] = [];
+  if (m.prevTma > 0) {
+    const tmaDiff = ((m.tma - m.prevTma) / m.prevTma) * 100;
+    if (Math.abs(tmaDiff) > 5) {
+      improvements.push({
+        text: tmaDiff < 0 ? `TMA reduziu ${Math.round(Math.abs(tmaDiff))}% — atendimentos mais rápidos!` : `TMA subiu ${Math.round(tmaDiff)}% — atendimentos ficaram mais lentos.`,
+        positive: tmaDiff < 0,
+      });
+    }
+  }
+  if (m.prevTme > 0) {
+    const tmeDiff = ((m.tme - m.prevTme) / m.prevTme) * 100;
+    if (Math.abs(tmeDiff) > 10) {
+      improvements.push({
+        text: tmeDiff < 0 ? `Tempo de espera caiu ${Math.round(Math.abs(tmeDiff))}% — fila mais ágil!` : `Tempo de espera subiu ${Math.round(tmeDiff)}% — clientes esperando mais.`,
+        positive: tmeDiff < 0,
+      });
+    }
+  }
+  // Agent improvements
+  m.agentStats
+    .filter(a => a.prevAvgTime > 0 && a.count > 3)
+    .map(a => ({ name: a.name, imp: ((a.prevAvgTime - a.avgTime) / a.prevAvgTime) * 100 }))
+    .filter(a => Math.abs(a.imp) > 10)
+    .sort((a, b) => b.imp - a.imp)
+    .slice(0, 3)
+    .forEach(a => {
+      improvements.push({
+        text: a.imp > 0 ? `${a.name} melhorou TMA em ${Math.round(a.imp)}% 🏆` : `${a.name} piorou TMA em ${Math.round(Math.abs(a.imp))}%`,
+        positive: a.imp > 0,
+      });
+    });
+  if (m.prevTotalConversas > 0) {
+    const volDiff = ((m.totalConversas - m.prevTotalConversas) / m.prevTotalConversas) * 100;
+    if (Math.abs(volDiff) > 10) {
+      improvements.push({
+        text: volDiff > 0 ? `Volume cresceu ${Math.round(volDiff)}% — mais demanda sendo atendida.` : `Volume caiu ${Math.round(Math.abs(volDiff))}% — menos conversas no período.`,
+        positive: volDiff > 0,
+      });
+    }
+  }
+  if (total > 5) {
+    improvements.push({ text: `IA resolvendo ${Math.round(aiPct)}% das conversas (${m.aiResolved} de ${total})`, positive: aiPct > 30 });
+  }
+
+  // Gaps
+  const gaps: Gap[] = [];
+  gapTags.forEach(([tag, count]) => {
+    const pct = m.totalConversas > 0 ? Math.round((count / m.totalConversas) * 100) : 0;
+    gaps.push({
+      icon: AlertTriangle,
+      title: `"${tag}" com ${count} erros`,
+      description: `Aparece em ${pct}% das conversas problemáticas — revisar Q&A e instruções sobre este tema.`,
+      priority: count > 5 ? 'high' : count > 2 ? 'medium' : 'low',
+    });
+  });
+  // Low automation channels
+  Object.entries(m.channelCounts).forEach(([ch, count]) => {
+    if (ch !== 'whatsapp' && count > 3) {
+      gaps.push({
+        icon: MessageSquare,
+        title: `Canal "${ch}" com baixa cobertura`,
+        description: `${count} conversas — verificar se os robôs estão configurados para este canal.`,
+        priority: count > 10 ? 'high' : 'medium',
+      });
+    }
+  });
+  // Agent overload as gap
+  if (m.agentStats.length > 2 && m.totalConversas > 10) {
+    m.agentStats.filter(a => a.count / m.totalConversas > 0.35).forEach(a => {
+      gaps.push({
+        icon: Users,
+        title: `${a.name} sobrecarregado`,
+        description: `Concentra ${Math.round((a.count / m.totalConversas) * 100)}% do volume — IA não está capturando esses temas.`,
+        priority: 'high',
+      });
+    });
+  }
+
+  // Next steps
+  const nextSteps: NextStep[] = [];
+  gapTags.slice(0, 3).forEach(([tag, count]) => {
+    nextSteps.push({
+      action: `Criar Q&A sobre "${tag}"`,
+      reason: `Aparece em ${count} conversas problemáticas — cobrir com automação reduzirá erros.`,
+      impact: count > 5 ? 'alto' : count > 2 ? 'médio' : 'baixo',
+    });
+  });
+  if (total > 5 && aiPct < 30) {
+    nextSteps.push({
+      action: 'Revisar instruções dos robôs',
+      reason: `Apenas ${Math.round(aiPct)}% resolvido por IA — melhorar cobertura das respostas automáticas.`,
+      impact: 'alto',
+    });
+  }
+  // Training recommendations
+  const avgTma = m.agentStats.length > 0 ? m.agentStats.reduce((s, a) => s + a.avgTime * a.count, 0) / Math.max(1, m.agentStats.reduce((s, a) => s + a.count, 0)) : 0;
+  m.agentStats
+    .filter(a => a.avgTime > avgTma * 1.5 && a.count > 3)
+    .slice(0, 2)
+    .forEach(a => {
+      const topTag = a.topTags[0];
+      nextSteps.push({
+        action: `Treinar ${a.name}${topTag ? ` em "${topTag[0]}"` : ''}`,
+        reason: `TMA de ${Math.round(a.avgTime)}min — ${Math.round(a.avgTime / avgTma)}x acima da média da equipe.`,
+        impact: 'médio',
+      });
+    });
+  if (m.tme > 10) {
+    nextSteps.push({
+      action: 'Ativar mais robôs nos horários de pico',
+      reason: `TME em ${Math.round(m.tme)}min — clientes esperam demais na fila.`,
+      impact: 'alto',
+    });
+  }
+
+  return { masteredCount, improvementPct, gapCount, maturityScore, masteredTopics, improvements, gaps, nextSteps };
+}
+
+
 interface ManagerialInsight {
   category: 'volume' | 'performance' | 'automation' | 'alert' | 'team';
   icon: React.ElementType;
