@@ -141,9 +141,10 @@ serve(async (req) => {
     ).length;
     const abandonRate = totalConversas > 0 ? Math.round((abandonedCount / totalConversas) * 1000) / 10 : 0;
 
-    // Agent performance (enriched with channel breakdown + resolution rate)
+    // Agent performance — only agents from "Suporte" department
+    const suporteLogs = logs.filter(l => l.assigned_to_name && l.department_name && l.department_name.toLowerCase() === 'suporte');
     const agentStats: Record<string, { count: number; totalTime: number; totalWait: number; waitCount: number; tags: Record<string, number>; channels: Record<string, number>; transferredOut: number }> = {};
-    logs.filter(l => l.assigned_to_name).forEach(l => {
+    suporteLogs.forEach(l => {
       const name = l.assigned_to_name!;
       if (!agentStats[name]) agentStats[name] = { count: 0, totalTime: 0, totalWait: 0, waitCount: 0, tags: {}, channels: {}, transferredOut: 0 };
       agentStats[name].count++;
