@@ -1296,7 +1296,7 @@ const AdminBrain = () => {
                       </Card>
 
                       <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
-
+                        <Card className="border-primary/20">
                           <CardContent className="pt-5 pb-4">
                             <div className="flex items-center gap-3 mb-2">
                               <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
