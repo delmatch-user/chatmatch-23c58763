@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Brain, TrendingUp, TrendingDown, Clock, Users, Bot, AlertTriangle, Sparkles, RefreshCw, MessageSquare } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Brain, TrendingUp, TrendingDown, Clock, Users, Bot, AlertTriangle, Sparkles, RefreshCw, MessageSquare, Lightbulb, Activity } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -47,13 +47,34 @@ interface BrainMetrics {
 
 const AdminBrain = () => {
   const [period, setPeriod] = useState('7');
-  const [loading, setLoading] = useState(false);
   const [metrics, setMetrics] = useState<BrainMetrics | null>(null);
   const [aiAnalysis, setAiAnalysis] = useState<string>('');
   const [activeTab, setActiveTab] = useState('overview');
+  const [loadingMetrics, setLoadingMetrics] = useState(false);
+  const [loadingReport, setLoadingReport] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const fetchAnalysis = async () => {
-    setLoading(true);
+  const fetchMetrics = useCallback(async (showToast = false) => {
+    setLoadingMetrics(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('brain-analysis', {
+        body: { period: parseInt(period), metricsOnly: true },
+      });
+      if (error) throw error;
+      setMetrics(data.metrics);
+      setLastUpdated(new Date());
+      if (showToast) toast.success('Métricas atualizadas!');
+    } catch (e: any) {
+      console.error(e);
+      if (showToast) toast.error('Erro ao carregar métricas');
+    } finally {
+      setLoadingMetrics(false);
+    }
+  }, [period]);
+
+  const fetchReport = async () => {
+    setLoadingReport(true);
     try {
       const { data, error } = await supabase.functions.invoke('brain-analysis', {
         body: { period: parseInt(period) },
@@ -61,14 +82,37 @@ const AdminBrain = () => {
       if (error) throw error;
       setMetrics(data.metrics);
       setAiAnalysis(data.aiAnalysis);
-      toast.success('Análise gerada com sucesso!');
+      setLastUpdated(new Date());
+      toast.success('Relatório da Delma gerado!');
     } catch (e: any) {
       console.error(e);
-      toast.error('Erro ao gerar análise: ' + (e.message || 'Erro desconhecido'));
+      toast.error('Erro ao gerar relatório: ' + (e.message || 'Erro desconhecido'));
     } finally {
-      setLoading(false);
+      setLoadingReport(false);
     }
   };
+
+  // Auto-fetch on mount and period change
+  useEffect(() => {
+    fetchMetrics();
+  }, [fetchMetrics]);
+
+  // Polling every 30s
+  useEffect(() => {
+    intervalRef.current = setInterval(() => fetchMetrics(), 30000);
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, [fetchMetrics]);
+
+  // Realtime subscription
+  useEffect(() => {
+    const channel = supabase
+      .channel('brain-realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'conversation_logs' }, () => {
+        fetchMetrics();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchMetrics]);
 
   const getTrend = (current: number, previous: number, inverted = false) => {
     if (previous === 0) return null;
@@ -90,21 +134,33 @@ const AdminBrain = () => {
     urgent: 'bg-destructive/20 text-destructive',
   };
 
+  // Compute Delma's learnings from metrics
+  const learnings = metrics ? computeLearnings(metrics) : [];
+
   return (
     <MainLayout>
       <div className="flex-1 overflow-auto p-6 space-y-6">
-        {/* Header */}
+        {/* Header — Delma Persona */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center shadow-lg">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center shadow-lg relative">
               <Brain className="w-7 h-7 text-primary-foreground" />
+              <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-success rounded-full border-2 border-background animate-pulse" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-foreground">Cérebro</h1>
-              <p className="text-sm text-muted-foreground">Delma — Gerente Inteligente do Suporte</p>
+              <h1 className="text-2xl font-bold text-foreground">Delma</h1>
+              <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+                <Activity className="w-3 h-3 text-success" />
+                Online — Monitorando o suporte em tempo real
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {lastUpdated && (
+              <span className="text-xs text-muted-foreground">
+                Atualizado: {lastUpdated.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </span>
+            )}
             <Select value={period} onValueChange={setPeriod}>
               <SelectTrigger className="w-[140px]">
                 <SelectValue />
@@ -115,70 +171,65 @@ const AdminBrain = () => {
                 <SelectItem value="30">30 dias</SelectItem>
               </SelectContent>
             </Select>
-            <Button onClick={fetchAnalysis} disabled={loading} className="gap-2">
-              {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-              {loading ? 'Analisando...' : 'Gerar Análise'}
+            <Button variant="outline" size="icon" onClick={() => fetchMetrics(true)} disabled={loadingMetrics}>
+              <RefreshCw className={cn("w-4 h-4", loadingMetrics && "animate-spin")} />
             </Button>
           </div>
         </div>
 
-        {!metrics && !loading && (
-          <Card className="border-dashed">
-            <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-              <Brain className="w-16 h-16 text-muted-foreground/30 mb-4" />
-              <h3 className="text-lg font-semibold text-foreground mb-2">Nenhuma análise gerada</h3>
-              <p className="text-sm text-muted-foreground max-w-md mb-6">
-                Selecione o período desejado e clique em "Gerar Análise" para que a Delma analise o desempenho do suporte com inteligência artificial.
-              </p>
-              <Button onClick={fetchAnalysis} disabled={loading} className="gap-2">
-                <Sparkles className="w-4 h-4" />
-                Gerar primeira análise
-              </Button>
-            </CardContent>
-          </Card>
+        {/* Loading skeleton */}
+        {!metrics && loadingMetrics && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map(i => (
+              <Card key={i}><CardContent className="pt-6 h-28 animate-pulse bg-muted/30 rounded-lg" /></Card>
+            ))}
+          </div>
         )}
 
         {metrics && (
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="mb-4">
-              <TabsTrigger value="overview">Visão Geral</TabsTrigger>
-              <TabsTrigger value="ai-analysis">Análise IA</TabsTrigger>
+              <TabsTrigger value="overview">Painel</TabsTrigger>
               <TabsTrigger value="errors">Erros & Gaps</TabsTrigger>
+              <TabsTrigger value="ai-report">Relatório IA</TabsTrigger>
             </TabsList>
 
-            {/* Overview Tab */}
+            {/* Painel Tab */}
             <TabsContent value="overview" className="space-y-6">
               {/* KPI Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <KPICard
-                  title="Total Conversas"
-                  value={metrics.totalConversas}
-                  icon={MessageSquare}
-                  trend={getTrend(metrics.totalConversas, metrics.prevTotalConversas)}
-                />
-                <KPICard
-                  title="TMA"
-                  value={formatTime(metrics.tma)}
-                  icon={Clock}
-                  trend={getTrend(metrics.tma, metrics.prevTma, true)}
-                  subtitle="Tempo médio de atendimento"
-                />
-                <KPICard
-                  title="TME"
-                  value={formatTime(metrics.tme)}
-                  icon={Clock}
-                  trend={getTrend(metrics.tme, metrics.prevTme, true)}
-                  subtitle="Tempo médio de espera"
-                />
+                <KPICard title="Total Conversas" value={metrics.totalConversas} icon={MessageSquare} trend={getTrend(metrics.totalConversas, metrics.prevTotalConversas)} />
+                <KPICard title="TMA" value={formatTime(metrics.tma)} icon={Clock} trend={getTrend(metrics.tma, metrics.prevTma, true)} subtitle="Tempo médio de atendimento" />
+                <KPICard title="TME" value={formatTime(metrics.tme)} icon={Clock} trend={getTrend(metrics.tme, metrics.prevTme, true)} subtitle="Tempo médio de espera" />
                 <KPICard
                   title="Resolução IA"
-                  value={metrics.aiResolved + metrics.humanResolved > 0
-                    ? `${Math.round((metrics.aiResolved / (metrics.aiResolved + metrics.humanResolved)) * 100)}%`
-                    : '0%'}
+                  value={metrics.aiResolved + metrics.humanResolved > 0 ? `${Math.round((metrics.aiResolved / (metrics.aiResolved + metrics.humanResolved)) * 100)}%` : '0%'}
                   icon={Bot}
                   subtitle={`${metrics.aiResolved} IA / ${metrics.humanResolved} humano`}
                 />
               </div>
+
+              {/* Delma's Learnings */}
+              {learnings.length > 0 && (
+                <Card className="border-primary/20 bg-primary/5">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Lightbulb className="w-4 h-4 text-primary" />
+                      O que a Delma anda aprendendo
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {learnings.map((insight, i) => (
+                        <div key={i} className="flex items-start gap-2 text-sm">
+                          <span className="text-primary mt-0.5">•</span>
+                          <span className="text-muted-foreground">{insight}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* Agent Performance + Top Tags */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -227,10 +278,7 @@ const AdminBrain = () => {
                                 <span className="text-muted-foreground ml-2">{count}</span>
                               </div>
                               <div className="h-1.5 rounded-full bg-secondary">
-                                <div
-                                  className="h-full rounded-full bg-primary transition-all"
-                                  style={{ width: `${percentage}%` }}
-                                />
+                                <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${percentage}%` }} />
                               </div>
                             </div>
                           );
@@ -241,67 +289,29 @@ const AdminBrain = () => {
                 </Card>
               </div>
 
-              {/* Channel & Priority breakdown */}
+              {/* Channel & Priority */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Por Canal</CardTitle>
-                  </CardHeader>
+                  <CardHeader><CardTitle className="text-base">Por Canal</CardTitle></CardHeader>
                   <CardContent>
                     <div className="flex flex-wrap gap-2">
                       {Object.entries(metrics.channelCounts).map(([channel, count]) => (
-                        <Badge key={channel} variant="secondary" className="text-sm">
-                          {channel}: {count}
-                        </Badge>
+                        <Badge key={channel} variant="secondary" className="text-sm">{channel}: {count}</Badge>
                       ))}
                     </div>
                   </CardContent>
                 </Card>
                 <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Por Prioridade</CardTitle>
-                  </CardHeader>
+                  <CardHeader><CardTitle className="text-base">Por Prioridade</CardTitle></CardHeader>
                   <CardContent>
                     <div className="flex flex-wrap gap-2">
                       {Object.entries(metrics.priorityCounts).map(([priority, count]) => (
-                        <Badge key={priority} className={cn("text-sm", priorityColors[priority] || 'bg-muted text-muted-foreground')}>
-                          {priority}: {count}
-                        </Badge>
+                        <Badge key={priority} className={cn("text-sm", priorityColors[priority] || 'bg-muted text-muted-foreground')}>{priority}: {count}</Badge>
                       ))}
                     </div>
                   </CardContent>
                 </Card>
               </div>
-            </TabsContent>
-
-            {/* AI Analysis Tab */}
-            <TabsContent value="ai-analysis">
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle className="flex items-center gap-2">
-                        <Sparkles className="w-5 h-5 text-primary" />
-                        Análise da Delma
-                      </CardTitle>
-                      <CardDescription>Relatório inteligente gerado por IA com base nos dados do período</CardDescription>
-                    </div>
-                    <Button variant="outline" size="sm" onClick={fetchAnalysis} disabled={loading} className="gap-2">
-                      <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
-                      Regenerar
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  {aiAnalysis ? (
-                    <div className="prose prose-sm dark:prose-invert max-w-none">
-                      <div dangerouslySetInnerHTML={{ __html: renderMarkdown(aiAnalysis) }} />
-                    </div>
-                  ) : (
-                    <p className="text-muted-foreground">Nenhuma análise disponível. Clique em "Gerar Análise".</p>
-                  )}
-                </CardContent>
-              </Card>
             </TabsContent>
 
             {/* Errors Tab */}
@@ -327,34 +337,58 @@ const AdminBrain = () => {
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 flex-1">
                               <p className="font-medium text-sm truncate">{log.contact_name}</p>
-                              {log.contact_phone && (
-                                <p className="text-xs text-muted-foreground">{log.contact_phone}</p>
-                              )}
+                              {log.contact_phone && <p className="text-xs text-muted-foreground">{log.contact_phone}</p>}
                             </div>
-                            <Badge className={cn("shrink-0", priorityColors[log.priority] || '')}>
-                              {log.priority}
-                            </Badge>
+                            <Badge className={cn("shrink-0", priorityColors[log.priority] || '')}>{log.priority}</Badge>
                           </div>
                           <div className="flex items-center gap-2 mt-2 flex-wrap">
-                            {log.channel && (
-                              <Badge variant="outline" className="text-xs">{log.channel}</Badge>
-                            )}
-                            {log.assigned_to_name && (
-                              <span className="text-xs text-muted-foreground">Agente: {log.assigned_to_name}</span>
-                            )}
-                            <span className="text-xs text-muted-foreground">
-                              {new Date(log.finalized_at).toLocaleDateString('pt-BR')}
-                            </span>
+                            {log.channel && <Badge variant="outline" className="text-xs">{log.channel}</Badge>}
+                            {log.assigned_to_name && <span className="text-xs text-muted-foreground">Agente: {log.assigned_to_name}</span>}
+                            <span className="text-xs text-muted-foreground">{new Date(log.finalized_at).toLocaleDateString('pt-BR')}</span>
                           </div>
                           {log.tags.length > 0 && (
                             <div className="flex flex-wrap gap-1 mt-2">
-                              {log.tags.map((tag) => (
-                                <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>
-                              ))}
+                              {log.tags.map((tag) => (<Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>))}
                             </div>
                           )}
                         </div>
                       ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* AI Report Tab — On demand */}
+            <TabsContent value="ai-report">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <Sparkles className="w-5 h-5 text-primary" />
+                        Relatório da Delma
+                      </CardTitle>
+                      <CardDescription>Análise profunda gerada por IA sob demanda</CardDescription>
+                    </div>
+                    <Button onClick={fetchReport} disabled={loadingReport} className="gap-2">
+                      {loadingReport ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                      {loadingReport ? 'Gerando...' : aiAnalysis ? 'Regenerar Relatório' : 'Gerar Relatório'}
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {aiAnalysis ? (
+                    <div className="prose prose-sm dark:prose-invert max-w-none">
+                      <div dangerouslySetInnerHTML={{ __html: renderMarkdown(aiAnalysis) }} />
+                    </div>
+                  ) : (
+                    <div className="text-center py-12">
+                      <Sparkles className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+                      <h3 className="text-lg font-semibold text-foreground mb-2">Nenhum relatório gerado</h3>
+                      <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                        Clique em "Gerar Relatório" para que a Delma analise profundamente o desempenho do suporte com inteligência artificial.
+                      </p>
                     </div>
                   )}
                 </CardContent>
@@ -366,6 +400,77 @@ const AdminBrain = () => {
     </MainLayout>
   );
 };
+
+// Compute learnings from metrics client-side
+function computeLearnings(m: BrainMetrics): string[] {
+  const insights: string[] = [];
+
+  // Volume trend
+  if (m.prevTotalConversas > 0) {
+    const volDiff = ((m.totalConversas - m.prevTotalConversas) / m.prevTotalConversas) * 100;
+    if (Math.abs(volDiff) > 10) {
+      insights.push(
+        volDiff > 0
+          ? `A Delma notou um aumento de ${Math.round(volDiff)}% no volume de conversas comparado ao período anterior.`
+          : `A Delma notou uma redução de ${Math.round(Math.abs(volDiff))}% no volume de conversas comparado ao período anterior.`
+      );
+    }
+  }
+
+  // TMA alert
+  if (m.prevTma > 0) {
+    const tmaDiff = ((m.tma - m.prevTma) / m.prevTma) * 100;
+    if (tmaDiff > 15) {
+      insights.push(`⚠️ O TMA aumentou ${Math.round(tmaDiff)}% — os atendimentos estão demorando mais que o usual.`);
+    } else if (tmaDiff < -15) {
+      insights.push(`✅ O TMA caiu ${Math.round(Math.abs(tmaDiff))}% — os atendimentos estão mais rápidos!`);
+    }
+  }
+
+  // TME alert
+  if (m.prevTme > 0) {
+    const tmeDiff = ((m.tme - m.prevTme) / m.prevTme) * 100;
+    if (tmeDiff > 20) {
+      insights.push(`⚠️ O tempo de espera subiu ${Math.round(tmeDiff)}% — clientes estão esperando mais na fila.`);
+    }
+  }
+
+  // AI resolution rate
+  const total = m.aiResolved + m.humanResolved;
+  if (total > 0) {
+    const aiPct = Math.round((m.aiResolved / total) * 100);
+    if (aiPct > 60) {
+      insights.push(`🤖 A IA está resolvendo ${aiPct}% das conversas — boa taxa de automação!`);
+    } else if (aiPct < 20 && total > 10) {
+      insights.push(`A Delma sugere revisar os robôs — apenas ${aiPct}% das conversas são resolvidas por IA.`);
+    }
+  }
+
+  // Top tag dominance
+  if (m.topTags.length > 0) {
+    const topTag = m.topTags[0];
+    if (m.totalConversas > 0 && topTag[1] / m.totalConversas > 0.3) {
+      insights.push(`A tag "${topTag[0]}" aparece em ${Math.round((topTag[1] / m.totalConversas) * 100)}% das conversas — pode ser um padrão a investigar.`);
+    }
+  }
+
+  // Agent with highest TMA
+  if (m.agentStats.length > 2) {
+    const sorted = [...m.agentStats].sort((a, b) => b.avgTime - a.avgTime);
+    const slowest = sorted[0];
+    const fastest = sorted[sorted.length - 1];
+    if (slowest.avgTime > fastest.avgTime * 2 && slowest.count > 3) {
+      insights.push(`${slowest.name} tem TMA ${Math.round(slowest.avgTime)}min — ${Math.round(slowest.avgTime / fastest.avgTime)}x mais que ${fastest.name}.`);
+    }
+  }
+
+  // Error count
+  if (m.errorLogs.length > 5) {
+    insights.push(`🔴 ${m.errorLogs.length} conversas problemáticas detectadas no período — confira a aba "Erros & Gaps".`);
+  }
+
+  return insights;
+}
 
 // Simple markdown to HTML renderer
 function renderMarkdown(md: string): string {
