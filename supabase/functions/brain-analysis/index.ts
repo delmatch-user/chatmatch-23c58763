@@ -89,6 +89,14 @@ serve(async (req) => {
     logs.forEach(l => (l.tags || []).forEach((t: string) => { const nt = normalizeTag(t); tagCounts[nt] = (tagCounts[nt] || 0) + 1; }));
     const topTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
 
+    // Previous period top tags for comparison
+    const prevTagCounts: Record<string, number> = {};
+    prev.forEach(l => (l.tags || []).forEach((t: string) => { const nt = normalizeTag(t); prevTagCounts[nt] = (prevTagCounts[nt] || 0) + 1; }));
+    const prevTopTags = Object.entries(prevTagCounts).sort((a, b) => b[1] - a[1]).slice(0, 20);
+
+    // Hourly error distribution for heatmap
+    const errorHourly: Record<string, Record<number, number>> = { estabelecimento: {}, motoboy: {}, outros: {} };
+
     // Channel breakdown
     const channelCounts: Record<string, number> = {};
     logs.forEach(l => { const ch = l.channel || 'whatsapp'; channelCounts[ch] = (channelCounts[ch] || 0) + 1; });
