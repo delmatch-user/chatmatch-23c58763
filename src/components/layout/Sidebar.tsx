@@ -66,6 +66,7 @@ interface NavItem {
   label: string;
   path: string;
   badge?: number;
+  pulse?: boolean;
   isSettings?: boolean;
   children?: NavItem[];
 }
@@ -85,7 +86,7 @@ const getNavItems = (queueCount: number, activeConversationsCount: number, inter
       { icon: History, label: 'Histórico', path: '/historico' },
       { icon: Trophy, label: 'Ranking', path: '/ranking' },
       { icon: Bot, label: 'Logs IA', path: '/logs-ia' },
-      { icon: Bell, label: 'Notificações', path: '/notificacoes' },
+      { icon: Bell, label: 'Alertas', path: '/notificacoes' },
     ]});
   } else {
     items.push({ icon: History, label: 'Histórico', path: '/historico' });
