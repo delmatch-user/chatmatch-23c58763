@@ -316,9 +316,30 @@ serve(async (req) => {
     let fallbackUsed = false;
     let fallbackError = "";
 
-    const userContextStr = reqUserContext ? `\n\n**Observações manuais do gestor:** ${reqUserContext}` : '';
+    const metricsBlock = `**Métricas do período (últimos ${period} dias):**
+- Total de conversas: ${totalConversas} (anterior: ${prevTotalConversas})
+- TMA: ${metrics.tma} min (anterior: ${metrics.prevTma} min)
+- TME: ${metrics.tme} min (anterior: ${metrics.prevTme} min)
+- Taxa de Abandono: ${metrics.abandonRate}% (${metrics.abandonedCount} conversas)
+- Resolvidas por IA: ${aiResolved} | Por humano: ${humanResolved}
+- Top tags: ${topTags.map(([t, c]: [string, number]) => t + " (" + c + ")").join(', ')}
+- Canais: ${Object.entries(channelCounts).map(([c, n]) => c + ": " + n).join(', ')}
+- Prioridades: ${Object.entries(priorityCounts).map(([p, n]) => p + ": " + n).join(', ')}
+- Performance agentes: ${metrics.agentStats.map((a: any) => a.name + ": " + a.count + " conversas, TMA " + a.avgTime + "min, TME " + a.avgWaitTime + "min, Resolução " + a.resolutionRate + "%, Top tags: " + a.topTags.map(([t, c]: [string, number]) => t + "(" + c + ")").join("/")).join('; ')}
+- Conversas problemáticas: ${errorLogs.length} (alta prioridade, erros ou reclamações)`;
 
-    const analysisPrompt = `Você é a Delma, gerente inteligente do departamento de Suporte. Analise as métricas abaixo e gere um relatório executivo em markdown com:
+    const systemMessage = reqUserContext
+      ? "Você é a Delma, gerente inteligente do departamento de Suporte. O gestor fez uma solicitação específica abaixo. " +
+        "Você DEVE responder EXATAMENTE o que foi pedido, usando as métricas disponíveis como base de dados. " +
+        "NÃO gere um relatório genérico. Foque 100% na solicitação do gestor. " +
+        "Se o gestor pedir sobre um atendente específico, foque APENAS nesse atendente. " +
+        "Se pedir uma análise específica, faça APENAS essa análise. " +
+        "Responda em português brasileiro com markdown."
+      : "Você é a Delma, uma gerente de suporte altamente analítica e proativa. Gere relatórios claros e acionáveis.";
+
+    const userMessage = reqUserContext
+      ? `## SOLICITAÇÃO DO GESTOR (PRIORIDADE MÁXIMA — SIGA À RISCA):\n\n${reqUserContext}\n\n---\n\nDados disponíveis para embasar sua resposta:\n\n${metricsBlock}`
+      : `Analise as métricas abaixo e gere um relatório executivo em markdown com:
 
 ## Resumo Executivo
 Visão geral do desempenho do período.
@@ -340,24 +361,13 @@ Situações que precisam de atenção imediata.
 
 ---
 
-**Métricas do período (últimos ${period} dias):**
-- Total de conversas: ${totalConversas} (anterior: ${prevTotalConversas})
-- TMA: ${metrics.tma} min (anterior: ${metrics.prevTma} min)
-- TME: ${metrics.tme} min (anterior: ${metrics.prevTme} min)
-- Taxa de Abandono: ${metrics.abandonRate}% (${metrics.abandonedCount} conversas)
-- Resolvidas por IA: ${aiResolved} | Por humano: ${humanResolved}
-- Top tags: ${topTags.map(([t, c]: [string, number]) => t + " (" + c + ")").join(', ')}
-- Canais: ${Object.entries(channelCounts).map(([c, n]) => c + ": " + n).join(', ')}
-- Prioridades: ${Object.entries(priorityCounts).map(([p, n]) => p + ": " + n).join(', ')}
-- Performance agentes: ${metrics.agentStats.map((a: any) => a.name + ": " + a.count + " conversas, TMA " + a.avgTime + "min").join('; ')}
-- Conversas problemáticas: ${errorLogs.length} (alta prioridade, erros ou reclamações)
-${userContextStr}
+${metricsBlock}
 
 Seja direta, objetiva e use dados para embasar cada ponto. Responda em português brasileiro.`;
 
     const aiMessages = [
-      { role: "system", content: "Você é a Delma, uma gerente de suporte altamente analítica e proativa. Gere relatórios claros e acionáveis." },
-      { role: "user", content: analysisPrompt },
+      { role: "system", content: systemMessage },
+      { role: "user", content: userMessage },
     ];
 
     // 1. Try Lovable AI with GPT-5.2 (primary for Delma Cérebro)
