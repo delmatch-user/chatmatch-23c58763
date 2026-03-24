@@ -71,3 +71,6 @@ verify_jwt = false
 
 [functions.classify-conversation-tags]
 verify_jwt = false
+
+[functions.brain-analysis]
+verify_jwt = false
