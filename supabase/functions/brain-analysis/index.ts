@@ -144,6 +144,7 @@ serve(async (req) => {
     // Agent performance — only agents from "Suporte" department
     const suporteLogs = logs.filter(l => l.assigned_to_name && l.department_name && l.department_name.toLowerCase() === 'suporte');
     const agentStats: Record<string, { count: number; totalTime: number; totalWait: number; waitCount: number; tags: Record<string, number>; channels: Record<string, number>; transferredOut: number }> = {};
+    const agentDailyStats: Record<string, Record<string, { count: number; tmaSum: number; tmaCount: number; tmeSum: number; tmeCount: number }>> = {};
     suporteLogs.forEach(l => {
       const name = l.assigned_to_name!;
       if (!agentStats[name]) agentStats[name] = { count: 0, totalTime: 0, totalWait: 0, waitCount: 0, tags: {}, channels: {}, transferredOut: 0 };
@@ -158,6 +159,22 @@ serve(async (req) => {
         agentStats[name].waitCount++;
       }
       (l.tags || []).forEach((t: string) => { const nt = normalizeTag(t); agentStats[name].tags[nt] = (agentStats[name].tags[nt] || 0) + 1; });
+      // Daily breakdown per agent
+      const day = (l.finalized_at || '').substring(0, 10);
+      if (day) {
+        if (!agentDailyStats[name]) agentDailyStats[name] = {};
+        if (!agentDailyStats[name][day]) agentDailyStats[name][day] = { count: 0, tmaSum: 0, tmaCount: 0, tmeSum: 0, tmeCount: 0 };
+        agentDailyStats[name][day].count++;
+        if (l.started_at && l.finalized_at) {
+          const dur = (new Date(l.finalized_at).getTime() - new Date(l.started_at).getTime()) / 60000;
+          agentDailyStats[name][day].tmaSum += dur;
+          agentDailyStats[name][day].tmaCount++;
+        }
+        if (l.wait_time != null) {
+          agentDailyStats[name][day].tmeSum += l.wait_time / 60;
+          agentDailyStats[name][day].tmeCount++;
+        }
+      }
     });
 
     // Count transfers per agent for resolution rate
@@ -316,6 +333,29 @@ serve(async (req) => {
     let fallbackUsed = false;
     let fallbackError = "";
 
+    // Build granular agent daily breakdown for the prompt
+    const agentDailyBlock = Object.entries(agentDailyStats).map(([name, days]) => {
+      const dayLines = Object.entries(days).sort(([a], [b]) => a.localeCompare(b)).map(([day, d]) => {
+        const tma = d.tmaCount > 0 ? Math.round((d.tmaSum / d.tmaCount) * 10) / 10 : 0;
+        const tme = d.tmeCount > 0 ? Math.round((d.tmeSum / d.tmeCount) * 10) / 10 : 0;
+        return `  ${day}: ${d.count} conversas, TMA ${tma}min, TME ${tme}min`;
+      }).join('\n');
+      const allTags = agentStats[name] ? Object.entries(agentStats[name].tags).sort((a, b) => b[1] - a[1]).map(([t, c]) => `${t}(${c})`).join(', ') : '';
+      const agentErrors = errorLogs.filter(l => l.assigned_to_name === name);
+      return `${name}:\n${dayLines}\n  Tags: ${allTags || 'nenhuma'}\n  Problemáticas: ${agentErrors.length}`;
+    }).join('\n');
+
+    // Build daily trends for the prompt
+    const dailyTrendsBlock = dailyTrends.map(d => `  ${d.date}: TMA ${d.tma}min, TME ${d.tme}min, Urgentes: ${d.urgent}`).join('\n');
+
+    // Build error logs per agent
+    const agentErrorBlock = Object.keys(agentStats).map(name => {
+      const errs = errorLogs.filter(l => l.assigned_to_name === name);
+      if (errs.length === 0) return null;
+      const details = errs.slice(0, 5).map(e => `    - ${e.contact_name || 'Anônimo'} | tags: ${(e.tags || []).join(', ')} | prioridade: ${e.priority}`).join('\n');
+      return `${name} (${errs.length} problemáticas):\n${details}`;
+    }).filter(Boolean).join('\n');
+
     const metricsBlock = `**Métricas do período (últimos ${period} dias):**
 - Total de conversas: ${totalConversas} (anterior: ${prevTotalConversas})
 - TMA: ${metrics.tma} min (anterior: ${metrics.prevTma} min)
@@ -325,17 +365,28 @@ serve(async (req) => {
 - Top tags: ${topTags.map(([t, c]: [string, number]) => t + " (" + c + ")").join(', ')}
 - Canais: ${Object.entries(channelCounts).map(([c, n]) => c + ": " + n).join(', ')}
 - Prioridades: ${Object.entries(priorityCounts).map(([p, n]) => p + ": " + n).join(', ')}
-- Performance agentes: ${metrics.agentStats.map((a: any) => a.name + ": " + a.count + " conversas, TMA " + a.avgTime + "min, TME " + a.avgWaitTime + "min, Resolução " + a.resolutionRate + "%, Top tags: " + a.topTags.map(([t, c]: [string, number]) => t + "(" + c + ")").join("/")).join('; ')}
-- Conversas problemáticas: ${errorLogs.length} (alta prioridade, erros ou reclamações)`;
+- Performance agentes (resumo): ${metrics.agentStats.map((a: any) => a.name + ": " + a.count + " conversas, TMA " + a.avgTime + "min, TME " + a.avgWaitTime + "min, Resolução " + a.resolutionRate + "%").join('; ')}
+- Conversas problemáticas: ${errorLogs.length} (alta prioridade, erros ou reclamações)
+
+**Dados diários por agente (detalhado):**
+${agentDailyBlock || 'Sem dados de agentes'}
+
+**Tendências diárias globais:**
+${dailyTrendsBlock || 'Sem dados'}
+
+**Conversas problemáticas por agente:**
+${agentErrorBlock || 'Nenhuma conversa problemática atribuída a agentes'}`;
 
     const systemMessage = reqUserContext
       ? "Você é a Delma, gerente inteligente do departamento de Suporte. O gestor fez uma solicitação específica abaixo. " +
-        "Você DEVE responder EXATAMENTE o que foi pedido, usando as métricas disponíveis como base de dados. " +
+        "Você tem acesso a TODOS os dados necessários — dados diários por agente, tags, conversas problemáticas, tendências globais. " +
+        "NUNCA diga que não tem dados ou que não consegue puxar informações. Todos os dados estão abaixo. " +
+        "Você DEVE responder EXATAMENTE o que foi pedido, usando os dados disponíveis. " +
         "NÃO gere um relatório genérico. Foque 100% na solicitação do gestor. " +
-        "Se o gestor pedir sobre um atendente específico, foque APENAS nesse atendente. " +
+        "Se o gestor pedir sobre um atendente específico, foque APENAS nesse atendente usando os dados diários detalhados. " +
         "Se pedir uma análise específica, faça APENAS essa análise. " +
         "Responda em português brasileiro com markdown."
-      : "Você é a Delma, uma gerente de suporte altamente analítica e proativa. Gere relatórios claros e acionáveis.";
+      : "Você é a Delma, uma gerente de suporte altamente analítica e proativa. Você tem acesso a todos os dados do período. Gere relatórios claros e acionáveis. NUNCA diga que não tem dados.";
 
     const userMessage = reqUserContext
       ? `## SOLICITAÇÃO DO GESTOR (PRIORIDADE MÁXIMA — SIGA À RISCA):\n\n${reqUserContext}\n\n---\n\nDados disponíveis para embasar sua resposta:\n\n${metricsBlock}`
