@@ -1,58 +1,58 @@
 
 
-# Corrigir: Filtros do Cérebro devem ser 100% fiéis ao período selecionado
+# Incluir dados de conversas reais no prompt quando há observação manual
 
-## Problemas identificados
+## Problema
 
-1. **"Hoje" e "Ontem" são idênticos** — ambos enviam `period=1` para a edge function, que calcula `now - 1 dia`. Não há como distinguir.
-2. **Janela rolante em vez de dias calendário** — "Hoje" deveria ser meia-noite até agora, não "últimas 24h". "7 dias" deveria ser os últimos 7 dias completos a partir de meia-noite.
-3. **Custom range não envia datas reais** — envia apenas a quantidade de dias, então um range personalizado de 1-5 março é igual a "últimos 5 dias".
-4. **Limite de 1000 registros** pode truncar dados em períodos maiores (15/30 dias).
+O gestor pede "Qual foi a primeira mensagem enviada pelo Alex nas últimas 4h e qual cliente ele respondeu", mas a Delma só recebe métricas agregadas (contagens, TMA, TME). A tabela `conversation_logs` tem uma coluna `messages` (jsonb) com o conteúdo real das conversas, mas esses dados nunca são incluídos no prompt.
 
 ## Solução
 
-### 1. Frontend (`src/pages/admin/AdminBrain.tsx`)
+Quando `reqUserContext` está presente (observação manual), incluir no prompt um bloco com as **conversas reais** dos agentes — contato, horário, e as primeiras mensagens de cada conversa. Isso permite à Delma responder perguntas específicas sobre conteúdo.
 
-- Alterar `fetchMetrics` e `fetchReport` para enviar `periodStart` e `periodEnd` como datas ISO explícitas em vez de apenas `period` numérico.
-- Calcular as datas corretamente:
-  - **Hoje**: meia-noite de hoje (timezone SP) → agora
-  - **Ontem**: meia-noite de ontem → meia-noite de hoje
-  - **7/15/30 dias**: meia-noite de N dias atrás → agora
-  - **Custom**: data início → fim do dia final
-- Continuar enviando `period` (numérico) para compatibilidade com o cálculo do período anterior.
+## Mudança
 
-```text
-getEffectiveDateRange() → { start: ISO string, end: ISO string, days: number }
-  "today"     → [hoje 00:00 BRT, agora]
-  "yesterday" → [ontem 00:00, hoje 00:00]
-  "7"         → [7 dias atrás 00:00, agora]
-  "custom"    → [from 00:00, to 23:59:59]
+**Arquivo**: `supabase/functions/brain-analysis/index.ts`
+
+1. **Quando `reqUserContext` existe**, construir um bloco `conversationDetailsBlock` com dados das conversas reais do período:
+   - Para cada conversa do Suporte: nome do agente, nome do contato, telefone, horário de início/fim, e as primeiras 3-5 mensagens (sender + content + timestamp)
+   - Limitar a ~100 conversas para não estourar o contexto do modelo
+   - Incluir esse bloco no `userMessage` junto com o `metricsBlock`
+
+2. **Quando `reqUserContext` está vazio**, manter o comportamento atual (só métricas agregadas)
+
+### Lógica do bloco de conversas
+
+```typescript
+// Só quando há observação manual
+let conversationDetailsBlock = '';
+if (reqUserContext) {
+  const detailLogs = logs
+    .filter(l => l.assigned_to_name && l.department_name?.toLowerCase() === 'suporte')
+    .slice(0, 100);
+  
+  conversationDetailsBlock = detailLogs.map(l => {
+    const msgs = Array.isArray(l.messages) ? l.messages.slice(0, 5) : [];
+    const msgLines = msgs.map((m: any) => 
+      `    [${m.created_at || m.timestamp || ''}] ${m.sender_name || m.sender || 'Desconhecido'}: ${(m.content || m.text || '').substring(0, 200)}`
+    ).join('\n');
+    return `Conversa: ${l.contact_name} (${l.contact_phone || 'sem telefone'})
+  Agente: ${l.assigned_to_name}
+  Início: ${l.started_at} | Fim: ${l.finalized_at}
+  Tags: ${(l.tags || []).join(', ')}
+  Mensagens:
+${msgLines || '    (sem mensagens)'}`;
+  }).join('\n---\n');
+}
 ```
 
-### 2. Edge Function (`supabase/functions/brain-analysis/index.ts`)
+3. **Atualizar o `userMessage`** quando há observação para incluir as conversas:
 
-- Aceitar novos parâmetros opcionais `periodStart` e `periodEnd` (ISO strings).
-- Se presentes, usar essas datas diretamente nas queries em vez de calcular `now - period * 24h`.
-- Calcular o período anterior automaticamente com base na diferença de dias.
-- Aumentar o limite de 1000 para 5000 registros para suportar períodos maiores.
-- Adicionar paginação caso necessário (buscar em batches se houver mais de 5000).
-
-```text
-Lógica:
-  if (periodStart && periodEnd fornecidos) {
-    usar diretamente nas queries
-    calcular prevPeriod = mesmo intervalo antes do periodStart
-  } else {
-    manter cálculo atual (fallback)
-  }
+```typescript
+const userMessage = reqUserContext
+  ? `## SOLICITAÇÃO DO GESTOR (PRIORIDADE MÁXIMA):\n\n${reqUserContext}\n\n---\n\n${metricsBlock}\n\n**Conversas detalhadas do período:**\n${conversationDetailsBlock}`
+  : // prompt padrão atual
 ```
 
-### Mudanças resumidas
-
-| Arquivo | Mudança |
-|---------|---------|
-| `src/pages/admin/AdminBrain.tsx` | Nova função `getEffectiveDateRange()` que calcula datas exatas. `fetchMetrics` e `fetchReport` enviam `periodStart`/`periodEnd` no body. |
-| `supabase/functions/brain-analysis/index.ts` | Aceitar `periodStart`/`periodEnd`, usar nas queries, aumentar limit para 5000, calcular período anterior baseado no intervalo real. |
-
-Isso garante que cada filtro retorne dados exatamente do período selecionado, sem sobreposição ou dados faltantes.
+Isso garante que quando o gestor perguntar sobre mensagens específicas, contatos ou interações de um agente, a Delma terá acesso ao conteúdo real das conversas.
 
