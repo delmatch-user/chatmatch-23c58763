@@ -1975,7 +1975,7 @@ async function handleAutomaticMode(body: {
 async function handleStreamingMode(body: { messages: any[]; robotConfig: RobotConfig }, req: Request) {
   const { messages, robotConfig } = body;
   
-  const { apiUrl, apiKey, providerName } = getApiConfig(robotConfig.intelligence);
+  const { apiUrl, apiKey, providerName, isAnthropic } = getApiConfig(robotConfig.intelligence);
   if (!apiKey) throw new Error(`API Key não configurada para ${providerName}. Configure na página de Integrações de IA.`);
 
   const model = getModelFromIntelligence(robotConfig.intelligence);
@@ -1984,23 +1984,38 @@ async function handleStreamingMode(body: { messages: any[]; robotConfig: RobotCo
 
   console.log(`[Robot-Chat Stream] Provider: ${providerName}, Model: ${model}, Temperature: ${temperature}`);
 
-  const response = await fetch(apiUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...messages,
-      ],
-      max_tokens: robotConfig.maxTokens || 1000,
-      temperature,
-      stream: true,
-    }),
-  });
+  const streamBody = {
+    model,
+    messages: [
+      { role: "system", content: systemPrompt },
+      ...messages,
+    ],
+    max_tokens: robotConfig.maxTokens || 1000,
+    temperature,
+    stream: !isAnthropic, // Anthropic streaming uses different format, skip for now
+  };
+
+  let response: Response;
+  if (isAnthropic) {
+    // For Anthropic, use non-streaming and return as a simple JSON response
+    response = await fetchAI(apiUrl, apiKey, streamBody, true);
+    if (response.ok) {
+      const data = await parseAIResponse(response, true);
+      const text = data.choices?.[0]?.message?.content || '';
+      return new Response(JSON.stringify({ response: text }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+  } else {
+    response = await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(streamBody),
+    });
+  }
 
   if (!response.ok) {
     if (response.status === 429) {
