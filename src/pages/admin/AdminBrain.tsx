@@ -51,6 +51,11 @@ interface BrainMetrics {
   priorityCounts: Record<string, number>;
   agentStats: AgentStat[];
   errorLogs: ErrorLog[];
+  errorsByType?: {
+    estabelecimento: ErrorTypeGroup;
+    motoboy: ErrorTypeGroup;
+    outros: ErrorTypeGroup;
+  };
 }
 
 const AdminBrain = () => {
