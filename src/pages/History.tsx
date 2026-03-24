@@ -440,7 +440,7 @@ export default function History() {
                                 }
                                 return (
                                   <Badge className={priorityColors[log.priority] || priorityColors.normal}>
-                                    {log.priority}
+                                    {priorityLabel(log.priority)}
                                   </Badge>
                                 );
                               })()}

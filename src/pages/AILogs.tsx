@@ -469,7 +469,7 @@ export default function AILogs() {
                                 </Badge>
                               ) : (
                                 <Badge className={priorityColors[log.priority] || priorityColors.normal}>
-                                  {log.priority}
+                                  {priorityLabel(log.priority)}
                                 </Badge>
                               )}
                               {log.tags?.filter(t => !SUPORTE_TAXONOMY_TAGS.some(st => t === st)).map(tag => (
