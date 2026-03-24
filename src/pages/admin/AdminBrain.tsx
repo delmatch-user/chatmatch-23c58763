@@ -1135,7 +1135,21 @@ const AdminBrain = () => {
                       )}
                       <CardContent className="pt-6 space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="font-semibold text-sm truncate">{agent.name}</span>
+                          <div className="flex items-center gap-2 min-w-0">
+                            {agentLiveStatus[agent.name] && (
+                              <span className={cn("w-2.5 h-2.5 rounded-full shrink-0",
+                                agentLiveStatus[agent.name].status === 'online' ? 'bg-success animate-pulse' :
+                                agentLiveStatus[agent.name].status === 'pausa' ? 'bg-warning' : 'bg-muted-foreground/40'
+                              )} title={agentLiveStatus[agent.name].status} />
+                            )}
+                            <span className="font-semibold text-sm truncate">{agent.name}</span>
+                            {agentLiveStatus[agent.name]?.openConversations > 0 && (
+                              <Badge variant="outline" className="text-[10px] shrink-0 gap-1 border-primary/30 text-primary">
+                                <MessageSquare className="w-2.5 h-2.5" />
+                                {agentLiveStatus[agent.name].openConversations}
+                              </Badge>
+                            )}
+                          </div>
                           <Badge className={cn("text-xs", statusColors[status])}>{statusLabels[status]}</Badge>
                         </div>
                         <div className="grid grid-cols-3 gap-2 text-sm">
