@@ -959,7 +959,7 @@ serve(async (req) => {
       }
     ];
 
-    const { apiUrl, apiKey, providerName } = getApiConfig(robot.intelligence);
+    const { apiUrl, apiKey, providerName, isAnthropic } = getApiConfig(robot.intelligence);
     if (!apiKey) {
       return new Response(JSON.stringify({ error: `API Key not configured for ${providerName}` }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -988,23 +988,15 @@ serve(async (req) => {
     console.log(`[SDR-Robot-Chat] Provider: ${providerName}, Model: ${model}, Stage: ${stage.title}`);
 
     // Call AI with retry
-    async function callAIWithRetry(): Promise<Response> {
-      const resp1 = await fetch(apiUrl, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify(openaiBody),
-      });
-      if (resp1.ok) return resp1;
+    async function callAIWithRetry(): Promise<any> {
+      const resp1 = await fetchAI(apiUrl, apiKey, openaiBody, isAnthropic);
+      if (resp1.ok) return parseAIResponse(resp1, isAnthropic);
 
       if (resp1.status === 429) {
         console.warn(`[SDR-Robot-Chat] 429 rate limit, retrying in 25s...`);
         await new Promise(r => setTimeout(r, 25000));
-        const resp2 = await fetch(apiUrl, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify(openaiBody),
-        });
-        if (resp2.ok) return resp2;
+        const resp2 = await fetchAI(apiUrl, apiKey, openaiBody, isAnthropic);
+        if (resp2.ok) return parseAIResponse(resp2, isAnthropic);
 
         // Fallback to Lovable AI
         const lovableKey = Deno.env.get("LOVABLE_API_KEY");
@@ -1015,7 +1007,7 @@ serve(async (req) => {
             headers: { Authorization: `Bearer ${lovableKey}`, "Content-Type": "application/json" },
             body: JSON.stringify(fallbackBody),
           });
-          if (resp3.ok) return resp3;
+          if (resp3.ok) return resp3.json();
         }
         throw new Error('AI API unavailable after retry');
       }
@@ -1024,9 +1016,9 @@ serve(async (req) => {
       throw new Error(`${providerName} API error: ${resp1.status} ${errorText}`);
     }
 
-    let aiResponse: Response;
+    let aiData: any;
     try {
-      aiResponse = await callAIWithRetry();
+      aiData = await callAIWithRetry();
     } catch (err) {
       console.error('[SDR-Robot-Chat] AI error:', err);
       await supabase.from('conversations').update({ robot_lock_until: null }).eq('id', conversationId);
@@ -1035,7 +1027,6 @@ serve(async (req) => {
       });
     }
 
-    const aiData = await aiResponse.json();
     const choice = aiData.choices?.[0];
     const toolCalls = choice?.message?.tool_calls;
     let responseText = choice?.message?.content || '';
