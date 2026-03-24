@@ -91,9 +91,10 @@ const getNavItems = (queueCount: number, activeConversationsCount: number, inter
   }
 
   if (isSDR) {
-    items.push({ icon: LayoutDashboard, label: 'Comercial', path: '/comercial' });
-    items.push({ icon: BarChart3, label: 'Pipeline', path: '/comercial/pipeline' });
-    items.push({ icon: Calendar, label: 'Agenda', path: '/comercial/agenda' });
+    items.push({ icon: LayoutDashboard, label: 'Comercial', path: '/comercial', children: [
+      { icon: BarChart3, label: 'Pipeline', path: '/comercial/pipeline' },
+      { icon: Calendar, label: 'Agenda', path: '/comercial/agenda' },
+    ]});
   }
   
   items.push({ icon: Settings, label: 'Configurações', path: '#settings', isSettings: true });
