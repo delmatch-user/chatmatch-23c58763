@@ -408,9 +408,9 @@ const AdminBrain = () => {
         conversations.forEach((c: any) => {
           if (c.assigned_to) openCounts[c.assigned_to] = (openCounts[c.assigned_to] || 0) + 1;
         });
-        const statusMap: Record<string, { status: string; openConversations: number }> = {};
+        const statusMap: Record<string, { status: string; openConversations: number; profileId: string }> = {};
         profiles.forEach((p: any) => {
-          statusMap[p.name] = { status: p.status, openConversations: openCounts[p.id] || 0 };
+          statusMap[p.name] = { status: p.status, openConversations: openCounts[p.id] || 0, profileId: p.id };
         });
         setAgentLiveStatus(statusMap);
       }
