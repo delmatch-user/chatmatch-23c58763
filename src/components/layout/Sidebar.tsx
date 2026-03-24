@@ -75,20 +75,20 @@ const getNavItems = (queueCount: number, activeConversationsCount: number, inter
     { icon: Inbox, label: 'Fila', path: '/fila', badge: queueCount > 0 ? queueCount : undefined },
     { icon: MessageSquare, label: 'Conversas', path: '/conversas', badge: activeConversationsCount > 0 ? activeConversationsCount : undefined },
     { icon: Users, label: 'Interno', path: '/interno', badge: internalUnreadCount > 0 ? internalUnreadCount : undefined },
-    { icon: History, label: 'Histórico', path: '/historico' },
     { icon: Zap, label: 'Mensagens Rápidas', path: '/mensagens-rapidas' },
   ];
-  
+
   if (showRanking) {
-    items.push({ icon: Trophy, label: 'Ranking', path: '/ranking' });
+    items.push({ icon: Shield, label: 'Suporte', path: '/historico', children: [
+      { icon: History, label: 'Histórico', path: '/historico' },
+      { icon: Trophy, label: 'Ranking', path: '/ranking' },
+      { icon: Bot, label: 'Logs IA', path: '/logs-ia' },
+    ]});
+  } else {
+    items.push({ icon: History, label: 'Histórico', path: '/historico' });
   }
 
   items.push({ icon: ContactRound, label: 'Contatos', path: '/contatos' });
-
-  if (showRanking) {
-    // showRanking is true for Suporte members — add Logs IA
-    items.push({ icon: Bot, label: 'Logs IA', path: '/logs-ia' });
-  }
 
   if (isSDR) {
     items.push({ icon: LayoutDashboard, label: 'Comercial', path: '/comercial', children: [
