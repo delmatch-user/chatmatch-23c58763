@@ -680,12 +680,38 @@ function computeLearnings(m: BrainMetrics): string[] {
     }
   }
 
+  // Overloaded agent (>30% volume)
+  if (m.agentStats.length > 2 && m.totalConversas > 10) {
+    const overloaded = m.agentStats.find(a => a.count / m.totalConversas > 0.3);
+    if (overloaded) {
+      insights.push(`⚠️ ${overloaded.name} está concentrando ${Math.round((overloaded.count / m.totalConversas) * 100)}% do volume — considere redistribuir a carga.`);
+    }
+  }
+
+  // Best improvement in TMA
+  if (m.agentStats.length > 1) {
+    const improved = m.agentStats
+      .filter(a => a.prevAvgTime > 0 && a.count > 3)
+      .map(a => ({ ...a, improvement: ((a.prevAvgTime - a.avgTime) / a.prevAvgTime) * 100 }))
+      .sort((a, b) => b.improvement - a.improvement);
+    if (improved.length > 0 && improved[0].improvement > 10) {
+      insights.push(`🏆 ${improved[0].name} melhorou o TMA em ${Math.round(improved[0].improvement)}% comparado ao período anterior!`);
+    }
+  }
+
+  // Agent with TME much above average
+  if (m.agentStats.length > 2) {
+    const avgWait = m.agentStats.reduce((s, a) => s + a.avgWaitTime, 0) / m.agentStats.length;
+    const slowWait = m.agentStats.find(a => a.avgWaitTime > avgWait * 2 && a.count > 3);
+    if (slowWait && avgWait > 0) {
+      insights.push(`⚠️ Clientes de ${slowWait.name} esperam ${Math.round(slowWait.avgWaitTime)}min na fila — ${Math.round(slowWait.avgWaitTime / avgWait)}x acima da média.`);
+    }
+  }
+
   // Error count
   if (m.errorLogs.length > 5) {
     insights.push(`🔴 ${m.errorLogs.length} conversas problemáticas detectadas no período — confira a aba "Erros & Gaps".`);
   }
-
-  return insights;
 }
 
 // Simple markdown to HTML renderer
