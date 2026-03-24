@@ -172,9 +172,9 @@ serve(async (req) => {
       }
     });
 
-    // Previous period agent stats
+    // Previous period agent stats — also only "Suporte"
     const prevAgentStats: Record<string, { count: number; totalTime: number }> = {};
-    prev.filter(l => l.assigned_to_name).forEach(l => {
+    prev.filter(l => l.assigned_to_name && l.department_name && l.department_name.toLowerCase() === 'suporte').forEach(l => {
       const name = l.assigned_to_name!;
       if (!prevAgentStats[name]) prevAgentStats[name] = { count: 0, totalTime: 0 };
       prevAgentStats[name].count++;
