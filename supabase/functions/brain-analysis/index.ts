@@ -315,9 +315,7 @@ serve(async (req) => {
     let fallbackUsed = false;
     let fallbackError = "";
 
-    // Check for user context from request
-    const reqBody = { period, metricsOnly };
-    let userContext = "";
+    const userContextStr = reqUserContext ? `\n\n**Observações manuais do gestor:** ${reqUserContext}` : '';
 
     const analysisPrompt = `Você é a Delma, gerente inteligente do departamento de Suporte. Analise as métricas abaixo e gere um relatório executivo em markdown com:
 
