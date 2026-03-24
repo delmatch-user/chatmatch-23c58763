@@ -691,28 +691,6 @@ const AdminBrain = () => {
               )}
             </TabsContent>
 
-  // Fetch robots for knowledge tab
-  useEffect(() => {
-    const fetchRobots = async () => {
-      const { data } = await supabase
-        .from('robots')
-        .select('id, name, status, qa_pairs, reference_links, instructions, departments, channels')
-        .order('name');
-      if (data) {
-        setRobots(data.map((r: any) => ({
-          id: r.id,
-          name: r.name,
-          status: r.status,
-          qaPairs: Array.isArray(r.qa_pairs) ? r.qa_pairs : [],
-          referenceLinks: Array.isArray(r.reference_links) ? r.reference_links : [],
-          instructions: r.instructions || '',
-          departments: r.departments || [],
-          channels: r.channels || [],
-        })));
-      }
-    };
-    fetchRobots();
-  }, []);
 
             <TabsContent value="ai-report">
               <Card>
