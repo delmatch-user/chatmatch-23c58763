@@ -114,10 +114,28 @@ serve(async (req) => {
       started_at: l.started_at,
     });
 
-    // Classify errors by type (Estabelecimento / Motoboy / Outros)
-    const classifyType = (tags: string[]): string => {
-      if (tags.some(t => t === 'Estabelecimento')) return 'estabelecimento';
-      if (tags.some(t => t === 'Motoboy')) return 'motoboy';
+    // Keywords for intelligent classification
+    const ESTAB_KEYWORDS = ['estabelecimento', 'loja', 'restaurante', 'comercio', 'comércio', 'mercado', 'padaria', 'farmacia', 'farmácia', 'pizzaria', 'lanchonete', 'bar ', 'sorveteria', 'açougue', 'acougue', 'supermercado', 'conveniencia', 'conveniência', 'parceiro', 'parceira'];
+    const MOTOBOY_KEYWORDS = ['motoboy', 'entregador', 'motoqueiro', 'motoca', 'bike', 'biker', 'moto boy', 'motofretista', 'ciclista', 'bikeboy', 'bike boy'];
+
+    // Classify errors by type analyzing tags → contact_notes → messages
+    const classifyType = (log: any): string => {
+      const tags = log.tags || [];
+      // 1. Check tags
+      if (tags.some((t: string) => t === 'Estabelecimento')) return 'estabelecimento';
+      if (tags.some((t: string) => t === 'Motoboy')) return 'motoboy';
+
+      // 2. Check contact_notes
+      const notes = (log.contact_notes || '').toLowerCase();
+      if (ESTAB_KEYWORDS.some(k => notes.includes(k))) return 'estabelecimento';
+      if (MOTOBOY_KEYWORDS.some(k => notes.includes(k))) return 'motoboy';
+
+      // 3. Check first messages content
+      const msgs = Array.isArray(log.messages) ? log.messages.slice(0, 10) : [];
+      const msgText = msgs.map((m: any) => ((m.content || m.text || '') as string).toLowerCase()).join(' ');
+      if (ESTAB_KEYWORDS.some(k => msgText.includes(k))) return 'estabelecimento';
+      if (MOTOBOY_KEYWORDS.some(k => msgText.includes(k))) return 'motoboy';
+
       return 'outros';
     };
 
@@ -133,9 +151,9 @@ serve(async (req) => {
       return { total: filteredLogs.length, motivos, logs: filteredLogs.map(mapErrorLog) };
     };
 
-    const estabLogs = errorLogs.filter(l => classifyType(l.tags || []) === 'estabelecimento');
-    const motoboyLogs = errorLogs.filter(l => classifyType(l.tags || []) === 'motoboy');
-    const outrosLogs = errorLogs.filter(l => classifyType(l.tags || []) === 'outros');
+    const estabLogs = errorLogs.filter(l => classifyType(l) === 'estabelecimento');
+    const motoboyLogs = errorLogs.filter(l => classifyType(l) === 'motoboy');
+    const outrosLogs = errorLogs.filter(l => classifyType(l) === 'outros');
 
     const errorsByType = {
       estabelecimento: buildTypeGroup(estabLogs),
