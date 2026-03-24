@@ -25,7 +25,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { period = 7, metricsOnly = false } = await req.json();
+    const { period = 7, metricsOnly = false, userContext: reqUserContext = '' } = await req.json();
     
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -141,12 +141,14 @@ serve(async (req) => {
     ).length;
     const abandonRate = totalConversas > 0 ? Math.round((abandonedCount / totalConversas) * 1000) / 10 : 0;
 
-    // Agent performance (enriched)
-    const agentStats: Record<string, { count: number; totalTime: number; totalWait: number; waitCount: number; tags: Record<string, number> }> = {};
+    // Agent performance (enriched with channel breakdown + resolution rate)
+    const agentStats: Record<string, { count: number; totalTime: number; totalWait: number; waitCount: number; tags: Record<string, number>; channels: Record<string, number>; transferredOut: number }> = {};
     logs.filter(l => l.assigned_to_name).forEach(l => {
       const name = l.assigned_to_name!;
-      if (!agentStats[name]) agentStats[name] = { count: 0, totalTime: 0, totalWait: 0, waitCount: 0, tags: {} };
+      if (!agentStats[name]) agentStats[name] = { count: 0, totalTime: 0, totalWait: 0, waitCount: 0, tags: {}, channels: {}, transferredOut: 0 };
       agentStats[name].count++;
+      const ch = l.channel || 'whatsapp';
+      agentStats[name].channels[ch] = (agentStats[name].channels[ch] || 0) + 1;
       if (l.started_at && l.finalized_at) {
         agentStats[name].totalTime += (new Date(l.finalized_at).getTime() - new Date(l.started_at).getTime()) / 60000;
       }
@@ -155,6 +157,18 @@ serve(async (req) => {
         agentStats[name].waitCount++;
       }
       (l.tags || []).forEach((t: string) => { const nt = normalizeTag(t); agentStats[name].tags[nt] = (agentStats[name].tags[nt] || 0) + 1; });
+    });
+
+    // Count transfers per agent for resolution rate
+    const { data: transferLogs } = await supabase
+      .from("transfer_logs")
+      .select("from_user_name")
+      .gte("created_at", periodStart)
+      .limit(1000);
+    (transferLogs || []).forEach((t: any) => {
+      if (t.from_user_name && agentStats[t.from_user_name]) {
+        agentStats[t.from_user_name].transferredOut++;
+      }
     });
 
     // Previous period agent stats
@@ -271,12 +285,15 @@ serve(async (req) => {
       agentStats: Object.entries(agentStats).map(([name, stats]) => {
         const prevS = prevAgentStats[name];
         const topTags = Object.entries(stats.tags).sort((a, b) => b[1] - a[1]).slice(0, 3);
+        const resolutionRate = stats.count > 0 ? Math.round(((stats.count - stats.transferredOut) / stats.count) * 1000) / 10 : 100;
         return {
           name,
           count: stats.count,
           avgTime: Math.round((stats.totalTime / stats.count) * 10) / 10,
           avgWaitTime: stats.waitCount > 0 ? Math.round((stats.totalWait / stats.waitCount) * 10) / 10 : 0,
           topTags,
+          channels: stats.channels,
+          resolutionRate,
           prevCount: prevS?.count || 0,
           prevAvgTime: prevS ? Math.round((prevS.totalTime / prevS.count) * 10) / 10 : 0,
         };
@@ -296,6 +313,9 @@ serve(async (req) => {
     let aiAnalysis = "";
     let providerUsed = "";
     let fallbackUsed = false;
+    let fallbackError = "";
+
+    const userContextStr = reqUserContext ? `\n\n**Observações manuais do gestor:** ${reqUserContext}` : '';
 
     const analysisPrompt = `Você é a Delma, gerente inteligente do departamento de Suporte. Analise as métricas abaixo e gere um relatório executivo em markdown com:
 
@@ -330,6 +350,7 @@ Situações que precisam de atenção imediata.
 - Prioridades: ${Object.entries(priorityCounts).map(([p, n]) => p + ": " + n).join(', ')}
 - Performance agentes: ${metrics.agentStats.map((a: any) => a.name + ": " + a.count + " conversas, TMA " + a.avgTime + "min").join('; ')}
 - Conversas problemáticas: ${errorLogs.length} (alta prioridade, erros ou reclamações)
+${userContextStr}
 
 Seja direta, objetiva e use dados para embasar cada ponto. Responda em português brasileiro.`;
 
@@ -362,9 +383,11 @@ Seja direta, objetiva e use dados para embasar cada ponto. Responda em portuguê
           console.log("[brain-analysis] GPT-5.2 OK");
         } else {
           const errBody = await gptResp.text();
+          fallbackError = `GPT-5.2: HTTP ${gptResp.status} — ${errBody.substring(0, 200)}`;
           console.warn("[brain-analysis] GPT-5.2 falhou:", gptResp.status, errBody);
         }
-      } catch (e) {
+      } catch (e: any) {
+        fallbackError = `GPT-5.2: ${e.message || 'Timeout/Network error'}`;
         console.error("[brain-analysis] GPT-5.2 error:", e);
       }
     }
@@ -437,7 +460,7 @@ ${agentList || '- Sem dados'}
 > ⚠️ Este relatório foi gerado automaticamente sem análise de IA. Configure um provedor de IA para relatórios mais detalhados.`;
     }
 
-    return new Response(JSON.stringify({ metrics, aiAnalysis, providerUsed, fallbackUsed }), {
+    return new Response(JSON.stringify({ metrics, aiAnalysis, providerUsed, fallbackUsed, fallbackError }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Brain, TrendingUp, TrendingDown, Clock, Users, Bot, AlertTriangle, Sparkles, RefreshCw, MessageSquare, Lightbulb, Activity, Store, Bike, BookOpen, Link2, FileText, CheckCircle2, XCircle, Zap, BarChart3, Target, ShieldAlert, Gauge, ArrowUpRight, ArrowDownRight, Minus, GraduationCap, Trophy, AlertCircle, Rocket, CheckSquare, CircleDot, UserX, Star, Wifi, WifiOff, CalendarDays, ChevronDown, ChevronRight, Flame, Repeat2, Filter } from 'lucide-react';
+import { Brain, TrendingUp, TrendingDown, Clock, Users, Bot, AlertTriangle, Sparkles, RefreshCw, MessageSquare, Lightbulb, Activity, Store, Bike, BookOpen, Link2, FileText, CheckCircle2, XCircle, Zap, BarChart3, Target, ShieldAlert, Gauge, ArrowUpRight, ArrowDownRight, Minus, GraduationCap, Trophy, AlertCircle, Rocket, CheckSquare, CircleDot, UserX, Star, Wifi, WifiOff, CalendarDays, ChevronDown, ChevronRight, Flame, Repeat2, Filter, Medal, Crown, Eye, Download, CalendarClock, FileDown, History, Info } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line, PieChart, Pie, Legend } from 'recharts';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -12,6 +12,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
@@ -27,6 +28,8 @@ interface AgentStat {
   avgTime: number;
   avgWaitTime: number;
   topTags: [string, number][];
+  channels?: Record<string, number>;
+  resolutionRate?: number;
   prevCount: number;
   prevAvgTime: number;
 }
@@ -232,6 +235,14 @@ const AdminBrain = () => {
   const [topTagsChannelFilter, setTopTagsChannelFilter] = useState('all');
   const [groupSimilarTags, setGroupSimilarTags] = useState(false);
 
+  // Phase 3 state
+  const [agentSheetOpen, setAgentSheetOpen] = useState(false);
+  const [selectedAgent, setSelectedAgent] = useState<AgentStat | null>(null);
+  const [reportHistory, setReportHistory] = useState<Array<{ id: string; created_at: string; period: number; provider: string; content: string; context: string | null }>>([]);
+  const [selectedHistoryReport, setSelectedHistoryReport] = useState<string | null>(null);
+  const [reportContext, setReportContext] = useState('');
+  const [reportFallbackError, setReportFallbackError] = useState('');
+
   const getEffectivePeriod = useCallback(() => {
     if (period === 'custom' && customDateRange.from && customDateRange.to) {
       return Math.max(1, differenceInDays(customDateRange.to, customDateRange.from) + 1);
@@ -270,14 +281,31 @@ const AdminBrain = () => {
     try {
       const effectivePeriod = getEffectivePeriod();
       const { data, error } = await supabase.functions.invoke('brain-analysis', {
-        body: { period: effectivePeriod },
+        body: { period: effectivePeriod, userContext: reportContext || undefined },
       });
       if (error) throw error;
       setMetrics(filterMetrics(data.metrics));
       setAiAnalysis(data.aiAnalysis);
       setReportProvider(data.providerUsed || '');
       setReportFallback(data.fallbackUsed || false);
+      setReportFallbackError(data.fallbackError || '');
       setLastUpdated(new Date());
+
+      // Save to brain_reports
+      if (data.aiAnalysis) {
+        try {
+          await supabase.from('brain_reports' as any).insert({
+            period: effectivePeriod,
+            provider: data.providerUsed || 'unknown',
+            content: data.aiAnalysis,
+            context: reportContext || null,
+          });
+          loadReportHistory();
+        } catch (saveErr) {
+          console.warn('Could not save report:', saveErr);
+        }
+      }
+
       if (data.fallbackUsed) {
         toast.info(`Relatório gerado via ${data.providerUsed || 'fallback'} (provedor principal indisponível)`);
       } else {
@@ -288,6 +316,36 @@ const AdminBrain = () => {
       toast.error('Erro ao gerar relatório: ' + (e.message || 'Erro desconhecido'));
     } finally {
       setLoadingReport(false);
+    }
+  };
+
+  const loadReportHistory = async () => {
+    try {
+      const { data } = await supabase
+        .from('brain_reports' as any)
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(20);
+      setReportHistory((data as any[]) || []);
+    } catch {
+      // silently fail
+    }
+  };
+
+  const exportPdf = async () => {
+    const element = document.getElementById('brain-report-content');
+    if (!element) return;
+    try {
+      const html2pdf = (await import('html2pdf.js')).default;
+      html2pdf().set({
+        margin: [10, 10],
+        filename: `relatorio-delma-${format(new Date(), 'yyyy-MM-dd')}.pdf`,
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      }).from(element).save();
+      toast.success('PDF exportado!');
+    } catch {
+      toast.error('Erro ao exportar PDF');
     }
   };
 
@@ -309,6 +367,10 @@ const AdminBrain = () => {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [fetchMetrics]);
+
+  useEffect(() => {
+    loadReportHistory();
+  }, []);
 
   const getTrend = (current: number, previous: number, inverted = false) => {
     if (previous === 0) return null;
@@ -885,13 +947,38 @@ const AdminBrain = () => {
 
             {/* ======================== AGENTS TAB ======================== */}
             <TabsContent value="agents" className="space-y-6">
+              {/* Podium - Top 3 */}
+              {metrics.agentStats.length >= 3 && (
+                <Card className="border-primary/20 bg-gradient-to-r from-primary/5 to-transparent">
+                  <CardHeader><CardTitle className="text-base flex items-center gap-2"><Trophy className="w-4 h-4 text-primary" />Ranking de Produtividade</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className="flex justify-center items-end gap-6">
+                      {[1, 0, 2].map(pos => {
+                        const agent = metrics.agentStats[pos];
+                        if (!agent) return null;
+                        const medals = ['🥇', '🥈', '🥉'];
+                        const heights = ['h-24', 'h-32', 'h-20'];
+                        const bgColors = ['bg-warning/20', 'bg-primary/20', 'bg-muted'];
+                        return (
+                          <div key={pos} className="flex flex-col items-center gap-2">
+                            <span className="text-2xl">{medals[pos]}</span>
+                            <span className="text-sm font-semibold truncate max-w-[100px]">{agent.name}</span>
+                            <span className="text-xs text-muted-foreground">{agent.count} conv.</span>
+                            <div className={cn("w-20 rounded-t-lg flex items-end justify-center pb-2", heights[pos], bgColors[pos])}>
+                              <span className="text-xs font-bold">{pos + 1}º</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               {metrics.agentStats.length > 0 && (
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <Users className="w-4 h-4" />
-                      Comparativo de TMA por Atendente
-                    </CardTitle>
+                    <CardTitle className="text-base flex items-center gap-2"><Users className="w-4 h-4" />Comparativo de TMA por Atendente</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="h-[300px]">
@@ -923,44 +1010,57 @@ const AdminBrain = () => {
                   const statusLabels = { green: 'Abaixo da média', yellow: 'Na média', red: 'Acima da média' };
                   const tmaTrend = agent.prevAvgTime > 0 ? Math.round(((agent.avgTime - agent.prevAvgTime) / agent.prevAvgTime) * 100) : null;
                   const countTrend = agent.prevCount > 0 ? Math.round(((agent.count - agent.prevCount) / agent.prevCount) * 100) : null;
+                  const channelData = agent.channels ? Object.entries(agent.channels).map(([ch, v]) => ({ name: ch, value: v, fill: CHANNEL_COLORS[ch] || 'hsl(var(--primary))' })) : [];
 
                   return (
-                    <Card key={agent.name} className="relative overflow-hidden">
+                    <Card key={agent.name} className={cn("relative overflow-hidden cursor-pointer hover:border-primary/30 transition-colors", status === 'red' && "border-destructive/20")} onClick={() => { setSelectedAgent(agent); setAgentSheetOpen(true); }}>
+                      {status === 'red' && (
+                        <div className="absolute top-2 right-2">
+                          <AlertTriangle className="w-4 h-4 text-destructive animate-pulse" />
+                        </div>
+                      )}
                       <CardContent className="pt-6 space-y-3">
                         <div className="flex items-center justify-between">
                           <span className="font-semibold text-sm truncate">{agent.name}</span>
                           <Badge className={cn("text-xs", statusColors[status])}>{statusLabels[status]}</Badge>
                         </div>
-                        <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div className="grid grid-cols-3 gap-2 text-sm">
                           <div>
                             <p className="text-xs text-muted-foreground">Conversas</p>
                             <p className="font-bold">{agent.count}
-                              {countTrend !== null && (
-                                <span className={cn("text-xs ml-1", countTrend >= 0 ? "text-success" : "text-destructive")}>
-                                  {countTrend >= 0 ? '↑' : '↓'}{Math.abs(countTrend)}%
-                                </span>
-                              )}
+                              {countTrend !== null && <span className={cn("text-xs ml-1", countTrend >= 0 ? "text-success" : "text-destructive")}>{countTrend >= 0 ? '↑' : '↓'}{Math.abs(countTrend)}%</span>}
                             </p>
                           </div>
                           <div>
                             <p className="text-xs text-muted-foreground">TMA</p>
                             <p className="font-bold">{formatTime(agent.avgTime)}
-                              {tmaTrend !== null && (
-                                <span className={cn("text-xs ml-1", tmaTrend <= 0 ? "text-success" : "text-destructive")}>
-                                  {tmaTrend <= 0 ? '↓' : '↑'}{Math.abs(tmaTrend)}%
-                                </span>
-                              )}
+                              {tmaTrend !== null && <span className={cn("text-xs ml-1", tmaTrend <= 0 ? "text-success" : "text-destructive")}>{tmaTrend <= 0 ? '↓' : '↑'}{Math.abs(tmaTrend)}%</span>}
                             </p>
                           </div>
                           <div>
-                            <p className="text-xs text-muted-foreground">TME</p>
-                            <p className="font-bold">{formatTime(agent.avgWaitTime)}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-muted-foreground">Período ant.</p>
-                            <p className="font-bold text-muted-foreground">{agent.prevCount} conv.</p>
+                            <p className="text-xs text-muted-foreground">Resolução</p>
+                            <p className="font-bold">{agent.resolutionRate != null ? `${agent.resolutionRate}%` : '—'}</p>
                           </div>
                         </div>
+                        {/* Channel mini bar */}
+                        {channelData.length > 0 && (
+                          <div>
+                            <p className="text-[10px] text-muted-foreground mb-1">Por canal</p>
+                            <div className="flex h-3 rounded-full overflow-hidden">
+                              {channelData.map(cd => (
+                                <div key={cd.name} style={{ width: `${(cd.value / agent.count) * 100}%`, backgroundColor: cd.fill }} title={`${cd.name}: ${cd.value}`} />
+                              ))}
+                            </div>
+                            <div className="flex gap-2 mt-1">
+                              {channelData.map(cd => (
+                                <span key={cd.name} className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                  <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: cd.fill }} />
+                                  {cd.name} ({cd.value})
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                         {agent.topTags.length > 0 && (
                           <div className="flex flex-wrap gap-1">
                             {agent.topTags.map(([tag, count]) => (
@@ -982,6 +1082,66 @@ const AdminBrain = () => {
                   </CardContent>
                 </Card>
               )}
+
+              {/* Agent History Sheet */}
+              <Sheet open={agentSheetOpen} onOpenChange={setAgentSheetOpen}>
+                <SheetContent side="right" className="sm:max-w-md overflow-auto">
+                  <SheetHeader>
+                    <SheetTitle className="flex items-center gap-2"><Users className="w-5 h-5" />{selectedAgent?.name}</SheetTitle>
+                    <SheetDescription>Desempenho no período selecionado</SheetDescription>
+                  </SheetHeader>
+                  {selectedAgent && (
+                    <div className="space-y-4 mt-6">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="p-3 rounded-lg bg-secondary/30">
+                          <p className="text-xs text-muted-foreground">Conversas</p>
+                          <p className="text-xl font-bold">{selectedAgent.count}</p>
+                          <p className="text-xs text-muted-foreground">Anterior: {selectedAgent.prevCount}</p>
+                        </div>
+                        <div className="p-3 rounded-lg bg-secondary/30">
+                          <p className="text-xs text-muted-foreground">TMA</p>
+                          <p className="text-xl font-bold">{formatTime(selectedAgent.avgTime)}</p>
+                          <p className="text-xs text-muted-foreground">Anterior: {selectedAgent.prevAvgTime > 0 ? formatTime(selectedAgent.prevAvgTime) : '—'}</p>
+                        </div>
+                        <div className="p-3 rounded-lg bg-secondary/30">
+                          <p className="text-xs text-muted-foreground">TME</p>
+                          <p className="text-xl font-bold">{formatTime(selectedAgent.avgWaitTime)}</p>
+                        </div>
+                        <div className="p-3 rounded-lg bg-secondary/30">
+                          <p className="text-xs text-muted-foreground">Taxa Resolução</p>
+                          <p className="text-xl font-bold">{selectedAgent.resolutionRate != null ? `${selectedAgent.resolutionRate}%` : '—'}</p>
+                        </div>
+                      </div>
+                      {selectedAgent.channels && (
+                        <div>
+                          <p className="text-sm font-medium mb-2">Distribuição por Canal</p>
+                          <div className="space-y-2">
+                            {Object.entries(selectedAgent.channels).map(([ch, count]) => (
+                              <div key={ch} className="flex items-center justify-between text-sm">
+                                <div className="flex items-center gap-2">
+                                  <span className="w-3 h-3 rounded-full" style={{ backgroundColor: CHANNEL_COLORS[ch] || 'hsl(var(--primary))' }} />
+                                  <span>{ch}</span>
+                                </div>
+                                <span className="font-medium">{count} ({Math.round((count / selectedAgent.count) * 100)}%)</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {selectedAgent.topTags.length > 0 && (
+                        <div>
+                          <p className="text-sm font-medium mb-2">Tags mais frequentes</p>
+                          <div className="flex flex-wrap gap-1">
+                            {selectedAgent.topTags.map(([tag, count]) => (
+                              <Badge key={tag} variant="outline" className="text-xs">{tag} ({count})</Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </SheetContent>
+              </Sheet>
             </TabsContent>
 
             {/* ======================== KNOWLEDGE TAB ======================== */}
@@ -1362,10 +1522,11 @@ const AdminBrain = () => {
             </TabsContent>
 
             {/* ======================== AI REPORT TAB ======================== */}
-            <TabsContent value="ai-report">
+            <TabsContent value="ai-report" className="space-y-6">
+              {/* Context field */}
               <Card>
                 <CardHeader>
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between flex-wrap gap-3">
                     <div>
                       <CardTitle className="flex items-center gap-2">
                         <Sparkles className="w-5 h-5 text-primary" />
@@ -1373,23 +1534,94 @@ const AdminBrain = () => {
                       </CardTitle>
                       <CardDescription>Análise profunda gerada por IA sob demanda</CardDescription>
                     </div>
-                    <Button onClick={fetchReport} disabled={loadingReport} className="gap-2">
-                      {loadingReport ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                      {loadingReport ? 'Gerando...' : aiAnalysis ? 'Regenerar Relatório' : 'Gerar Relatório'}
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      {aiAnalysis && (
+                        <Button variant="outline" size="sm" onClick={exportPdf} className="gap-2">
+                          <FileDown className="w-4 h-4" />
+                          Exportar PDF
+                        </Button>
+                      )}
+                      <Button onClick={fetchReport} disabled={loadingReport} className="gap-2">
+                        {loadingReport ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                        {loadingReport ? 'Gerando...' : aiAnalysis ? 'Regenerar' : 'Gerar Relatório'}
+                      </Button>
+                    </div>
                   </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-4">
+                  {/* Context input */}
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1.5">Observações manuais (opcional) — a IA considerará na análise</p>
+                    <Textarea
+                      placeholder="Ex: Houve uma promoção esta semana, tivemos problema no sistema na terça-feira..."
+                      value={reportContext}
+                      onChange={(e) => setReportContext(e.target.value)}
+                      rows={2}
+                      className="text-sm"
+                    />
+                  </div>
+
+                  {/* Fallback indicator with error detail */}
                   {reportFallback && reportProvider && (
-                    <div className="mb-4 p-3 rounded-lg bg-warning/10 border border-warning/20 flex items-center gap-2 text-sm">
-                      <AlertCircle className="w-4 h-4 text-warning flex-shrink-0" />
-                      <span className="text-warning">
-                        Relatório gerado via <strong>{reportProvider}</strong> — provedor principal indisponível.
-                      </span>
+                    <div className="p-3 rounded-lg bg-warning/10 border border-warning/20 space-y-1">
+                      <div className="flex items-center gap-2 text-sm">
+                        <AlertCircle className="w-4 h-4 text-warning flex-shrink-0" />
+                        <span className="text-warning">
+                          Relatório gerado via <strong>{reportProvider}</strong> — provedor principal indisponível.
+                        </span>
+                      </div>
+                      {reportFallbackError && (
+                        <p className="text-xs text-muted-foreground ml-6">{reportFallbackError}</p>
+                      )}
                     </div>
                   )}
+
+                  {/* Comparison table */}
+                  {aiAnalysis && metrics && (
+                    <Card className="border-border/50">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm flex items-center gap-2"><Target className="w-4 h-4" />Comparativo de Períodos</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b">
+                                <th className="text-left py-2 text-muted-foreground font-medium">Métrica</th>
+                                <th className="text-right py-2 text-muted-foreground font-medium">Atual</th>
+                                <th className="text-right py-2 text-muted-foreground font-medium">Anterior</th>
+                                <th className="text-right py-2 text-muted-foreground font-medium">Variação</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {[
+                                { label: 'Total Conversas', curr: metrics.totalConversas, prev: metrics.prevTotalConversas, inv: false, fmt: (v: number) => String(v) },
+                                { label: 'TMA', curr: metrics.tma, prev: metrics.prevTma, inv: true, fmt: (v: number) => `${v} min` },
+                                { label: 'TME', curr: metrics.tme, prev: metrics.prevTme, inv: true, fmt: (v: number) => `${v} min` },
+                              ].map(row => {
+                                const diff = row.prev > 0 ? Math.round(((row.curr - row.prev) / row.prev) * 100) : null;
+                                const isGood = diff !== null ? (row.inv ? diff < 0 : diff > 0) : null;
+                                return (
+                                  <tr key={row.label} className="border-b border-border/30">
+                                    <td className="py-2 font-medium">{row.label}</td>
+                                    <td className="py-2 text-right">{row.fmt(row.curr)}</td>
+                                    <td className="py-2 text-right text-muted-foreground">{row.fmt(row.prev)}</td>
+                                    <td className={cn("py-2 text-right font-medium", isGood === true ? "text-success" : isGood === false ? "text-destructive" : "")}>
+                                      {diff !== null ? `${diff > 0 ? '+' : ''}${diff}%` : '—'}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Report content */}
                   {aiAnalysis ? (
-                    <div className="prose prose-sm dark:prose-invert max-w-none">
+                    <div id="brain-report-content" className="prose prose-sm dark:prose-invert max-w-none">
                       <div dangerouslySetInnerHTML={{ __html: renderMarkdown(aiAnalysis) }} />
                     </div>
                   ) : (
@@ -1403,6 +1635,50 @@ const AdminBrain = () => {
                   )}
                 </CardContent>
               </Card>
+
+              {/* Report History */}
+              {reportHistory.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <History className="w-4 h-4" />
+                      Histórico de Relatórios
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {reportHistory.map(report => (
+                        <div key={report.id} className="flex items-center justify-between p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium">
+                                {new Date(report.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {report.provider} • {report.period} dias
+                                {report.context && ' • Com contexto'}
+                              </p>
+                            </div>
+                          </div>
+                          <Button variant="ghost" size="sm" className="gap-1" onClick={() => {
+                            if (selectedHistoryReport === report.id) {
+                              setSelectedHistoryReport(null);
+                            } else {
+                              setSelectedHistoryReport(report.id);
+                              setAiAnalysis(report.content);
+                              setReportProvider(report.provider);
+                            }
+                          }}>
+                            <Eye className="w-4 h-4" />
+                            {selectedHistoryReport === report.id ? 'Ativo' : 'Abrir'}
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </TabsContent>
           </Tabs>
         )}

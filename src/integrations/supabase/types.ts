@@ -71,6 +71,36 @@ export type Database = {
         }
         Relationships: []
       }
+      brain_reports: {
+        Row: {
+          content: string
+          context: string | null
+          created_at: string
+          id: string
+          period: number
+          provider: string
+          schedule_type: string | null
+        }
+        Insert: {
+          content?: string
+          context?: string | null
+          created_at?: string
+          id?: string
+          period?: number
+          provider?: string
+          schedule_type?: string | null
+        }
+        Update: {
+          content?: string
+          context?: string | null
+          created_at?: string
+          id?: string
+          period?: number
+          provider?: string
+          schedule_type?: string | null
+        }
+        Relationships: []
+      }
       channel_announcement_reads: {
         Row: {
           created_at: string
