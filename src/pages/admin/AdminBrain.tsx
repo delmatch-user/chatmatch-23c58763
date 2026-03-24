@@ -15,6 +15,10 @@ interface AgentStat {
   name: string;
   count: number;
   avgTime: number;
+  avgWaitTime: number;
+  topTags: [string, number][];
+  prevCount: number;
+  prevAvgTime: number;
 }
 
 interface ErrorLog {
@@ -202,9 +206,10 @@ const AdminBrain = () => {
 
         {metrics && (
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="mb-4">
+             <TabsList className="mb-4">
               <TabsTrigger value="overview">Painel</TabsTrigger>
               <TabsTrigger value="errors">Erros & Gaps</TabsTrigger>
+              <TabsTrigger value="agents">Atendentes</TabsTrigger>
               <TabsTrigger value="ai-report">Relatório IA</TabsTrigger>
             </TabsList>
 
