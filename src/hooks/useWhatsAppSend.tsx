@@ -27,11 +27,15 @@ export function clearConnectionCache() {
 }
 
 // Buscar conexão por instanceId (phone_number_id)
+// Tenta com status ativo primeiro, depois sem filtro de status (Meta API pode ter status diferente)
 async function getConnectionByInstanceId(instanceId: string): Promise<WhatsAppConnection | null> {
   console.log('[WhatsApp] Buscando conexão por instanceId:', instanceId);
+  const baseSelect = 'id, connection_type, phone_number_id, department_id, status';
+
+  // 1. Tentar com status ativo
   const { data: connection, error } = await supabase
     .from('whatsapp_connections')
-    .select('id, connection_type, phone_number_id, department_id, status')
+    .select(baseSelect)
     .eq('phone_number_id', instanceId)
     .in('status', ['connected', 'active'])
     .in('connection_type', ['baileys', 'meta_api'])
@@ -40,11 +44,28 @@ async function getConnectionByInstanceId(instanceId: string): Promise<WhatsAppCo
 
   if (error) {
     console.warn('[WhatsApp] Erro ao buscar conexão por instanceId:', error);
-    return null;
   }
   if (connection) {
     console.log('[WhatsApp] Conexão encontrada por instanceId:', connection.phone_number_id, 'type:', connection.connection_type);
     return connection as WhatsAppConnection;
+  }
+
+  // 2. Fallback: qualquer status (Meta API pode não ter status connected/active)
+  const { data: fallback, error: fallbackErr } = await supabase
+    .from('whatsapp_connections')
+    .select(baseSelect)
+    .eq('phone_number_id', instanceId)
+    .in('connection_type', ['baileys', 'meta_api'])
+    .limit(1)
+    .maybeSingle();
+
+  if (fallbackErr) {
+    console.warn('[WhatsApp] Erro ao buscar conexão por instanceId (fallback):', fallbackErr);
+    return null;
+  }
+  if (fallback) {
+    console.log('[WhatsApp] Conexão encontrada por instanceId (sem filtro status):', fallback.phone_number_id, 'type:', fallback.connection_type, 'status:', fallback.status);
+    return fallback as WhatsAppConnection;
   }
   return null;
 }
@@ -101,11 +122,52 @@ async function getConnectionForDepartment(departmentId: string): Promise<WhatsAp
   return null;
 }
 
-// Buscar qualquer conexão ativa (fallback)
-// Regra: preferir Baileys para manter consistência com atendimento atual
-async function getAnyActiveConnection(): Promise<WhatsAppConnection | null> {
+// Buscar conexão Meta API para departamento (usado quando a conversa veio da Meta)
+async function getMetaConnectionForDepartment(departmentId: string): Promise<WhatsAppConnection | null> {
+  console.log('[WhatsApp] Buscando conexão Meta API para departamento:', departmentId);
   const baseSelect = 'id, connection_type, phone_number_id, department_id, status';
 
+  const { data, error } = await supabase
+    .from('whatsapp_connections')
+    .select(baseSelect)
+    .eq('department_id', departmentId)
+    .eq('connection_type', 'meta_api')
+    .in('status', ['connected', 'active'])
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.warn('[WhatsApp] Erro ao buscar conexão Meta do departamento:', error);
+    return null;
+  }
+  if (data) {
+    console.log('[WhatsApp] Conexão Meta encontrada para dept', departmentId, '→', data.phone_number_id);
+    return data as WhatsAppConnection;
+  }
+  return null;
+}
+
+// Buscar qualquer conexão ativa (fallback)
+// Aceita parâmetro para respeitar o tipo de conexão original da conversa
+async function getAnyActiveConnection(preferType?: string): Promise<WhatsAppConnection | null> {
+  const baseSelect = 'id, connection_type, phone_number_id, department_id, status';
+
+  // Se a conversa veio da Meta API, priorizar Meta API no fallback
+  if (preferType === 'meta_api') {
+    const { data: anyMeta } = await supabase
+      .from('whatsapp_connections')
+      .select(baseSelect)
+      .eq('connection_type', 'meta_api')
+      .in('status', ['connected', 'active'])
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (anyMeta) return anyMeta as WhatsAppConnection;
+  }
+
+  // Default: preferir Baileys
   const { data: anyBaileys, error: baileysErr } = await supabase
     .from('whatsapp_connections')
     .select(baseSelect)
@@ -170,13 +232,19 @@ export function useWhatsAppSend() {
         connection = await getConnectionByInstanceId(whatsappInstanceId);
       }
       
-      // 2. Fallback: buscar por departamento e persistir instance_id na conversa
+      // 2. Se instanceId não resolveu mas estava definido, buscar Meta API no departamento
+      // (whatsappInstanceId definido indica que a conversa veio de uma instância específica — provavelmente Meta API)
+      if (!connection && whatsappInstanceId && departmentId) {
+        console.log('[WhatsApp] instanceId não resolveu, tentando Meta API para dept:', departmentId);
+        connection = await getMetaConnectionForDepartment(departmentId);
+      }
+
+      // 3. Fallback: buscar por departamento (prioriza Baileys)
       if (!connection && departmentId) {
         connection = await getConnectionForDepartment(departmentId);
         
-        // FASE C: Persistir instance_id na conversa para estabilizar futuros envios
+        // Persistir instance_id na conversa para estabilizar futuros envios
         if (connection && contactId) {
-          // Buscar conversa ativa para persistir o whatsapp_instance_id
           supabase
             .from('conversations')
             .select('id, whatsapp_instance_id')
@@ -197,9 +265,11 @@ export function useWhatsAppSend() {
         }
       }
       
-      // Fallback: buscar qualquer conexão ativa
+      // 4. Fallback final: qualquer conexão ativa (respeita origem se whatsappInstanceId estava definido)
       if (!connection) {
-        connection = await getAnyActiveConnection();
+        // Se tinha instanceId definido, provavelmente veio da Meta API — priorizar Meta no fallback
+        const preferType = whatsappInstanceId ? 'meta_api' : undefined;
+        connection = await getAnyActiveConnection(preferType);
       }
 
       if (!connection) {
