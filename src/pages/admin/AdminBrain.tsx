@@ -271,30 +271,32 @@ const AdminBrain = () => {
 
   const getEffectiveDateRange = useCallback(() => {
     const now = new Date();
-    // Use São Paulo timezone offset (UTC-3)
-    const spNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-    const todayMidnight = new Date(spNow);
-    todayMidnight.setHours(0, 0, 0, 0);
+    // Calcular a data atual em São Paulo corretamente
+    const spFormatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric', month: '2-digit', day: '2-digit'
+    });
+    const spDateStr = spFormatter.format(now); // "2026-03-24"
+    // Meia-noite de SP = T03:00:00.000Z (UTC-3)
+    const todayMidnightUTC = new Date(spDateStr + 'T03:00:00.000Z');
 
     if (period === 'today') {
-      return { start: todayMidnight.toISOString(), end: now.toISOString(), days: 1 };
+      return { start: todayMidnightUTC.toISOString(), end: now.toISOString(), days: 1 };
     }
     if (period === 'yesterday') {
-      const yesterdayMidnight = new Date(todayMidnight);
-      yesterdayMidnight.setDate(yesterdayMidnight.getDate() - 1);
-      return { start: yesterdayMidnight.toISOString(), end: todayMidnight.toISOString(), days: 1 };
+      const yesterdayMidnight = new Date(todayMidnightUTC.getTime() - 24 * 60 * 60 * 1000);
+      return { start: yesterdayMidnight.toISOString(), end: todayMidnightUTC.toISOString(), days: 1 };
     }
     if (period === 'custom' && customDateRange.from && customDateRange.to) {
-      const from = new Date(customDateRange.from);
-      from.setHours(0, 0, 0, 0);
-      const to = new Date(customDateRange.to);
-      to.setHours(23, 59, 59, 999);
+      const fromStr = customDateRange.from.toISOString().substring(0, 10);
+      const toStr = customDateRange.to.toISOString().substring(0, 10);
+      const fromUTC = new Date(fromStr + 'T03:00:00.000Z');
+      const toUTC = new Date(new Date(toStr + 'T03:00:00.000Z').getTime() + 24 * 60 * 60 * 1000);
       const days = Math.max(1, differenceInDays(customDateRange.to, customDateRange.from) + 1);
-      return { start: from.toISOString(), end: to.toISOString(), days };
+      return { start: fromUTC.toISOString(), end: toUTC.toISOString(), days };
     }
     const days = parseInt(period);
-    const startDate = new Date(todayMidnight);
-    startDate.setDate(startDate.getDate() - days);
+    const startDate = new Date(todayMidnightUTC.getTime() - days * 24 * 60 * 60 * 1000);
     return { start: startDate.toISOString(), end: now.toISOString(), days };
   }, [period, customDateRange]);
 
