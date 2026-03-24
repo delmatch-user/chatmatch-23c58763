@@ -494,6 +494,18 @@ const AdminBrain = () => {
   );
 };
 
+// Merge motivos from all error types
+function mergeMotivos(errorsByType?: { estabelecimento: ErrorTypeGroup; motoboy: ErrorTypeGroup; outros: ErrorTypeGroup }): Record<string, number> {
+  if (!errorsByType) return {};
+  const merged: Record<string, number> = {};
+  for (const group of Object.values(errorsByType)) {
+    for (const [key, val] of Object.entries(group.motivos)) {
+      merged[key] = (merged[key] || 0) + val;
+    }
+  }
+  return merged;
+}
+
 // Compute learnings from metrics client-side
 function computeLearnings(m: BrainMetrics): string[] {
   const insights: string[] = [];
