@@ -963,80 +963,210 @@ function mergeMotivos(errorsByType?: { estabelecimento: ErrorTypeGroup; motoboy:
   return merged;
 }
 
-// Knowledge gap analysis
-function computeKnowledgeGaps(m: BrainMetrics, robots: RobotKnowledge[]) {
-  if (m.topTags.length === 0) return null;
+// Managerial insight interface
+interface ManagerialInsight {
+  category: 'volume' | 'performance' | 'automation' | 'alert' | 'team';
+  icon: React.ElementType;
+  text: string;
+  severity: 'info' | 'warning' | 'critical';
+}
 
-  // Build a combined knowledge text from all robots
-  const allKnowledgeText = robots
-    .map(r => {
-      const qaText = r.qaPairs.map((qa: any) => `${qa.question || ''} ${qa.answer || ''}`).join(' ');
-      return `${r.instructions} ${qaText}`.toLowerCase();
-    })
-    .join(' ');
+function computeManagerialInsights(m: BrainMetrics): ManagerialInsight[] {
+  const insights: ManagerialInsight[] = [];
 
-  const gaps: { tag: string; count: number }[] = [];
-  const coveredTopics: { tag: string; count: number }[] = [];
-
-  // Check top 10 tags for coverage
-  const tagsToCheck = m.topTags.slice(0, 10);
-
-  for (const [tag, count] of tagsToCheck) {
-    const keywords = tag.toLowerCase().split(/[\s\-–—/\\,]+/).filter(w => w.length > 2);
-    const isCovered = keywords.some(kw => allKnowledgeText.includes(kw));
-
-    if (isCovered) {
-      coveredTopics.push({ tag, count });
-    } else {
-      gaps.push({ tag, count });
+  if (m.prevTotalConversas > 0) {
+    const volDiff = ((m.totalConversas - m.prevTotalConversas) / m.prevTotalConversas) * 100;
+    if (Math.abs(volDiff) > 10) {
+      insights.push({
+        category: 'volume',
+        icon: volDiff > 0 ? TrendingUp : TrendingDown,
+        text: volDiff > 0
+          ? `Volume aumentou ${Math.round(volDiff)}% comparado ao período anterior — ${m.totalConversas} conversas no período.`
+          : `Volume caiu ${Math.round(Math.abs(volDiff))}% comparado ao período anterior — demanda menor pode ser oportunidade de treinamento.`,
+        severity: volDiff > 30 ? 'warning' : 'info',
+      });
     }
   }
 
-  const total = tagsToCheck.length;
-  const covered = coveredTopics.length;
-  const coveragePct = total > 0 ? Math.round((covered / total) * 100) : 100;
-
-  // Generate suggestions
-  const suggestions: string[] = [];
-
-  for (const gap of gaps.slice(0, 3)) {
-    const pct = m.totalConversas > 0 ? Math.round((gap.count / m.totalConversas) * 100) : 0;
-    suggestions.push(
-      `Criar Q&A sobre "${gap.tag}" — aparece em ${pct}% das conversas mas não está na base de conhecimento dos robôs.`
-    );
-  }
-
-  // Check if any robot has very few Q&A
-  const activeRobots = robots.filter(r => r.status === 'active');
-  for (const robot of activeRobots) {
-    if (robot.qaPairs.length < 3 && robot.referenceLinks.length < 2) {
-      suggestions.push(
-        `O robô "${robot.name}" tem apenas ${robot.qaPairs.length} Q&A e ${robot.referenceLinks.length} referências — considere enriquecer a base de conhecimento.`
-      );
-    }
-    if (robot.instructions.length < 100) {
-      suggestions.push(
-        `O robô "${robot.name}" tem instruções muito curtas (${robot.instructions.split(/\s+/).length} palavras) — instruções mais detalhadas melhoram a qualidade das respostas.`
-      );
+  if (m.prevTma > 0) {
+    const tmaDiff = ((m.tma - m.prevTma) / m.prevTma) * 100;
+    if (tmaDiff > 15) {
+      insights.push({ category: 'performance', icon: Clock, text: `TMA subiu ${Math.round(tmaDiff)}% — atendimentos estão demorando mais. Possíveis causas: tickets mais complexos ou falta de base de conhecimento.`, severity: 'warning' });
+    } else if (tmaDiff < -15) {
+      insights.push({ category: 'performance', icon: CheckCircle2, text: `TMA caiu ${Math.round(Math.abs(tmaDiff))}% — atendimentos estão mais rápidos! Equipe evoluindo.`, severity: 'info' });
     }
   }
 
-  // AI resolution suggestion
-  const total2 = m.aiResolved + m.humanResolved;
-  if (total2 > 10 && m.aiResolved / total2 < 0.3) {
-    suggestions.push(
-      `Apenas ${Math.round((m.aiResolved / total2) * 100)}% das conversas são resolvidas por IA — revisar as instruções e Q&A dos robôs pode aumentar essa taxa.`
-    );
+  if (m.prevTme > 0) {
+    const tmeDiff = ((m.tme - m.prevTme) / m.prevTme) * 100;
+    if (tmeDiff > 20) {
+      insights.push({ category: 'alert', icon: AlertTriangle, text: `Tempo de espera subiu ${Math.round(tmeDiff)}% — clientes estão aguardando mais na fila. Avaliar escala ou automação.`, severity: 'critical' });
+    }
   }
 
-  // Check for high TME suggesting flow issues
+  const total = m.aiResolved + m.humanResolved;
+  if (total > 0) {
+    const aiPct = Math.round((m.aiResolved / total) * 100);
+    if (aiPct > 60) {
+      insights.push({ category: 'automation', icon: Bot, text: `IA resolvendo ${aiPct}% das conversas — boa taxa de automação! Monitorar qualidade das respostas automáticas.`, severity: 'info' });
+    } else if (aiPct < 20 && total > 10) {
+      insights.push({ category: 'automation', icon: Bot, text: `Apenas ${aiPct}% resolvido por IA — oportunidade de melhorar automação revisando instruções e Q&A dos robôs.`, severity: 'warning' });
+    }
+  }
+
+  if (m.topTags.length > 0) {
+    const topTag = m.topTags[0];
+    if (m.totalConversas > 0 && topTag[1] / m.totalConversas > 0.25) {
+      insights.push({ category: 'volume', icon: Target, text: `"${topTag[0]}" representa ${Math.round((topTag[1] / m.totalConversas) * 100)}% do volume — tema dominante que merece atenção especial.`, severity: 'info' });
+    }
+  }
+
+  if (m.agentStats.length > 2) {
+    const sorted = [...m.agentStats].sort((a, b) => b.avgTime - a.avgTime);
+    const slowest = sorted[0];
+    const fastest = sorted[sorted.length - 1];
+    if (slowest.avgTime > fastest.avgTime * 2 && slowest.count > 3) {
+      insights.push({ category: 'team', icon: Users, text: `Diferença de ${Math.round(slowest.avgTime / fastest.avgTime)}x no TMA entre ${slowest.name} e ${fastest.name} — avaliar se precisa de suporte ou treinamento.`, severity: 'warning' });
+    }
+  }
+
+  if (m.agentStats.length > 2 && m.totalConversas > 10) {
+    const overloaded = m.agentStats.find(a => a.count / m.totalConversas > 0.3);
+    if (overloaded) {
+      insights.push({ category: 'team', icon: ShieldAlert, text: `${overloaded.name} concentra ${Math.round((overloaded.count / m.totalConversas) * 100)}% do volume — risco de sobrecarga e burnout.`, severity: 'critical' });
+    }
+  }
+
+  if (m.agentStats.length > 1) {
+    const improved = m.agentStats
+      .filter(a => a.prevAvgTime > 0 && a.count > 3)
+      .map(a => ({ ...a, improvement: ((a.prevAvgTime - a.avgTime) / a.prevAvgTime) * 100 }))
+      .sort((a, b) => b.improvement - a.improvement);
+    if (improved.length > 0 && improved[0].improvement > 10) {
+      insights.push({ category: 'team', icon: TrendingUp, text: `${improved[0].name} melhorou TMA em ${Math.round(improved[0].improvement)}% — reconhecer a evolução!`, severity: 'info' });
+    }
+  }
+
+  if (m.errorLogs.length > 5) {
+    insights.push({ category: 'alert', icon: AlertTriangle, text: `${m.errorLogs.length} conversas problemáticas no período — padrão de erros precisa de atenção.`, severity: 'critical' });
+  }
+
+  return insights;
+}
+
+interface PatternData {
+  tagTrends: { tag: string; count: number; pct: number }[];
+  workload: { name: string; count: number; pct: number; overloaded: boolean }[];
+  resolutionRate: { aiPct: number; humanPct: number } | null;
+  channels: Record<string, number>;
+}
+
+function computePatterns(m: BrainMetrics): PatternData {
+  const tagTrends = m.topTags.slice(0, 8).map(([tag, count]) => ({
+    tag,
+    count,
+    pct: m.totalConversas > 0 ? Math.round((count / m.totalConversas) * 100) : 0,
+  }));
+
+  const workload = m.agentStats.map(a => ({
+    name: a.name,
+    count: a.count,
+    pct: m.totalConversas > 0 ? Math.round((a.count / m.totalConversas) * 100) : 0,
+    overloaded: m.totalConversas > 10 && a.count / m.totalConversas > 0.3,
+  })).sort((a, b) => b.count - a.count);
+
+  const total = m.aiResolved + m.humanResolved;
+  const resolutionRate = total > 0 ? {
+    aiPct: Math.round((m.aiResolved / total) * 100),
+    humanPct: Math.round((m.humanResolved / total) * 100),
+  } : null;
+
+  return { tagTrends, workload, resolutionRate, channels: m.channelCounts };
+}
+
+interface Recommendation {
+  type: 'redistribute' | 'training' | 'automation' | 'alert';
+  icon: React.ElementType;
+  title: string;
+  description: string;
+}
+
+function computeRecommendations(m: BrainMetrics): Recommendation[] {
+  const recs: Recommendation[] = [];
+
+  // Workload redistribution
+  if (m.agentStats.length > 2 && m.totalConversas > 10) {
+    const overloaded = m.agentStats.filter(a => a.count / m.totalConversas > 0.3);
+    for (const agent of overloaded) {
+      recs.push({
+        type: 'redistribute',
+        icon: Users,
+        title: `Redistribuir carga de ${agent.name}`,
+        description: `Concentra ${Math.round((agent.count / m.totalConversas) * 100)}% dos atendimentos. Redistribuir entre a equipe para equilibrar o volume.`,
+      });
+    }
+  }
+
+  // TME high
   if (m.tme > 10) {
-    suggestions.push(
-      `O TME está em ${Math.round(m.tme)} minutos — considere ativar mais robôs ou ajustar os horários de operação para reduzir o tempo de espera.`
-    );
+    recs.push({
+      type: 'alert',
+      icon: Clock,
+      title: 'Reduzir tempo de espera',
+      description: `TME em ${Math.round(m.tme)} minutos — ativar mais robôs nos horários de pico ou ajustar escala de atendentes.`,
+    });
   }
 
-  return { gaps, coveredTopics, total, covered, coveragePct, suggestions };
+  // Low AI resolution
+  const total = m.aiResolved + m.humanResolved;
+  if (total > 10 && m.aiResolved / total < 0.3) {
+    recs.push({
+      type: 'automation',
+      icon: Bot,
+      title: 'Aumentar taxa de automação',
+      description: `Apenas ${Math.round((m.aiResolved / total) * 100)}% resolvido por IA — revisar Q&A e instruções dos robôs para cobrir os temas mais frequentes.`,
+    });
+  }
+
+  // Agent with high TMA
+  if (m.agentStats.length > 1) {
+    const avgTma = m.agentStats.reduce((s, a) => s + a.avgTime * a.count, 0) / Math.max(1, m.agentStats.reduce((s, a) => s + a.count, 0));
+    const slow = m.agentStats.filter(a => a.avgTime > avgTma * 1.5 && a.count > 3);
+    for (const agent of slow.slice(0, 2)) {
+      recs.push({
+        type: 'training',
+        icon: Lightbulb,
+        title: `Treinamento para ${agent.name}`,
+        description: `TMA de ${Math.round(agent.avgTime)} min — ${Math.round(agent.avgTime / avgTma)}x acima da média. Avaliar se precisa de capacitação ou ferramentas.`,
+      });
+    }
+  }
+
+  // High wait time for specific agents
+  if (m.agentStats.length > 2) {
+    const avgWait = m.agentStats.reduce((s, a) => s + a.avgWaitTime, 0) / m.agentStats.length;
+    const slowWait = m.agentStats.filter(a => a.avgWaitTime > avgWait * 2 && a.count > 3);
+    for (const agent of slowWait.slice(0, 1)) {
+      recs.push({
+        type: 'redistribute',
+        icon: Clock,
+        title: `Fila longa para ${agent.name}`,
+        description: `Clientes esperam ${Math.round(agent.avgWaitTime)} min — ${Math.round(agent.avgWaitTime / avgWait)}x acima da média da equipe.`,
+      });
+    }
+  }
+
+  // Many errors
+  if (m.errorLogs.length > 10) {
+    recs.push({
+      type: 'alert',
+      icon: AlertTriangle,
+      title: 'Investigar conversas problemáticas',
+      description: `${m.errorLogs.length} ocorrências no período — verificar a aba "Erros & Gaps" para identificar padrões recorrentes.`,
+    });
+  }
+
+  return recs;
 }
 
 // Compute learnings from metrics client-side
