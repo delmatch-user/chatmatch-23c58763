@@ -49,7 +49,7 @@ serve(async (req) => {
     // Fetch previous period logs for comparison
     const { data: prevLogs } = await supabase
       .from("conversation_logs")
-      .select("started_at, finalized_at, wait_time, assigned_to_name, tags, priority, channel")
+      .select("started_at, finalized_at, wait_time, assigned_to_name, department_name, tags, priority, channel")
       .gte("finalized_at", prevPeriodStart)
       .lt("finalized_at", periodStart)
       .is("reset_at", null)
