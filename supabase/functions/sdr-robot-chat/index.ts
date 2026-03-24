@@ -987,33 +987,63 @@ serve(async (req) => {
 
     console.log(`[SDR-Robot-Chat] Provider: ${providerName}, Model: ${model}, Stage: ${stage.title}`);
 
-    // Call AI with retry
+    // Call AI with retry and robust fallback for ANY error
     async function callAIWithRetry(): Promise<any> {
+      console.log(`[SDR-Robot-Chat] Chamando ${providerName}...`);
       const resp1 = await fetchAI(apiUrl, apiKey, openaiBody, isAnthropic);
       if (resp1.ok) return parseAIResponse(resp1, isAnthropic);
 
-      if (resp1.status === 429) {
+      const errorStatus1 = resp1.status;
+      const errorText1 = await resp1.text();
+      console.warn(`[SDR-Robot-Chat] ${providerName} falhou: ${errorStatus1}`, errorText1);
+
+      // Para 429, retry com delay
+      if (errorStatus1 === 429) {
         console.warn(`[SDR-Robot-Chat] 429 rate limit, retrying in 25s...`);
         await new Promise(r => setTimeout(r, 25000));
         const resp2 = await fetchAI(apiUrl, apiKey, openaiBody, isAnthropic);
         if (resp2.ok) return parseAIResponse(resp2, isAnthropic);
-
-        // Fallback to Lovable AI
-        const lovableKey = Deno.env.get("LOVABLE_API_KEY");
-        if (lovableKey) {
-          const fallbackBody = { ...openaiBody, model: "google/gemini-2.5-flash" };
-          const resp3 = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-            method: "POST",
-            headers: { Authorization: `Bearer ${lovableKey}`, "Content-Type": "application/json" },
-            body: JSON.stringify(fallbackBody),
-          });
-          if (resp3.ok) return resp3.json();
-        }
-        throw new Error('AI API unavailable after retry');
+        const err2 = await resp2.text();
+        console.warn(`[SDR-Robot-Chat] Retry falhou: ${resp2.status}`, err2);
       }
 
-      const errorText = await resp1.text();
-      throw new Error(`${providerName} API error: ${resp1.status} ${errorText}`);
+      // Fallback para Lovable AI (qualquer erro)
+      const lovableKey = Deno.env.get("LOVABLE_API_KEY");
+      if (lovableKey) {
+        console.log(`[SDR-Robot-Chat] Fallback para Lovable AI...`);
+        const fallbackBody = { ...openaiBody, model: "google/gemini-2.5-flash" };
+        const resp3 = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${lovableKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify(fallbackBody),
+        });
+        if (resp3.ok) {
+          console.log(`[SDR-Robot-Chat] Fallback Lovable AI bem-sucedido!`);
+          return resp3.json();
+        }
+        const errFb = await resp3.text();
+        console.error(`[SDR-Robot-Chat] Fallback Lovable AI falhou:`, resp3.status, errFb);
+      }
+
+      // Fallback para Gemini direto
+      const geminiKey = Deno.env.get("GOOGLE_GEMINI_API_KEY");
+      if (geminiKey && !isGeminiModel(robot.intelligence)) {
+        console.log(`[SDR-Robot-Chat] Fallback para Gemini direto...`);
+        const geminiBody = { ...openaiBody, model: "gemini-2.5-flash" };
+        const resp4 = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${geminiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify(geminiBody),
+        });
+        if (resp4.ok) {
+          console.log(`[SDR-Robot-Chat] Fallback Gemini bem-sucedido!`);
+          return resp4.json();
+        }
+        const errG = await resp4.text();
+        console.error(`[SDR-Robot-Chat] Fallback Gemini falhou:`, resp4.status, errG);
+      }
+
+      throw new Error(`AI API unavailable after retry + fallback (original: ${errorStatus1})`);
     }
 
     let aiData: any;

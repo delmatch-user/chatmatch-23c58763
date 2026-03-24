@@ -1346,20 +1346,20 @@ async function handleAutomaticMode(body: {
     openaiBody.tool_choice = "auto";
   }
   
-  // Chamar API com retry automático para 429
+  // Chamar API com retry e fallback robusto para QUALQUER erro
   async function callAIWithRetry(): Promise<any> {
-    // 1ª tentativa
     console.log(`[Robot-Chat Auto] Chamando ${providerName}...`);
     const resp1 = await fetchAI(apiUrl, apiKey, openaiBody, isAnthropic);
 
     if (resp1.ok) return parseAIResponse(resp1, isAnthropic);
 
-    if (resp1.status === 429) {
-      const errorText1 = await resp1.text();
-      console.warn(`[Robot-Chat Auto] 429 rate limit na 1ª tentativa (${providerName}):`, errorText1);
+    const errorStatus1 = resp1.status;
+    const errorText1 = await resp1.text();
+    console.warn(`[Robot-Chat Auto] ${providerName} falhou: ${errorStatus1}`, errorText1);
 
-      // Extrair retryDelay do JSON de erro (Gemini retorna isso)
-      let retryDelay = 25; // default 25s
+    // Para 429 (rate limit), tentar retry com delay
+    if (errorStatus1 === 429) {
+      let retryDelay = 25;
       try {
         const errJson = JSON.parse(errorText1);
         const retryInfo = errJson?.error?.details?.find((d: any) => d.retryDelay);
@@ -1372,43 +1372,53 @@ async function handleAutomaticMode(body: {
       console.log(`[Robot-Chat Auto] Aguardando ${retryDelay}s antes do retry...`);
       await new Promise(r => setTimeout(r, retryDelay * 1000));
 
-      // 2ª tentativa
-      console.log(`[Robot-Chat Auto] 2ª tentativa com ${providerName}...`);
       const resp2 = await fetchAI(apiUrl, apiKey, openaiBody, isAnthropic);
-
       if (resp2.ok) return parseAIResponse(resp2, isAnthropic);
-
-      // Fallback para Lovable AI
-      const lovableKey = Deno.env.get("LOVABLE_API_KEY");
-      if (lovableKey) {
-        console.log(`[Robot-Chat Auto] 2ª tentativa falhou. Fallback para Lovable AI (google/gemini-2.5-flash)...`);
-        const fallbackBody = { ...openaiBody, model: "google/gemini-2.5-flash" };
-        const resp3 = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${lovableKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(fallbackBody),
-        });
-        if (resp3.ok) {
-          console.log(`[Robot-Chat Auto] Fallback Lovable AI bem-sucedido!`);
-          return resp3.json();
-        }
-        const errFallback = await resp3.text();
-        console.error(`[Robot-Chat Auto] Fallback Lovable AI também falhou:`, resp3.status, errFallback);
-      }
-
-      // Tudo falhou
-      const errorText2 = resp2.ok ? '' : await resp2.text().catch(() => '');
-      console.error(`[Robot-Chat Auto] Todas as tentativas falharam.`);
-      throw new Error(`AI API unavailable after retry + fallback`);
+      const errorText2 = await resp2.text();
+      console.warn(`[Robot-Chat Auto] Retry falhou: ${resp2.status}`, errorText2);
     }
 
-    // Erro não-429
-    const errorText = await resp1.text();
-    console.error(`[Robot-Chat Auto] API error (${providerName}):`, resp1.status, errorText);
-    throw new Error(`${providerName} API error: ${resp1.status}`);
+    // Fallback para Lovable AI (qualquer erro: 400/401/402/403/429/5xx)
+    const lovableKey = Deno.env.get("LOVABLE_API_KEY");
+    if (lovableKey) {
+      console.log(`[Robot-Chat Auto] Fallback para Lovable AI (google/gemini-2.5-flash)...`);
+      const fallbackBody = { ...openaiBody, model: "google/gemini-2.5-flash" };
+      const resp3 = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${lovableKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(fallbackBody),
+      });
+      if (resp3.ok) {
+        console.log(`[Robot-Chat Auto] Fallback Lovable AI bem-sucedido!`);
+        return resp3.json();
+      }
+      const errFallback = await resp3.text();
+      console.error(`[Robot-Chat Auto] Fallback Lovable AI falhou:`, resp3.status, errFallback);
+    }
+
+    // Fallback para Google Gemini direto
+    const geminiKey = Deno.env.get("GOOGLE_GEMINI_API_KEY");
+    if (geminiKey && !isGeminiModel(robotConfig.intelligence)) {
+      console.log(`[Robot-Chat Auto] Fallback para Google Gemini direto...`);
+      const geminiBody = { ...openaiBody, model: "gemini-2.5-flash" };
+      const resp4 = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${geminiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify(geminiBody),
+      });
+      if (resp4.ok) {
+        console.log(`[Robot-Chat Auto] Fallback Gemini direto bem-sucedido!`);
+        return resp4.json();
+      }
+      const errGemini = await resp4.text();
+      console.error(`[Robot-Chat Auto] Fallback Gemini falhou:`, resp4.status, errGemini);
+    }
+
+    console.error(`[Robot-Chat Auto] Todas as tentativas e fallbacks falharam.`);
+    throw new Error(`AI API unavailable after retry + fallback (original: ${errorStatus1})`);
   }
 
   let openaiData: any;

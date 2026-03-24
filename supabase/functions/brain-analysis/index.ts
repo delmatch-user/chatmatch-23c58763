@@ -229,12 +229,12 @@ serve(async (req) => {
       });
     }
 
-    // Generate AI analysis
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    // Generate AI analysis with robust fallback chain
     let aiAnalysis = "";
+    let providerUsed = "";
+    let fallbackUsed = false;
 
-    if (LOVABLE_API_KEY) {
-      const prompt = `Você é a Delma, gerente inteligente do departamento de Suporte. Analise as métricas abaixo e gere um relatório executivo em markdown com:
+    const analysisPrompt = `Você é a Delma, gerente inteligente do departamento de Suporte. Analise as métricas abaixo e gere um relatório executivo em markdown com:
 
 ## Resumo Executivo
 Visão geral do desempenho do período.
@@ -261,15 +261,57 @@ Situações que precisam de atenção imediata.
 - TMA: ${metrics.tma} min (anterior: ${metrics.prevTma} min)
 - TME: ${metrics.tme} min (anterior: ${metrics.prevTme} min)
 - Resolvidas por IA: ${aiResolved} | Por humano: ${humanResolved}
-- Top tags: ${topTags.map(([t, c]: [string, number]) => `${t} (${c})`).join(', ')}
-- Canais: ${Object.entries(channelCounts).map(([c, n]) => `${c}: ${n}`).join(', ')}
-- Prioridades: ${Object.entries(priorityCounts).map(([p, n]) => `${p}: ${n}`).join(', ')}
-- Performance agentes: ${metrics.agentStats.map((a: any) => `${a.name}: ${a.count} conversas, TMA ${a.avgTime}min`).join('; ')}
+- Top tags: ${topTags.map(([t, c]: [string, number]) => \`\${t} (\${c})\`).join(', ')}
+- Canais: ${Object.entries(channelCounts).map(([c, n]) => \`\${c}: \${n}\`).join(', ')}
+- Prioridades: ${Object.entries(priorityCounts).map(([p, n]) => \`\${p}: \${n}\`).join(', ')}
+- Performance agentes: ${metrics.agentStats.map((a: any) => \`\${a.name}: \${a.count} conversas, TMA \${a.avgTime}min\`).join('; ')}
 - Conversas problemáticas: ${errorLogs.length} (alta prioridade, erros ou reclamações)
 
 Seja direta, objetiva e use dados para embasar cada ponto. Responda em português brasileiro.`;
 
+    const aiMessages = [
+      { role: "system", content: "Você é a Delma, uma gerente de suporte altamente analítica e proativa. Gere relatórios claros e acionáveis." },
+      { role: "user", content: analysisPrompt },
+    ];
+
+    // 1. Try Anthropic Claude (primary for Delma Cérebro)
+    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+    if (!aiAnalysis && ANTHROPIC_API_KEY) {
       try {
+        console.log("[brain-analysis] Tentando Anthropic Claude...");
+        const anthropicResp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 2000,
+            system: aiMessages[0].content,
+            messages: [{ role: "user", content: analysisPrompt }],
+          }),
+        });
+
+        if (anthropicResp.ok) {
+          const anthropicData = await anthropicResp.json();
+          aiAnalysis = anthropicData.content?.[0]?.text || "";
+          providerUsed = "Anthropic Claude";
+          console.log("[brain-analysis] Anthropic Claude OK");
+        } else {
+          console.warn("[brain-analysis] Anthropic falhou:", anthropicResp.status);
+        }
+      } catch (e) {
+        console.error("[brain-analysis] Anthropic error:", e);
+      }
+    }
+
+    // 2. Fallback: Lovable AI gateway
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    if (!aiAnalysis && LOVABLE_API_KEY) {
+      try {
+        console.log("[brain-analysis] Fallback para Lovable AI...");
         const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
           method: "POST",
           headers: {
@@ -278,29 +320,62 @@ Seja direta, objetiva e use dados para embasar cada ponto. Responda em portuguê
           },
           body: JSON.stringify({
             model: "google/gemini-2.5-flash",
-            messages: [
-              { role: "system", content: "Você é a Delma, uma gerente de suporte altamente analítica e proativa. Gere relatórios claros e acionáveis." },
-              { role: "user", content: prompt },
-            ],
+            messages: aiMessages,
           }),
         });
 
         if (aiResponse.ok) {
           const aiData = await aiResponse.json();
           aiAnalysis = aiData.choices?.[0]?.message?.content || "";
+          providerUsed = "Lovable AI";
+          fallbackUsed = true;
+          console.log("[brain-analysis] Lovable AI OK");
         } else {
-          console.error("AI gateway error:", aiResponse.status);
-          aiAnalysis = "⚠️ Não foi possível gerar a análise de IA neste momento. Tente novamente mais tarde.";
+          console.warn("[brain-analysis] Lovable AI falhou:", aiResponse.status);
         }
       } catch (e) {
-        console.error("AI analysis error:", e);
-        aiAnalysis = "⚠️ Erro ao conectar com o serviço de IA.";
+        console.error("[brain-analysis] Lovable AI error:", e);
       }
-    } else {
-      aiAnalysis = "⚠️ Chave de API não configurada para análise de IA.";
     }
 
-    return new Response(JSON.stringify({ metrics, aiAnalysis }), {
+    // 3. Deterministic fallback (no AI) — always produces content
+    if (!aiAnalysis) {
+      console.log("[brain-analysis] Gerando relatório determinístico (sem IA)...");
+      providerUsed = "Automático";
+      fallbackUsed = true;
+      const tmaDir = metrics.tma < metrics.prevTma ? '⬇️ melhorou' : metrics.tma > metrics.prevTma ? '⬆️ piorou' : '➡️ estável';
+      const tmeDir = metrics.tme < metrics.prevTme ? '⬇️ melhorou' : metrics.tme > metrics.prevTme ? '⬆️ piorou' : '➡️ estável';
+      const topTagsList = topTags.slice(0, 5).map(([t, c]: [string, number]) => `- ${t}: ${c} ocorrências`).join('\n');
+      const agentList = metrics.agentStats.slice(0, 5).map((a: any) => `- ${a.name}: ${a.count} conversas, TMA ${a.avgTime}min`).join('\n');
+      
+      aiAnalysis = `## Resumo Executivo (Gerado Automaticamente)
+
+**Período:** últimos ${period} dias | **Total:** ${totalConversas} conversas
+
+## KPIs
+| Métrica | Atual | Anterior | Tendência |
+|---------|-------|----------|-----------|
+| Total | ${totalConversas} | ${prevTotalConversas} | ${totalConversas > prevTotalConversas ? '⬆️' : '⬇️'} |
+| TMA | ${metrics.tma} min | ${metrics.prevTma} min | ${tmaDir} |
+| TME | ${metrics.tme} min | ${metrics.prevTme} min | ${tmeDir} |
+
+## Resolução
+- IA: ${aiResolved} (${totalConversas > 0 ? Math.round((aiResolved / totalConversas) * 100) : 0}%)
+- Humano: ${humanResolved} (${totalConversas > 0 ? Math.round((humanResolved / totalConversas) * 100) : 0}%)
+
+## Top Classificações
+${topTagsList || '- Sem dados'}
+
+## Agentes
+${agentList || '- Sem dados'}
+
+## Alertas
+- Conversas problemáticas: ${errorLogs.length}
+
+> ⚠️ Este relatório foi gerado automaticamente sem análise de IA. Configure um provedor de IA para relatórios mais detalhados.`;
+    }
+
+    return new Response(JSON.stringify({ metrics, aiAnalysis, providerUsed, fallbackUsed }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {

@@ -132,6 +132,9 @@ const AdminBrain = () => {
     }
   }, [period]);
 
+  const [reportProvider, setReportProvider] = useState<string>('');
+  const [reportFallback, setReportFallback] = useState(false);
+
   const fetchReport = async () => {
     setLoadingReport(true);
     try {
@@ -141,8 +144,14 @@ const AdminBrain = () => {
       if (error) throw error;
       setMetrics(filterMetrics(data.metrics));
       setAiAnalysis(data.aiAnalysis);
+      setReportProvider(data.providerUsed || '');
+      setReportFallback(data.fallbackUsed || false);
       setLastUpdated(new Date());
-      toast.success('Relatório da Delma gerado!');
+      if (data.fallbackUsed) {
+        toast.info(`Relatório gerado via ${data.providerUsed || 'fallback'} (provedor principal indisponível)`);
+      } else {
+        toast.success(`Relatório da Delma gerado! (${data.providerUsed || 'IA'})`);
+      }
     } catch (e: any) {
       console.error(e);
       toast.error('Erro ao gerar relatório: ' + (e.message || 'Erro desconhecido'));

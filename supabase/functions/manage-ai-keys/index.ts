@@ -198,24 +198,19 @@ serve(async (req) => {
           message = 'API Key não configurada';
         } else {
           try {
-            const resp = await fetch('https://api.anthropic.com/v1/messages', {
-              method: 'POST',
+            // Use GET /v1/models to validate key without consuming tokens
+            const resp = await fetch('https://api.anthropic.com/v1/models', {
               headers: {
                 'x-api-key': apiKey,
                 'anthropic-version': '2023-06-01',
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                model: 'claude-3-5-haiku-20241022',
-                max_tokens: 5,
-                messages: [{ role: 'user', content: 'Hi' }]
-              })
+              }
             });
-            success = resp.ok;
-            if (!success) {
+            if (resp.ok) {
+              success = true;
+              message = 'Conexão bem sucedida! Chave válida.';
+            } else {
               const errorBody = await resp.text();
               console.error('Anthropic test error:', resp.status, errorBody);
-
               let providerMessage = '';
               try {
                 const parsed = JSON.parse(errorBody);
@@ -223,12 +218,13 @@ serve(async (req) => {
               } catch {
                 providerMessage = errorBody || '';
               }
-
-              message = providerMessage
-                ? `Erro: ${resp.status} - ${providerMessage}`
-                : `Erro: ${resp.status}`;
-            } else {
-              message = 'Conexão bem sucedida!';
+              if (resp.status === 401) {
+                message = 'Chave inválida (401 Unauthorized)';
+              } else if (resp.status === 403) {
+                message = providerMessage ? `Acesso negado: ${providerMessage}` : 'Acesso negado (403)';
+              } else {
+                message = providerMessage ? `Erro: ${resp.status} - ${providerMessage}` : `Erro: ${resp.status}`;
+              }
             }
           } catch (e) {
             message = 'Erro de conexão';
