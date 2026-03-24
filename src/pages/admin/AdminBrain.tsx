@@ -359,6 +359,93 @@ const AdminBrain = () => {
     }
   };
 
+  // Save maturity score to history
+  const saveMaturityScore = useCallback(async (score: number) => {
+    try {
+      const today = format(new Date(), 'yyyy-MM-dd');
+      const { data: existing } = await supabase.from('app_settings').select('*').eq('key', 'brain_maturity_history').maybeSingle();
+      let history: Array<{ date: string; score: number }> = existing ? JSON.parse(existing.value) : [];
+      // Only save once per day
+      if (history.length > 0 && history[history.length - 1].date === today) {
+        history[history.length - 1].score = score;
+      } else {
+        history.push({ date: today, score });
+      }
+      // Keep last 30 entries
+      history = history.slice(-30);
+      if (existing) {
+        await supabase.from('app_settings').update({ value: JSON.stringify(history) }).eq('key', 'brain_maturity_history');
+      } else {
+        await supabase.from('app_settings').insert({ key: 'brain_maturity_history', value: JSON.stringify(history) });
+      }
+      setMaturityHistory(history);
+    } catch {
+      // silently fail
+    }
+  }, []);
+
+  const loadMaturityHistory = async () => {
+    try {
+      const { data } = await supabase.from('app_settings').select('*').eq('key', 'brain_maturity_history').maybeSingle();
+      if (data) setMaturityHistory(JSON.parse(data.value));
+    } catch {}
+  };
+
+  // Load agent live status
+  const loadAgentLiveStatus = useCallback(async () => {
+    try {
+      const { data: profiles } = await supabase.from('profiles').select('id, name, status');
+      const { data: conversations } = await supabase.from('conversations').select('assigned_to').neq('status', 'finalized');
+      if (profiles && conversations) {
+        const openCounts: Record<string, number> = {};
+        conversations.forEach((c: any) => {
+          if (c.assigned_to) openCounts[c.assigned_to] = (openCounts[c.assigned_to] || 0) + 1;
+        });
+        const statusMap: Record<string, { status: string; openConversations: number }> = {};
+        profiles.forEach((p: any) => {
+          statusMap[p.name] = { status: p.status, openConversations: openCounts[p.id] || 0 };
+        });
+        setAgentLiveStatus(statusMap);
+      }
+    } catch {}
+  }, []);
+
+  // Load/save report schedule
+  const loadScheduleConfig = async () => {
+    try {
+      const { data } = await supabase.from('report_schedule').select('*').eq('schedule_type', 'brain_report').maybeSingle();
+      if (data) {
+        setScheduleConfig({
+          type: 'weekly',
+          dayOfWeek: data.day_of_week ?? 1,
+          hourOfDay: data.hour_of_day ?? 8,
+          isActive: data.is_active ?? false,
+        });
+      }
+    } catch {}
+  };
+
+  const saveScheduleConfig = async () => {
+    try {
+      const { data: existing } = await supabase.from('report_schedule').select('id').eq('schedule_type', 'brain_report').maybeSingle();
+      const payload = {
+        schedule_type: 'brain_report',
+        day_of_week: scheduleConfig.dayOfWeek,
+        hour_of_day: scheduleConfig.hourOfDay,
+        is_active: scheduleConfig.isActive,
+      };
+      if (existing) {
+        await supabase.from('report_schedule').update(payload).eq('id', existing.id);
+      } else {
+        await supabase.from('report_schedule').insert(payload);
+      }
+      toast.success('Agendamento salvo!');
+      setScheduleDialogOpen(false);
+    } catch {
+      toast.error('Erro ao salvar agendamento');
+    }
+  };
+
   useEffect(() => {
     fetchMetrics();
   }, [fetchMetrics]);
@@ -380,7 +467,24 @@ const AdminBrain = () => {
 
   useEffect(() => {
     loadReportHistory();
+    loadMaturityHistory();
+    loadScheduleConfig();
+    loadAgentLiveStatus();
   }, []);
+
+  // Save maturity score when metrics update
+  useEffect(() => {
+    if (metrics) {
+      const knowledgeData = computeKnowledgeData(metrics);
+      saveMaturityScore(knowledgeData.maturityScore);
+    }
+  }, [metrics, saveMaturityScore]);
+
+  // Refresh agent live status every 30s
+  useEffect(() => {
+    const interval = setInterval(loadAgentLiveStatus, 30000);
+    return () => clearInterval(interval);
+  }, [loadAgentLiveStatus]);
 
   const getTrend = (current: number, previous: number, inverted = false) => {
     if (previous === 0) return null;
