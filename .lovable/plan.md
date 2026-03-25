@@ -1,68 +1,48 @@
 
 
-# Auto-Popular Dados nas Abas Treinamento, Sugestões e Evolução
+# Filtrar Cérebro exclusivamente para membros do Suporte
 
-## Problema Atual
-As três abas mostram "Nenhuma sugestão ainda" até que o admin clique manualmente em "Gerar Sugestões" ou "Executar Análise". O usuário quer que elas já venham com dados reais do departamento Suporte.
+## Problema
+O gráfico "Comparativo de TMA por Atendente" e outras seções do Cérebro mostram pessoas de outros departamentos (ex: Castanheira) que atenderam conversas transferidas do Suporte mas não pertencem ao departamento. O Cérebro deve mostrar apenas membros efetivos do Suporte.
 
 ## Solução
 
-### 1. Auto-trigger na aba "Treinamento"
-**Arquivo:** `src/pages/admin/AdminBrain.tsx`
+### 1. Edge Function `brain-analysis/index.ts`
+- Após buscar os logs, consultar `profile_departments` + `departments` para obter a lista de `user_id`s que pertencem ao departamento Suporte
+- Consultar `profiles` para mapear `user_id` → `name`
+- Filtrar `suporteLogs` (linha 187) para incluir apenas agentes cujo nome está na lista de membros do Suporte
+- Mesmo filtro no `prevAgentStats` (linha 235)
 
-Quando a aba Treinamento carrega e `trainingSuggestions` está vazio (após o loading), disparar automaticamente `generateTrainingSuggestions()` uma única vez por sessão. Usar um `useRef` (`autoTriggeredTraining`) para evitar chamadas repetidas.
+### 2. Frontend `AdminBrain.tsx` — `loadAgentLiveStatus`
+- Na função `loadAgentLiveStatus` (linha 459), buscar `profile_departments` filtrando pelo `department_id` do Suporte
+- Filtrar `profiles` para incluir apenas os membros do Suporte no status ao vivo
 
-### 2. Auto-trigger na aba "Sugestões da Delma"
-**Arquivo:** `src/components/admin/DelmaSuggestionsTab.tsx`
+### 3. Edge Function `delma-autonomous-analysis/index.ts`
+- Na função `analyzeAgentGoals`, após buscar os logs, filtrar por membros do Suporte usando `profile_departments`
+- Na função `storeDataSignals`, filtrar `agentMetrics` para incluir apenas membros do Suporte
 
-Quando as sugestões carregam e o resultado é vazio (0 pendentes + 0 processadas), automaticamente invocar `triggerAnalysis()` uma vez. Usar um `useRef` para controle.
-
-### 3. Auto-trigger na aba "Evolução"
-**Arquivo:** `src/components/admin/DelmaEvolutionTab.tsx`
-
-Se ao carregar os dados, tanto `suggestions` quanto `memories` estiverem vazios, disparar a análise autônoma (`delma-autonomous-analysis`) automaticamente para popular memórias e sugestões iniciais.
-
-### 4. Seed inicial de memórias no Edge Function
-**Arquivo:** `supabase/functions/delma-autonomous-analysis/index.ts`
-
-Melhorar a função `storeDataSignals` para gerar mais sinais iniciais:
-- Snapshot de robôs ativos (nomes, status, quantidade de Q&As)
-- Top tags da última semana
-- Média de TMA/TME por atendente
-- Contagem de conversas por canal
-
-Isso garante que na primeira execução, o `delma_memory` já receba dados ricos e a aba Evolução mostre memórias ativas.
-
-## Detalhes Técnicos
-
+### Detalhes técnicos
 ```text
-AdminBrain.tsx
-├── useRef autoTriggeredTraining = false
-├── useEffect: quando activeTab === 'training' && !loadingTraining && trainingSuggestions.length === 0 && !autoTriggeredTraining.current
-│   └── generateTrainingSuggestions() + autoTriggeredTraining.current = true
+brain-analysis/index.ts:
+  1. Buscar dept Suporte: departments.select('id').ilike('name', '%suporte%')
+  2. Buscar membros: profile_departments.select('profile_id').eq('department_id', suporteDeptId)
+  3. Buscar nomes: profiles.select('id, name').in('id', memberIds)
+  4. Criar Set<string> com nomes de membros
+  5. Filtrar suporteLogs: l.assigned_to_name IN memberNames
 
-DelmaSuggestionsTab.tsx
-├── useRef autoTriggered = false
-├── useEffect: quando !loading && suggestions.length === 0 && !autoTriggered.current
-│   └── triggerAnalysis() + autoTriggered.current = true
+AdminBrain.tsx loadAgentLiveStatus:
+  1. Buscar dept Suporte por nome
+  2. Buscar profile_departments para aquele dept
+  3. Filtrar profiles para incluir apenas membros
 
-DelmaEvolutionTab.tsx
-├── useRef autoTriggered = false
-├── useEffect: quando !loading && suggestions.length === 0 && memories.length === 0 && !autoTriggered.current
-│   └── invocar delma-autonomous-analysis + autoTriggered.current = true + reload
-
-delma-autonomous-analysis/index.ts (storeDataSignals)
-├── Adicionar: snapshot de robôs ativos do Suporte
-├── Adicionar: top 10 tags da semana
-├── Adicionar: média TMA/TME por atendente ativo
-├── Adicionar: volume por canal (whatsapp/instagram/machine)
+delma-autonomous-analysis/index.ts:
+  1. Mesmo padrão: buscar dept → membros → filtrar logs
 ```
 
-## Arquivos a Editar
+### Arquivos a editar
 | Arquivo | Mudança |
 |---------|---------|
-| `src/pages/admin/AdminBrain.tsx` | Auto-trigger training na primeira visita |
-| `src/components/admin/DelmaSuggestionsTab.tsx` | Auto-trigger análise quando vazio |
-| `src/components/admin/DelmaEvolutionTab.tsx` | Auto-trigger quando sem dados |
-| `supabase/functions/delma-autonomous-analysis/index.ts` | Enriquecer storeDataSignals com mais sinais do Suporte |
+| `supabase/functions/brain-analysis/index.ts` | Filtrar agentStats por membros do Suporte |
+| `src/pages/admin/AdminBrain.tsx` | Filtrar loadAgentLiveStatus por membros do Suporte |
+| `supabase/functions/delma-autonomous-analysis/index.ts` | Filtrar analyzeAgentGoals e storeDataSignals por membros |
 
