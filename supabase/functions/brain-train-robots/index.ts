@@ -17,12 +17,21 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // 1. Fetch all active robots with their Q&A and instructions
-    const { data: robots, error: robotsErr } = await supabase
+    // 1. Fetch Suporte department and filter robots
+    const { data: suporteDept } = await supabase
+      .from("departments").select("id").ilike("name", "%suporte%").maybeSingle();
+    const suporteDeptId = suporteDept?.id;
+
+    const { data: allRobots, error: robotsErr } = await supabase
       .from("robots")
-      .select("id, name, instructions, qa_pairs, tone, reference_links")
+      .select("id, name, instructions, qa_pairs, tone, reference_links, departments")
       .in("status", ["active", "paused"]);
     if (robotsErr) throw robotsErr;
+
+    const robots = (allRobots || []).filter((r: any) => {
+      const deps: string[] = r.departments || [];
+      return deps.length === 0 || (suporteDeptId && deps.includes(suporteDeptId));
+    });
     if (!robots || robots.length === 0) {
       return new Response(JSON.stringify({ message: "Nenhum robô encontrado", suggestions: 0 }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
