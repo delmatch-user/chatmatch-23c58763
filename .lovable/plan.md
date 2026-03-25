@@ -1,54 +1,21 @@
 
 
-# Corrigir Erro #131000 — Janela de 24h Expirada na Meta API
+# Tornar o Dialog de Avisos do Suporte Responsivo com Scroll
 
-## Diagnóstico
-
-Os logs mostram o erro `#131000 (OAuthException)` da Meta API. Isso **não é um bug de código** — é a Meta bloqueando envio de mensagens para contatos cuja janela de 24 horas expirou. As mensagens que falharam são todas de finalização (protocolo + despedida) para números `5516988580985` e `5514991710263`.
-
-O código atual já trata o erro no fluxo de finalização (try/catch na linha 288 do ChatPanel), então a finalização prossegue mesmo quando o envio falha. Porém, o problema é que:
-
-1. A mensagem de protocolo é salva no banco como "enviada" mesmo quando a API rejeita
-2. Aparece "Reenviar" na UI, confundindo o atendente
-3. Não há feedback claro de que a janela expirou
+## Problema
+Mensagens longas no alerta do canal Suporte podem ultrapassar a altura da tela (especialmente mobile 393x587), escondendo o botão "Entendi" e impedindo a confirmação.
 
 ## Solução
+No componente `AnnouncementDialog` dentro de `ChannelAnnouncementOverlay.tsx`:
 
-### 1. Edge Function `meta-whatsapp-send/index.ts` — Retornar erro tipado
+1. Envolver o conteúdo da mensagem em um `ScrollArea` com `max-h` responsivo (`max-h-[40vh] sm:max-h-[50vh]`)
+2. Garantir que o `DialogContent` tenha `max-h-[85vh] flex flex-col` para não ultrapassar a tela
+3. O `DialogFooter` com o botão "Entendi" fica fixo embaixo, sempre visível
 
-Quando a Meta retorna erro `131000`, retornar um response com `errorCode: 'WINDOW_EXPIRED'` em vez de erro genérico 500. Isso permite que o frontend trate especificamente.
+### Arquivo: `src/components/chat/ChannelAnnouncementOverlay.tsx`
 
-```typescript
-if (!response.ok) {
-  const errorCode = responseData.error?.code;
-  const isWindowExpired = errorCode === 131000;
-  
-  return new Response(
-    JSON.stringify({
-      success: false,
-      error: responseData.error?.message || 'Erro ao enviar mensagem',
-      errorCode: isWindowExpired ? 'WINDOW_EXPIRED' : 'API_ERROR',
-      metaCode: errorCode
-    }),
-    {
-      status: isWindowExpired ? 403 : 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    }
-  );
-}
-```
+- Importar `ScrollArea` de `@/components/ui/scroll-area`
+- No `DialogContent`: adicionar `max-h-[85vh] flex flex-col`
+- Envolver o bloco da mensagem (div com avatar + conteúdo) em `ScrollArea` com `max-h-[40vh] sm:max-h-[50vh]` e `overflow-y-auto`
+- `DialogFooter` permanece fora do scroll, sempre acessível
 
-### 2. `ChatPanel.tsx` — Tratar janela expirada na finalização
-
-No bloco de envio de protocolo (linhas 273-290), verificar se o erro retornado é `WINDOW_EXPIRED` e, nesse caso, não persistir a mensagem no banco e apenas logar silenciosamente (a finalização já continua normalmente).
-
-### 3. `useWhatsAppSend.tsx` — Propagar errorCode da Meta
-
-Na função `sendViaMeta`, incluir o `errorCode` no resultado para que o ChatPanel possa distinguir janela expirada de erros reais.
-
-## Arquivos a editar
-
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/meta-whatsapp-send/index.ts` | Retornar `errorCode: 'WINDOW_EXPIRED'` para erro 131000 em vez de throw genérico |
-| `src/components/chat/ChatPanel.tsx` | No
