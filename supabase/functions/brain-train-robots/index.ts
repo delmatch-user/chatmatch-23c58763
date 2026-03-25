@@ -6,6 +6,45 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+// Build knowledge context for a robot, truncated to ~8000 chars
+function buildKnowledgeContext(robot: any): string {
+  const parts: string[] = [];
+  
+  // Instructions (up to 4000 chars)
+  const instructions = (robot.instructions || "").substring(0, 4000);
+  if (instructions) {
+    parts.push(`INSTRUÇÕES GERAIS:\n${instructions}`);
+  }
+  
+  // Q&As (up to 3500 chars)
+  const qaPairs = Array.isArray(robot.qa_pairs) ? robot.qa_pairs : [];
+  if (qaPairs.length > 0) {
+    let qaStr = "Q&As CADASTRADOS:\n";
+    for (const qa of qaPairs) {
+      const entry = `Q: ${qa.question || qa.q}\nA: ${qa.answer || qa.a}\n---\n`;
+      if (qaStr.length + entry.length > 3500) break;
+      qaStr += entry;
+    }
+    parts.push(qaStr);
+  }
+  
+  // Tone + links (up to 500 chars)
+  const meta: string[] = [];
+  if (robot.tone) meta.push(`TOM DEFINIDO: ${robot.tone}`);
+  if (Array.isArray(robot.reference_links) && robot.reference_links.length > 0) {
+    const links = robot.reference_links
+      .slice(0, 5)
+      .map((l: any) => `- ${l.title || l.url}`)
+      .join("\n");
+    meta.push(`LINKS DE REFERÊNCIA:\n${links}`);
+  }
+  if (meta.length > 0) {
+    parts.push(meta.join("\n").substring(0, 500));
+  }
+  
+  return parts.join("\n\n");
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -24,7 +63,7 @@ serve(async (req) => {
 
     const { data: allRobots, error: robotsErr } = await supabase
       .from("robots")
-      .select("id, name, instructions, qa_pairs, tone, reference_links, departments")
+      .select("id, name, instructions, qa_pairs, tone, reference_links, departments, updated_at")
       .in("status", ["active", "paused"]);
     if (robotsErr) throw robotsErr;
 
@@ -92,7 +131,6 @@ serve(async (req) => {
       const msgs = Array.isArray(log.messages) ? log.messages : [];
       if (msgs.length < 2) continue;
 
-      // Extract meaningful exchanges (client question → human response)
       const exchanges: Array<{ from: string; text: string }> = [];
       for (let i = 0; i < Math.min(msgs.length, 10); i++) {
         const m = msgs[i];
@@ -124,33 +162,57 @@ serve(async (req) => {
       (existingSuggestions || []).map((s: any) => `${s.robot_id}:${s.title}`)
     );
 
-    // 5. For each robot, generate suggestions based on human responses
+    // 5. For each robot, generate suggestions based on human responses + knowledge base
     let totalSuggestions = 0;
+    const robotsAnalyzed: Array<{ name: string; qa_count: number; tone: string; updated_at: string; instructions_excerpt: string }> = [];
 
     for (const robot of robots) {
       const existingQA = Array.isArray(robot.qa_pairs) ? robot.qa_pairs : [];
-      const existingQAStr = existingQA
-        .map((qa: any) => `Q: ${qa.question || qa.q}\nA: ${qa.answer || qa.a}`)
-        .join("\n---\n");
+      const knowledgeContext = buildKnowledgeContext(robot);
+      
+      // Build snapshot for this robot
+      const snapshot = {
+        qa_count: existingQA.length,
+        instructions_excerpt: (robot.instructions || "").substring(0, 200),
+        tone: robot.tone || "não definido",
+        updated_at: robot.updated_at,
+      };
+      robotsAnalyzed.push({ name: robot.name, ...snapshot });
 
       const systemPrompt = `Você é a Delma, Treinadora de IA. Sua missão é analisar como os ATENDENTES HUMANOS reais respondem aos clientes e usar isso para melhorar o robô "${robot.name}".
 
-REGRAS:
+CONTEXTO OBRIGATÓRIO — BASE DE CONHECIMENTO DO ROBÔ "${robot.name}":
+${knowledgeContext}
+
+REGRAS DE GERAÇÃO:
 1. Analise os padrões de linguagem dos atendentes humanos: saudações, empatia, encerramento
 2. Identifique respostas humanas recorrentes que o robô NÃO tem no Q&A
 3. Sugira Q&A baseados em COMO os humanos realmente respondem (tom, palavras, estrutura)
 4. Compare as respostas humanas com o Q&A existente do robô — sugira melhorias onde o robô é genérico demais
 5. Foque em tornar o robô mais HUMANO e empático, não apenas informativo
 6. NÃO sugira Q&A que já existam na base do robô
-7. Retorne um JSON com array "suggestions"
 
-Formato de cada sugestão:
+REGRAS DE VALIDAÇÃO (aplicar a TODAS as sugestões antes de incluir na resposta):
+1. Tom e linguagem: a sugestão DEVE estar alinhada ao tom definido acima ("${robot.tone}"). Se o robô é empático, não sugerir respostas secas. Se é direto, não sugerir respostas longas.
+2. Consistência com Q&As existentes: NUNCA sugerir um Q&A que contradiga ou repita um já cadastrado. Se o tema já existe, sugerir apenas refinamento.
+3. Fluxo correto: verificar se a sugestão respeita o fluxo de atendimento definido nas instruções. Não sugerir atalhos que pulem etapas obrigatórias.
+4. Ancoragem em dados reais: TODA sugestão deve citar o volume de conversas que a embasam. Nenhuma sugestão genérica sem evidência nas conversas analisadas.
+5. Se uma sugestão violar qualquer um dos pontos acima, descartá-la silenciosamente e NÃO incluir na resposta.
+
+Retorne um JSON com array "suggestions". Formato de cada sugestão:
 {
   "type": "qa" | "tone" | "instruction",
   "title": "título curto descritivo",
   "content": "conteúdo (para Q&A: formato 'Pergunta: ... | Resposta: ...')",
-  "reasoning": "baseado em qual padrão humano observado"
+  "reasoning": "baseado em qual padrão humano observado + quantidade de conversas que embasam",
+  "compliance_status": "aligned" | "review" | "conflict",
+  "compliance_notes": "nota sobre conformidade (obrigatório se status for 'review' ou 'conflict')"
 }
+
+Para compliance_status:
+- "aligned": a sugestão está 100% alinhada ao tom, Q&As e instruções do robô
+- "review": possível sobreposição com Q&A existente (detalhar qual na compliance_notes)
+- "conflict": contradiz uma regra/instrução da base (detalhar o trecho conflitante na compliance_notes)
 
 Gere entre 2-5 sugestões relevantes. Priorize Q&A que capturem o jeito humano de responder.`;
 
@@ -164,17 +226,10 @@ Gere entre 2-5 sugestões relevantes. Priorize Q&A que capturem o jeito humano d
         })
         .join("\n\n");
 
-      const userPrompt = `ROBÔ: ${robot.name}
-TOM ATUAL: ${robot.tone}
-INSTRUÇÕES ATUAIS: ${(robot.instructions || "").substring(0, 500)}
-
-Q&A EXISTENTES (${existingQA.length} pares):
-${existingQAStr.substring(0, 1500) || "Nenhum Q&A cadastrado"}
-
-CONVERSAS REAIS COM ATENDENTES HUMANOS (últimos 14 dias):
+      const userPrompt = `CONVERSAS REAIS COM ATENDENTES HUMANOS (últimos 14 dias, ${conversationExamples.length} conversas analisadas):
 ${conversationsSample || "Nenhuma conversa disponível"}
 
-Analise como os atendentes humanos respondem e gere sugestões para o robô "${robot.name}" parecer mais humano e resolver mais situações.`;
+Analise como os atendentes humanos respondem e gere sugestões validadas contra a base de conhecimento do robô "${robot.name}".`;
 
       try {
         let aiResponse = "";
@@ -222,6 +277,9 @@ Analise como os atendentes humanos respondem e gere sugestões para o robô "${r
           const key = `${robot.id}:${title}`;
           if (existingSet.has(key)) continue;
 
+          const complianceStatus = s.compliance_status || "aligned";
+          const complianceNotes = s.compliance_notes || s.compliance_note || null;
+
           const { error: insertErr } = await supabase
             .from("robot_training_suggestions")
             .insert({
@@ -232,6 +290,10 @@ Analise como os atendentes humanos respondem e gere sugestões para o robô "${r
               content: s.content || s.conteudo || "",
               reasoning: s.reasoning || s.motivo || null,
               status: "pending",
+              compliance_status: complianceStatus,
+              compliance_notes: complianceNotes,
+              knowledge_base_snapshot: snapshot,
+              knowledge_base_updated_at: robot.updated_at,
             });
 
           if (!insertErr) {
@@ -249,6 +311,7 @@ Analise como os atendentes humanos respondem e gere sugestões para o robô "${r
       suggestions: totalSuggestions,
       robots: robots.length,
       conversationsAnalyzed: conversationExamples.length,
+      robotsAnalyzed,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
