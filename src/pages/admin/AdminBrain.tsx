@@ -2273,6 +2273,9 @@ const AdminBrain = () => {
                   </CardContent>
                 </Card>
               )}
+
+              {/* Agendamentos Sugeridos pela Delma */}
+              <DelmaReportScheduleSuggestions />
             </TabsContent>
 
             {/* ======================== TRAINING TAB ======================== */}
