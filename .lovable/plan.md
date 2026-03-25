@@ -1,51 +1,46 @@
 
 
-# Filtrar Treinamento apenas para Robôs do Suporte (Júlia e Sebastião)
+# Visualizador de Memorias da Delma — Drawer Lateral
 
-## Problema
-A Edge Function `brain-train-robots` busca **todos** os robôs com status active/paused, incluindo o Arthur (que pertence ao departamento Comercial/SDR). O treinamento deve ser exclusivo para robôs do Suporte.
+## Resumo
+Criar um novo componente `DelmaMemoryDrawer.tsx` que abre como drawer lateral ao clicar no card "Memorias Ativas" na aba Evolucao. O card existente recebe apenas `onClick` e `cursor-pointer` — nenhuma outra alteracao no `DelmaEvolutionTab.tsx`.
 
-## Solução
+## Arquivos
 
-### Arquivo: `supabase/functions/brain-train-robots/index.ts`
+### 1. Novo: `src/components/admin/DelmaMemoryDrawer.tsx`
+Componente completo com:
 
-Na query de robôs (linha 21-24), adicionar filtro pelo departamento Suporte:
+**Props:** `open: boolean`, `onOpenChange: (open: boolean) => void`, `memories: any[]`, `onMemoriesUpdate: () => void`
 
-1. Buscar o ID do departamento Suporte: `departments.select('id').ilike('name', '%suporte%').maybeSingle()`
-2. Após buscar os robôs, filtrar apenas os que têm o `department_id` do Suporte no array `departments`, **ou** que não têm departamentos definidos (robôs globais que atendem Suporte)
-3. Alternativamente, como a coluna `departments` na tabela `robots` armazena IDs de departamentos como array de strings, filtrar com `.contains('departments', [suporteDeptId])`
+**Estrutura do drawer (Sheet side="right", ~600px):**
 
-Mudança concreta — substituir:
-```typescript
-const { data: robots } = await supabase
-  .from("robots")
-  .select("id, name, instructions, qa_pairs, tone, reference_links")
-  .in("status", ["active", "paused"]);
-```
+- **Cabecalho:** "O que a Delma sabe" + subtitulo dinamico com contagem e timestamp da memoria mais recente
+- **3 mini-cards horizontais:** Total | Sinais de Dados | Feedbacks do Gestor
+- **Busca + Filtros:**
+  - Input de busca (filtra client-side no `content` stringificado)
+  - Select tipo: Todas | data_signal | manager_feedback
+  - Select area: Todas | Treinamento | Metas | Relatorios | Erros (derivado de `source`)
+  - Select peso: Todas | Alta (>=0.8) | Media (0.4-0.79) | Baixa (<0.4)
+  - Select ordenacao: Recentes | Maior peso | Menor peso | Proximas a expirar
+- **Lista paginada (20 por vez):** cards expansiveis via Collapsible
+  - Colapsado: icone tipo, titulo (de `source` ou `content`), badge area, barra peso colorida, data criacao, "Expira em X dias"
+  - Expandido: `content` JSON formatado legivel (chaves traduzidas pt-BR), detalhes por tipo, botao "Esquecer" com AlertDialog confirmacao → `update expires_at = now()`
+- **Secao "O que a Delma aprendeu a nao fazer":** memorias peso <= 0.1, botao "Reabilitar" → `update weight = 0.5`
+- **Secao "Memorias proximas de expirar":** expires_at < 7 dias, badge laranja, botao "Renovar" → `update expires_at += 90 dias`
+- **Estado vazio:** icone Brain + texto orientativo
+- **Botao "Carregar mais"** para paginacao
 
-Por:
-```typescript
-// Buscar dept Suporte
-const { data: suporteDept } = await supabase
-  .from("departments").select("id").ilike("name", "%suporte%").maybeSingle();
-const suporteDeptId = suporteDept?.id;
+### 2. Editar: `src/components/admin/DelmaEvolutionTab.tsx`
+Mudancas minimas e aditivas:
+- Importar `DelmaMemoryDrawer` e `useState` para `memoryDrawerOpen`
+- Adicionar `onClick` e `cursor-pointer` ao card de Memorias Ativas (linhas 177-190)
+- Renderizar `<DelmaMemoryDrawer>` no final do JSX, passando `memories`, `open`, `onOpenChange`, `onMemoriesUpdate={loadData}`
 
-// Buscar robôs e filtrar por Suporte
-const { data: allRobots } = await supabase
-  .from("robots")
-  .select("id, name, instructions, qa_pairs, tone, reference_links, departments")
-  .in("status", ["active", "paused"]);
-
-const robots = (allRobots || []).filter(r => {
-  const deps = r.departments || [];
-  return deps.length === 0 || (suporteDeptId && deps.includes(suporteDeptId));
-});
-```
-
-Isso garante que apenas Júlia e Sebastião (vinculados ao Suporte) recebam sugestões de treinamento, excluindo o Arthur.
-
-### Arquivo único a editar
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/brain-train-robots/index.ts` | Filtrar robôs pelo departamento Suporte |
+### Detalhes tecnicos
+- Usa `Sheet` (side="right") do shadcn para o drawer lateral com overlay escuro
+- Paginacao client-side: slice dos dados ja carregados, botao "Carregar mais" incrementa o limite em 20
+- Soft delete = `supabase.from('delma_memory').update({ expires_at: new Date().toISOString() }).eq('id', memoryId)`
+- Renovar = `update({ expires_at: new Date(Date.now() + 90*24*60*60*1000).toISOString() })`
+- Reabilitar = `update({ weight: 0.5 })`
+- JSON content rendering: funcao helper que percorre o objeto traduzindo chaves comuns (ex: `total_conversations` → `Total de Conversas`)
 
