@@ -363,6 +363,13 @@ export function DelmaEvolutionTab() {
           )}
         </CardContent>
       </Card>
+
+      <DelmaMemoryDrawer
+        open={memoryDrawerOpen}
+        onOpenChange={setMemoryDrawerOpen}
+        memories={memories}
+        onMemoriesUpdate={loadData}
+      />
     </div>
   );
 }
