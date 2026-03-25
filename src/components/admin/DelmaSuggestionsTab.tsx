@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Sparkles, MessageSquare, Users, FileText, Target, CalendarClock, ChevronRight, ChevronDown, CheckCircle2, XCircle, Loader2, Brain, Info, AlertCircle, ThumbsUp, ThumbsDown, Edit3 } from 'lucide-react';
+import { Sparkles, MessageSquare, Users, FileText, Target, CalendarClock, ChevronRight, ChevronDown, CheckCircle2, XCircle, Loader2, Brain, Info, AlertCircle, ThumbsUp, ThumbsDown, Edit3, Bot, Filter } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -33,12 +34,16 @@ const categoryConfig: Record<string, { label: string; icon: any; color: string }
   robot_training: { label: 'Treinamento de Robô', icon: Brain, color: 'bg-primary/15 text-primary border-primary/20' },
   agent_goals: { label: 'Meta de Atendente', icon: Target, color: 'bg-warning/15 text-warning border-warning/20' },
   report_schedule: { label: 'Relatório Agendado', icon: CalendarClock, color: 'bg-success/15 text-success border-success/20' },
+  aprendizado_humano: { label: 'Aprendizado Humano', icon: Users, color: 'bg-blue-500/15 text-blue-500 border-blue-500/20' },
+  aprendizado_robo: { label: 'Aprendizado Robô', icon: Bot, color: 'bg-purple-500/15 text-purple-500 border-purple-500/20' },
+  melhoria_delma: { label: 'Melhoria Delma', icon: Brain, color: 'bg-amber-500/15 text-amber-500 border-amber-500/20' },
 };
 
 export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestionsTabProps) {
   const [suggestions, setSuggestions] = useState<DelmaSuggestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [analyzingConversations, setAnalyzingConversations] = useState(false);
   const [applyingId, setApplyingId] = useState<string | null>(null);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectingSuggestion, setRejectingSuggestion] = useState<DelmaSuggestion | null>(null);
@@ -46,6 +51,7 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingSuggestion, setEditingSuggestion] = useState<DelmaSuggestion | null>(null);
   const [editedContent, setEditedContent] = useState('');
+  const [filterCategory, setFilterCategory] = useState('all');
 
   const loadSuggestions = useCallback(async () => {
     setLoading(true);
@@ -58,7 +64,8 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
       if (error) throw error;
       const typed = (data as any[]) || [];
       setSuggestions(typed);
-      onSuggestionsCountChange?.(typed.filter(s => s.status === 'pending').length);
+      // Count pending excluding report_schedule (those go to AI Report tab)
+      onSuggestionsCountChange?.(typed.filter(s => s.status === 'pending' && s.category !== 'report_schedule').length);
     } catch (e) {
       console.error('Error loading suggestions:', e);
     } finally {
@@ -70,7 +77,6 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
 
   const autoTriggered = useRef(false);
 
-  // Auto-trigger analysis on first load if no suggestions exist
   useEffect(() => {
     if (!loading && suggestions.length === 0 && !autoTriggered.current && !generating) {
       autoTriggered.current = true;
@@ -106,15 +112,27 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
     }
   };
 
+  const triggerConversationAnalysis = async () => {
+    setAnalyzingConversations(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('brain-learn-from-conversations');
+      if (error) throw error;
+      toast.success(data.message || 'Análise de conversas concluída!');
+      loadSuggestions();
+    } catch (e: any) {
+      toast.error('Erro ao analisar conversas: ' + (e.message || 'Erro desconhecido'));
+    } finally {
+      setAnalyzingConversations(false);
+    }
+  };
+
   const handleApprove = async (suggestion: DelmaSuggestion) => {
     setApplyingId(suggestion.id);
     try {
       const { data: authData } = await supabase.auth.getUser();
       if (!authData?.user) throw new Error('Não autenticado');
 
-      // Execute the action based on category
       if (suggestion.category === 'robot_training' && suggestion.content?.training_suggestion_id) {
-        // Approve the linked robot_training_suggestion
         const { data: trainingSuggestion } = await supabase
           .from('robot_training_suggestions' as any)
           .select('*')
@@ -154,14 +172,24 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
           hour_of_day: suggestion.content.hour_of_day,
           is_active: true,
         });
+      } else if ((suggestion.category === 'aprendizado_humano' || suggestion.category === 'aprendizado_robo') && suggestion.content?.robot_id) {
+        // If there's a robot_id and proposed Q&A, apply it
+        if (suggestion.content.proposed_action?.toLowerCase().includes('q&a') || suggestion.content.proposed_action?.toLowerCase().includes('qa')) {
+          const { data: robot } = await supabase.from('robots').select('qa_pairs').eq('id', suggestion.content.robot_id).single();
+          if (robot && suggestion.content.examples?.length > 0) {
+            const existingQA = Array.isArray(robot.qa_pairs) ? robot.qa_pairs : [];
+            // The proposed action describes what to add
+            await supabase.from('robots').update({
+              qa_pairs: [...existingQA, { question: suggestion.title, answer: suggestion.content.proposed_action }]
+            }).eq('id', suggestion.content.robot_id);
+          }
+        }
       }
 
-      // Update suggestion status
       await supabase.from('delma_suggestions' as any).update({
         status: 'approved', decided_by: authData.user.id, decided_at: new Date().toISOString(),
       }).eq('id', suggestion.id);
 
-      // Store approval in memory
       await supabase.from('delma_memory' as any).insert({
         type: 'manager_feedback',
         source: suggestion.category,
@@ -191,7 +219,6 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
         status: 'rejected', reject_reason: rejectReason || null, decided_by: authData.user.id, decided_at: new Date().toISOString(),
       }).eq('id', rejectingSuggestion.id);
 
-      // Check consecutive rejections for this category/source
       const { data: prevRejections } = await supabase
         .from('delma_memory' as any)
         .select('id, weight')
@@ -238,7 +265,6 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
       const { data: authData } = await supabase.auth.getUser();
       if (!authData?.user) throw new Error('Não autenticado');
 
-      // Update content and approve
       await supabase.from('delma_suggestions' as any).update({
         status: 'edited',
         content: { ...editingSuggestion.content, edited_content: editedContent },
@@ -267,14 +293,24 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
     }
   };
 
-  const pending = suggestions.filter(s => s.status === 'pending');
-  const processed = suggestions.filter(s => s.status !== 'pending');
+  // Filter out report_schedule — those go to the AI Report tab
+  const visibleSuggestions = suggestions.filter(s => s.category !== 'report_schedule');
+  const filteredSuggestions = filterCategory === 'all' ? visibleSuggestions : visibleSuggestions.filter(s => s.category === filterCategory);
+  const pending = filteredSuggestions.filter(s => s.status === 'pending');
+  const processed = filteredSuggestions.filter(s => s.status !== 'pending');
+
+  // Mini-card counts (from all suggestions, not filtered)
+  const humanPatterns = suggestions.filter(s => s.category === 'aprendizado_humano').length;
+  const robotPatterns = suggestions.filter(s => s.category === 'aprendizado_robo').length;
+  const appliedImprovements = suggestions.filter(s => s.status === 'approved' || s.status === 'edited').length;
 
   const getConfidenceColor = (score: number) => {
     if (score >= 80) return 'text-success';
     if (score >= 60) return 'text-warning';
     return 'text-muted-foreground';
   };
+
+  const isLearningType = (category: string) => ['aprendizado_humano', 'aprendizado_robo', 'melhoria_delma'].includes(category);
 
   return (
     <div className="space-y-6">
@@ -290,19 +326,60 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
                 Sugestões fundamentadas em dados — nenhuma ação é executada sem sua aprovação
               </CardDescription>
             </div>
-            <Button onClick={triggerAnalysis} disabled={generating} className="gap-2">
-              {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Brain className="w-4 h-4" />}
-              {generating ? 'Analisando...' : 'Executar Análise'}
-            </Button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button variant="outline" onClick={triggerConversationAnalysis} disabled={analyzingConversations} className="gap-2" size="sm">
+                {analyzingConversations ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
+                {analyzingConversations ? 'Analisando...' : 'Analisar Conversas'}
+              </Button>
+              <Button onClick={triggerAnalysis} disabled={generating} className="gap-2" size="sm">
+                {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Brain className="w-4 h-4" />}
+                {generating ? 'Analisando...' : 'Executar Análise'}
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/5 border border-primary/20 mb-4">
-            <Info className="w-4 h-4 text-primary shrink-0" />
-            <p className="text-xs text-muted-foreground">
-              A Delma analisa padrões de 3 semanas, detecta oportunidades de metas, relatórios e treinamento, e 
-              cita as memórias que embasam cada sugestão. Execução automática: <strong>toda segunda às 7h</strong>.
-            </p>
+          {/* Mini-cards: learning origin indicators */}
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-500/5 border border-blue-500/15">
+              <Users className="w-5 h-5 text-blue-500 shrink-0" />
+              <div>
+                <p className="text-lg font-bold">{humanPatterns}</p>
+                <p className="text-[10px] text-muted-foreground">Padrões humanos</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-purple-500/5 border border-purple-500/15">
+              <Bot className="w-5 h-5 text-purple-500 shrink-0" />
+              <div>
+                <p className="text-lg font-bold">{robotPatterns}</p>
+                <p className="text-[10px] text-muted-foreground">Padrões robôs</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-success/5 border border-success/15">
+              <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
+              <div>
+                <p className="text-lg font-bold">{appliedImprovements}</p>
+                <p className="text-[10px] text-muted-foreground">Melhorias aplicadas</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Filter by category */}
+          <div className="flex items-center gap-2 mb-4">
+            <Filter className="w-4 h-4 text-muted-foreground" />
+            <Select value={filterCategory} onValueChange={setFilterCategory}>
+              <SelectTrigger className="w-[200px] h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas as categorias</SelectItem>
+                <SelectItem value="robot_training">Treinamento de Robô</SelectItem>
+                <SelectItem value="agent_goals">Meta de Atendente</SelectItem>
+                <SelectItem value="aprendizado_humano">Aprendizado Humano</SelectItem>
+                <SelectItem value="aprendizado_robo">Aprendizado Robô</SelectItem>
+                <SelectItem value="melhoria_delma">Melhoria Delma</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           {loading ? (
@@ -315,7 +392,7 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
             <div className="text-center py-12">
               <Sparkles className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
               <p className="text-muted-foreground">Nenhuma sugestão ainda.</p>
-              <p className="text-sm text-muted-foreground/70 mt-1">Clique em "Executar Análise" para a Delma identificar oportunidades.</p>
+              <p className="text-sm text-muted-foreground/70 mt-1">Clique em "Analisar Conversas" para a Delma aprender com atendentes e robôs.</p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -329,6 +406,7 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
                   {pending.map(s => {
                     const config = categoryConfig[s.category] || categoryConfig.robot_training;
                     const CategoryIcon = config.icon;
+                    const isLearning = isLearningType(s.category);
                     return (
                       <Card key={s.id} className="border-border/60">
                         <CardContent className="pt-4 pb-4">
@@ -343,9 +421,54 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
                                 <span className={cn("text-xs font-mono font-bold", getConfidenceColor(s.confidence_score))}>
                                   {s.confidence_score}%
                                 </span>
+                                {isLearning && s.content?.agent_alias && (
+                                  <Badge variant="secondary" className="text-[10px]">👤 {s.content.agent_alias}</Badge>
+                                )}
+                                {isLearning && s.content?.robot_name && (
+                                  <Badge variant="secondary" className="text-[10px]">🤖 {s.content.robot_name}</Badge>
+                                )}
                               </div>
+
+                              {/* Justification */}
                               <p className="text-sm text-muted-foreground mt-2">{s.justification}</p>
                               
+                              {/* Expanded details for learning types */}
+                              {isLearning && (
+                                <Collapsible>
+                                  <CollapsibleTrigger className="flex items-center gap-1 text-xs text-primary/70 hover:text-primary mt-2 transition-colors">
+                                    <ChevronRight className="w-3 h-3" />
+                                    Ver detalhes da sugestão
+                                  </CollapsibleTrigger>
+                                  <CollapsibleContent className="mt-2 space-y-3 pl-2 border-l-2 border-primary/20">
+                                    {/* Pattern */}
+                                    {s.content?.pattern && (
+                                      <div>
+                                        <p className="text-xs font-semibold text-foreground mb-1">📊 Padrão identificado</p>
+                                        <p className="text-xs text-muted-foreground">{s.content.pattern}</p>
+                                      </div>
+                                    )}
+                                    {/* Examples */}
+                                    {s.content?.examples?.length > 0 && (
+                                      <div>
+                                        <p className="text-xs font-semibold text-foreground mb-1">💬 Exemplos de conversas</p>
+                                        <div className="space-y-1">
+                                          {s.content.examples.slice(0, 3).map((ex: string, i: number) => (
+                                            <p key={i} className="text-xs text-muted-foreground italic bg-secondary/30 p-2 rounded">"{ex}"</p>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                    {/* Proposed action */}
+                                    {s.content?.proposed_action && (
+                                      <div>
+                                        <p className="text-xs font-semibold text-foreground mb-1">✅ O que muda se aprovado</p>
+                                        <p className="text-xs text-muted-foreground">{s.content.proposed_action}</p>
+                                      </div>
+                                    )}
+                                  </CollapsibleContent>
+                                </Collapsible>
+                              )}
+
                               {/* Memories used */}
                               {s.memories_used && s.memories_used.length > 0 && (
                                 <Collapsible>
@@ -463,7 +586,7 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
             </DialogDescription>
           </DialogHeader>
           <div>
-            <p className="text-sm text-muted-foreground mb-2">Por que você está rejeitando? (opcional)</p>
+            <p className="text-sm text-muted-foreground mb-2">Por que você está rejeitando? (opcional, mas ajuda a Delma a melhorar)</p>
             <Textarea
               placeholder="Motivo da rejeição..."
               value={rejectReason}

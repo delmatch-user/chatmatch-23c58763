@@ -19,6 +19,9 @@ const categoryConfig: Record<string, { label: string; color: string }> = {
   robot_training: { label: 'Treinamento', color: 'text-primary' },
   agent_goals: { label: 'Metas', color: 'text-warning' },
   report_schedule: { label: 'Relatórios', color: 'text-success' },
+  aprendizado_humano: { label: 'Aprendizado Humano', color: 'text-blue-500' },
+  aprendizado_robo: { label: 'Aprendizado Robô', color: 'text-purple-500' },
+  melhoria_delma: { label: 'Melhoria Delma', color: 'text-amber-500' },
 };
 
 export function DelmaEvolutionTab() {

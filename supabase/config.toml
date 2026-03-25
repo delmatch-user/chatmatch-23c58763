@@ -74,3 +74,6 @@ verify_jwt = false
 
 [functions.brain-analysis]
 verify_jwt = false
+
+[functions.brain-learn-from-conversations]
+verify_jwt = false
