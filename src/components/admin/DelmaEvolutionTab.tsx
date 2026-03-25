@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { DelmaMemoryDrawer } from './DelmaMemoryDrawer';
 import { TrendingUp, Brain, Target, CalendarClock, CheckCircle2, XCircle, Activity, BarChart3, Filter } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
