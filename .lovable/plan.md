@@ -1,50 +1,33 @@
 
 
-# Reestruturar Treinamento Inteligente — Aprender com Atendentes Humanos
+# Reestruturar Aba Sugestões + Nova Edge Function brain-learn-from-conversations
 
-## Problema
-O sistema atual gera sugestões baseadas em gaps de tags e tópicos genéricos, resultando em 65 sugestões pouco relevantes. O treinamento deve aprender com as **respostas reais dos atendentes humanos** do Suporte para tornar os robôs mais naturais e humanos.
+## Status: ✅ Implementado
 
-## Solução
+## O que foi feito
 
-### 1. Botão "Limpar Sugestões Pendentes" no frontend
-- Adicionar botão ao lado de "Gerar Sugestões" na aba Treinamento em `AdminBrain.tsx`
-- Ao clicar, deletar todos os registros com `status = 'pending'` da tabela `robot_training_suggestions`
-- Confirmação via dialog antes de executar
+### 1. Edge Function `brain-learn-from-conversations` (NOVA)
+- Analisa conversas humanas e de robôs dos últimos 7 dias
+- Identifica padrões de resposta eficaz, transferências desnecessárias e gaps
+- Gera sugestões tipadas: `aprendizado_humano`, `aprendizado_robo`, `melhoria_delma`
+- Deduplicação contra sugestões existentes (14 dias)
+- Anonimização de dados de clientes
+- Salva padrões no `delma_memory` como `data_signal`
 
-### 2. Reescrever Edge Function `brain-train-robots/index.ts`
-Nova abordagem: analisar conversas finalizadas por humanos e extrair padrões de respostas excelentes.
+### 2. DelmaSuggestionsTab atualizado
+- Sugestões `report_schedule` removidas da Central (redirecionadas para aba Relatório IA)
+- 3 novos tipos com ícones e cores: Aprendizado Humano, Aprendizado Robô, Melhoria Delma
+- Mini-cards no topo: padrões humanos, padrões robôs, melhorias aplicadas
+- Filtro por categoria
+- Botão "Analisar Conversas" que invoca `brain-learn-from-conversations`
+- Cards expandidos para novos tipos: padrão, exemplos, ação proposta
 
-**Fluxo:**
-1. Buscar robôs do Suporte (filtro existente mantido)
-2. Buscar `conversation_logs` dos últimos 14 dias onde `assigned_to_name IS NOT NULL` (atendidas por humanos)
-3. Filtrar apenas membros do Suporte (via `profile_departments`)
-4. Do campo `messages` (jsonb), extrair pares pergunta-cliente → resposta-humano
-5. Enviar para IA com prompt focado em:
-   - Identificar **padrões de linguagem** dos atendentes (saudações, empatia, encerramento)
-   - Extrair **respostas frequentes** que o robô não tem no Q&A
-   - Sugerir **ajustes de tom** baseados no tom real dos humanos
-   - Comparar como o robô responderia vs como o humano respondeu
-6. Gerar sugestões de Q&A e tom com exemplos reais dos atendentes
+### 3. DelmaReportScheduleSuggestions (NOVO componente)
+- Exibe sugestões de agendamento na aba Relatório IA
+- Aprovar/Rejeitar com feedback para memória
 
-**Prompt da IA reformulado:**
-```text
-Analise as conversas REAIS entre atendentes humanos e clientes.
-Compare com o Q&A atual do robô.
-Identifique:
-1. Respostas humanas recorrentes que o robô não possui
-2. Padrões de linguagem empática dos atendentes
-3. Formas de saudação e encerramento que funcionam
-4. Respostas onde o humano resolve de forma diferente do robô
-Gere sugestões para o robô parecer mais humano e resolver mais.
-```
+### 4. DelmaEvolutionTab atualizado
+- Novos tipos adicionados ao `categoryConfig`
 
-### 3. Atualizar descrição da aba no frontend
-- Mudar texto informativo de "analisa gaps de conhecimento" para "aprende com as respostas dos atendentes humanos"
-
-### Arquivos a editar
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/brain-train-robots/index.ts` | Reescrever lógica para aprender com respostas humanas |
-| `src/pages/admin/AdminBrain.tsx` | Adicionar botão limpar + atualizar textos descritivos |
-
+### 5. Cron job configurado
+- `brain-learn-conversations-weekly`: toda segunda às 10:00 UTC (7h BRT)
