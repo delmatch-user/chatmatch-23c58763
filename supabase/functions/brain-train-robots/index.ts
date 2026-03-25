@@ -38,18 +38,83 @@ serve(async (req) => {
       });
     }
 
-    // 2. Fetch conversation logs from last 7 days that had errors/gaps
+    // 2. Fetch conversations handled by HUMAN agents in the last 14 days
     const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 7);
+    cutoff.setDate(cutoff.getDate() - 14);
 
-    const { data: errorLogs } = await supabase
+    // Get Suporte members
+    let suporteMemberNames = new Set<string>();
+    if (suporteDeptId) {
+      const { data: memberLinks } = await supabase
+        .from("profile_departments")
+        .select("profile_id")
+        .eq("department_id", suporteDeptId);
+      if (memberLinks && memberLinks.length > 0) {
+        const memberIds = memberLinks.map((m: any) => m.profile_id);
+        const { data: profiles } = await supabase
+          .from("profiles")
+          .select("name")
+          .in("id", memberIds);
+        if (profiles) {
+          profiles.forEach((p: any) => suporteMemberNames.add(p.name));
+        }
+      }
+    }
+
+    const { data: humanLogs } = await supabase
       .from("conversation_logs")
-      .select("contact_name, tags, messages, assigned_to_name, finalized_at, channel")
+      .select("contact_name, tags, messages, assigned_to_name, finalized_at, channel, total_messages")
       .gte("finalized_at", cutoff.toISOString())
+      .not("assigned_to_name", "is", null)
       .order("finalized_at", { ascending: false })
       .limit(500);
 
-    // 3. Fetch existing pending suggestions to avoid duplicates
+    // Filter to only Suporte members if we have them
+    const filteredLogs = suporteMemberNames.size > 0
+      ? (humanLogs || []).filter((log: any) => suporteMemberNames.has(log.assigned_to_name))
+      : (humanLogs || []);
+
+    if (filteredLogs.length === 0) {
+      return new Response(JSON.stringify({ message: "Sem conversas humanas recentes para analisar", suggestions: 0 }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // 3. Extract human-client conversation pairs
+    const conversationExamples: Array<{
+      agent: string;
+      tags: string[];
+      exchanges: Array<{ from: string; text: string }>;
+    }> = [];
+
+    for (const log of filteredLogs) {
+      if (conversationExamples.length >= 30) break;
+      const msgs = Array.isArray(log.messages) ? log.messages : [];
+      if (msgs.length < 2) continue;
+
+      // Extract meaningful exchanges (client question → human response)
+      const exchanges: Array<{ from: string; text: string }> = [];
+      for (let i = 0; i < Math.min(msgs.length, 10); i++) {
+        const m = msgs[i];
+        const content = (m.content || "").substring(0, 200);
+        if (!content.trim()) continue;
+        const isAgent = m.sender_id && m.sender_name === log.assigned_to_name;
+        exchanges.push({
+          from: isAgent ? "atendente" : "cliente",
+          text: content,
+        });
+      }
+
+      if (exchanges.length >= 2) {
+        conversationExamples.push({
+          agent: log.assigned_to_name,
+          tags: log.tags || [],
+          exchanges,
+        });
+      }
+    }
+
+    // 4. Fetch existing pending suggestions to avoid duplicates
     const { data: existingSuggestions } = await supabase
       .from("robot_training_suggestions")
       .select("title, robot_id")
@@ -59,61 +124,45 @@ serve(async (req) => {
       (existingSuggestions || []).map((s: any) => `${s.robot_id}:${s.title}`)
     );
 
-    // 4. Analyze gaps - find tags/topics with no Q&A coverage
-    const tagCounts: Record<string, number> = {};
-    const sampleConversations: Array<{ tags: string[]; messages: any[]; contact: string }> = [];
-
-    (errorLogs || []).forEach((log: any) => {
-      (log.tags || []).forEach((tag: string) => {
-        tagCounts[tag] = (tagCounts[tag] || 0) + 1;
-      });
-      if (sampleConversations.length < 20) {
-        const msgs = Array.isArray(log.messages) ? log.messages.slice(0, 5) : [];
-        sampleConversations.push({
-          tags: log.tags || [],
-          messages: msgs,
-          contact: log.contact_name,
-        });
-      }
-    });
-
-    // Sort tags by frequency
-    const topGapTags = Object.entries(tagCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 15);
-
-    if (topGapTags.length === 0 && sampleConversations.length === 0) {
-      return new Response(JSON.stringify({ message: "Sem dados suficientes para gerar sugestões", suggestions: 0 }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // 5. For each robot, generate suggestions using AI
+    // 5. For each robot, generate suggestions based on human responses
     let totalSuggestions = 0;
 
     for (const robot of robots) {
       const existingQA = Array.isArray(robot.qa_pairs) ? robot.qa_pairs : [];
-      const existingQAStr = existingQA.map((qa: any) => `Q: ${qa.question || qa.q}\nA: ${qa.answer || qa.a}`).join("\n---\n");
+      const existingQAStr = existingQA
+        .map((qa: any) => `Q: ${qa.question || qa.q}\nA: ${qa.answer || qa.a}`)
+        .join("\n---\n");
 
-      const systemPrompt = `Você é a Delma, Gerente de Suporte e Treinadora de IA. Analise os gaps de conhecimento e conversas recentes para gerar sugestões de melhoria para o robô "${robot.name}".
+      const systemPrompt = `Você é a Delma, Treinadora de IA. Sua missão é analisar como os ATENDENTES HUMANOS reais respondem aos clientes e usar isso para melhorar o robô "${robot.name}".
 
 REGRAS:
-1. Gere sugestões de Q&A para temas que o robô não cobre adequadamente
-2. Sugira ajustes de tom para que o robô pareça mais humano e empático
-3. Base suas sugestões nos dados REAIS das conversas
-4. NÃO sugira Q&A que já existam na base do robô
-5. Cada sugestão deve ter um título curto e conteúdo prático
-6. Retorne um JSON com array "suggestions"
+1. Analise os padrões de linguagem dos atendentes humanos: saudações, empatia, encerramento
+2. Identifique respostas humanas recorrentes que o robô NÃO tem no Q&A
+3. Sugira Q&A baseados em COMO os humanos realmente respondem (tom, palavras, estrutura)
+4. Compare as respostas humanas com o Q&A existente do robô — sugira melhorias onde o robô é genérico demais
+5. Foque em tornar o robô mais HUMANO e empático, não apenas informativo
+6. NÃO sugira Q&A que já existam na base do robô
+7. Retorne um JSON com array "suggestions"
 
 Formato de cada sugestão:
 {
   "type": "qa" | "tone" | "instruction",
   "title": "título curto descritivo",
-  "content": "conteúdo da sugestão (para Q&A: formato 'Pergunta: ... | Resposta: ...')",
-  "reasoning": "por que esta sugestão é necessária"
+  "content": "conteúdo (para Q&A: formato 'Pergunta: ... | Resposta: ...')",
+  "reasoning": "baseado em qual padrão humano observado"
 }
 
-Gere entre 2-5 sugestões relevantes. Se não houver gaps claros, retorne array vazio.`;
+Gere entre 2-5 sugestões relevantes. Priorize Q&A que capturem o jeito humano de responder.`;
+
+      const conversationsSample = conversationExamples
+        .slice(0, 15)
+        .map((c) => {
+          const dialog = c.exchanges
+            .map((e) => `[${e.from}]: ${e.text}`)
+            .join("\n");
+          return `--- Atendente: ${c.agent} | Tags: ${c.tags.join(", ")} ---\n${dialog}`;
+        })
+        .join("\n\n");
 
       const userPrompt = `ROBÔ: ${robot.name}
 TOM ATUAL: ${robot.tone}
@@ -122,22 +171,15 @@ INSTRUÇÕES ATUAIS: ${(robot.instructions || "").substring(0, 500)}
 Q&A EXISTENTES (${existingQA.length} pares):
 ${existingQAStr.substring(0, 1500) || "Nenhum Q&A cadastrado"}
 
-TOP TAGS COM GAPS (últimos 7 dias):
-${topGapTags.map(([tag, count]) => `- ${tag}: ${count} ocorrências`).join("\n")}
+CONVERSAS REAIS COM ATENDENTES HUMANOS (últimos 14 dias):
+${conversationsSample || "Nenhuma conversa disponível"}
 
-EXEMPLOS DE CONVERSAS RECENTES (primeiras mensagens):
-${sampleConversations.slice(0, 5).map(c => 
-  `[Tags: ${c.tags.join(", ")}] ${c.messages.map((m: any) => `${m.sender_name || "?"}: ${(m.content || "").substring(0, 100)}`).join(" | ")}`
-).join("\n")}
-
-Gere sugestões de melhoria para este robô.`;
+Analise como os atendentes humanos respondem e gere sugestões para o robô "${robot.name}" parecer mais humano e resolver mais situações.`;
 
       try {
-        // Try GPT-5.2, fallback to Gemini
         let aiResponse = "";
-        let model = "openai/gpt-5.2";
 
-        try {
+        const callAI = async (model: string) => {
           const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
             method: "POST",
             headers: {
@@ -153,31 +195,15 @@ Gere sugestões de melhoria para este robô.`;
               response_format: { type: "json_object" },
             }),
           });
-
           if (!resp.ok) throw new Error(`${resp.status}`);
           const data = await resp.json();
-          aiResponse = data.choices?.[0]?.message?.content || "";
-        } catch {
-          model = "google/gemini-2.5-flash";
-          const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${LOVABLE_API_KEY}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              model,
-              messages: [
-                { role: "system", content: systemPrompt },
-                { role: "user", content: userPrompt },
-              ],
-              response_format: { type: "json_object" },
-            }),
-          });
+          return data.choices?.[0]?.message?.content || "";
+        };
 
-          if (!resp.ok) throw new Error(`Gemini fallback error: ${resp.status}`);
-          const data = await resp.json();
-          aiResponse = data.choices?.[0]?.message?.content || "";
+        try {
+          aiResponse = await callAI("google/gemini-2.5-flash");
+        } catch {
+          aiResponse = await callAI("google/gemini-3-flash-preview");
         }
 
         // Parse suggestions
@@ -190,11 +216,11 @@ Gere sugestões de melhoria para este robô.`;
         }
 
         const suggestions = parsed.suggestions || parsed.sugestoes || [];
-        
+
         for (const s of suggestions) {
           const title = s.title || s.titulo || "Sugestão";
           const key = `${robot.id}:${title}`;
-          if (existingSet.has(key)) continue; // Skip duplicates
+          if (existingSet.has(key)) continue;
 
           const { error: insertErr } = await supabase
             .from("robot_training_suggestions")
@@ -218,10 +244,11 @@ Gere sugestões de melhoria para este robô.`;
       }
     }
 
-    return new Response(JSON.stringify({ 
-      message: `Treinamento concluído! ${totalSuggestions} sugestões geradas.`,
+    return new Response(JSON.stringify({
+      message: `Treinamento concluído! ${totalSuggestions} sugestões geradas baseadas em ${conversationExamples.length} conversas humanas.`,
       suggestions: totalSuggestions,
       robots: robots.length,
+      conversationsAnalyzed: conversationExamples.length,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

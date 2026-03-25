@@ -282,6 +282,7 @@ const AdminBrain = () => {
   const [loadingTraining, setLoadingTraining] = useState(false);
   const [generatingTraining, setGeneratingTraining] = useState(false);
   const [applyingId, setApplyingId] = useState<string | null>(null);
+  const [clearingTraining, setClearingTraining] = useState(false);
   const autoTriggeredTraining = useRef(false);
 
   const getEffectivePeriod = useCallback(() => {
