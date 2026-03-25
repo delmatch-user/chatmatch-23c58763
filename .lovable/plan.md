@@ -1,27 +1,24 @@
 
 
-# Finalizar 119 conversas do Suporte como Delma (erro)
+# Filtrar o Cérebro da Delma exclusivamente para o departamento Suporte
 
 ## Situação atual
-Existem **119 conversas** ativas no departamento de Suporte (em_fila, em_atendimento, pendente) que precisam ser finalizadas imediatamente como robô Delma, indicando que ocorreu um erro.
+O Cérebro da Delma busca **todas** as conversas de **todos** os departamentos. Os KPIs globais (total, TMA, TME, tags, erros, taxa de abandono) misturam dados de Suporte com outros departamentos. Apenas os dados de agentes já são filtrados para Suporte.
 
-## Solução
-Criar uma **edge function temporária** `bulk-finalize` que será executada uma única vez para:
-
-1. Buscar todas as 119 conversas do Suporte (status em_fila/em_atendimento/pendente)
-2. Para cada conversa:
-   - Buscar mensagens existentes
-   - Salvar log no `conversation_logs` com `finalized_by_name: "Delma [ERRO]"` e robot ID `e0886607-cf54-4687-a440-4fa334085606`
-   - Deletar mensagens da conversa
-   - Deletar a conversa
-3. **Não enviar protocolo/mensagem** ao cliente (muitas passaram de 24h e dariam erro Meta)
+## O que muda
+Filtrar **todos os dados** do Cérebro exclusivamente para o departamento Suporte (`department_name = 'Suporte'`), garantindo que a Delma aprenda apenas com conversas do seu departamento.
 
 ## Arquivo
 
-| Arquivo | Ação |
-|---------|------|
-| `supabase/functions/bulk-finalize/index.ts` | Criar edge function para finalização em massa |
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/brain-analysis/index.ts` | Adicionar filtro `department_name = 'Suporte'` na query `fetchAllLogs` (tanto período atual quanto anterior) |
 
-## Após execução
-Invocar a função uma vez via `supabase.functions.invoke('bulk-finalize')` e depois remover o arquivo.
+## Mudanças técnicas
+
+1. **Filtro na busca de dados (linhas 98-100)**: Adicionar `.eq("department_name", "Suporte")` nas queries de `fetchAllLogs`, ou filtrar os logs após a busca com `logs.filter(l => l.department_name?.toLowerCase() === 'suporte')`. Isso garante que TMA, TME, tags, erros, taxa de abandono e todos os KPIs reflitam exclusivamente o Suporte.
+
+2. **Remover filtros redundantes (linhas 186, 235, 425)**: Como todos os dados já serão do Suporte, os filtros de `department_name === 'suporte'` nos agent stats e conversation details tornam-se desnecessários — simplificando o código.
+
+Resultado: O Cérebro armazenará e analisará 100% das conversas do Suporte, sem poluição de outros departamentos.
 
