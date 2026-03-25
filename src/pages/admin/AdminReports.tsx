@@ -925,7 +925,7 @@ export default function AdminReports() {
     <MainLayout title="Geral">
       <div className="h-full overflow-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
         <Tabs defaultValue="atual" className="w-full">
-          <TabsList className="grid w-full max-w-lg grid-cols-4">
+          <TabsList className="grid w-full max-w-lg grid-cols-4 text-xs sm:text-sm">
             <TabsTrigger value="atual">Relatórios</TabsTrigger>
             <TabsTrigger value="historico">Histórico</TabsTrigger>
             <TabsTrigger value="escalas">Escalas</TabsTrigger>
