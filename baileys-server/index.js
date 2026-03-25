@@ -2127,6 +2127,25 @@ app.post('/send', async (req, res) => {
           });
         }
 
+        // Cachear mensagem enviada para getMessage (re-criptografia E2E)
+        if (result?.key?.id) {
+          let msgContent;
+          if (type === 'text') {
+            msgContent = { text: message };
+          } else if (type === 'image') {
+            msgContent = { image: { url: message }, caption: req.body.caption || '' };
+          } else if (type === 'audio') {
+            msgContent = { audio: audioBuffer, mimetype: 'audio/ogg; codecs=opus', ptt: true };
+          } else if (type === 'video') {
+            msgContent = { video: { url: message }, caption: req.body.caption || '' };
+          } else if (type === 'document') {
+            msgContent = { document: { url: message }, mimetype: req.body.mimetype || 'application/octet-stream', fileName: req.body.fileName || 'document' };
+          }
+          if (msgContent) {
+            instance.cacheSentMessage(result.key.id, msgContent);
+          }
+        }
+
         usedJid = jid;
         break;
       } catch (err) {
