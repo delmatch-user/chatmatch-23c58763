@@ -2323,7 +2323,7 @@ const AdminBrain = () => {
                         Treinamento Inteligente
                       </CardTitle>
                       <CardDescription>
-                        A Delma aprende com as respostas dos atendentes humanos para tornar os robôs mais naturais
+                        A Delma aprende com as respostas dos atendentes humanos e valida contra a base de conhecimento dos robôs
                       </CardDescription>
                     </div>
                     <div className="flex items-center gap-2">
@@ -2344,10 +2344,74 @@ const AdminBrain = () => {
                   <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/5 border border-primary/20 mb-4">
                     <Info className="w-4 h-4 text-primary shrink-0" />
                     <p className="text-xs text-muted-foreground">
-                      A Delma analisa conversas reais dos atendentes humanos, identifica padrões de linguagem empática e sugere Q&A e ajustes de tom baseados em como os humanos respondem.
-                      Você aprova antes de aplicar.
+                      A Delma analisa conversas reais dos atendentes humanos, valida cada sugestão contra a base de conhecimento do robô e garante conformidade com tom, Q&As e instruções existentes.
                     </p>
                   </div>
+
+                  {/* Knowledge Base Consulted Card */}
+                  {(() => {
+                    // Derive snapshot from suggestions if no trainingRobotsAnalyzed
+                    const snapshots = trainingRobotsAnalyzed.length > 0
+                      ? trainingRobotsAnalyzed
+                      : (() => {
+                          const seen = new Map<string, any>();
+                          trainingSuggestions.forEach(s => {
+                            if (s.knowledge_base_snapshot && !seen.has(s.robot_name)) {
+                              seen.set(s.robot_name, s.knowledge_base_snapshot);
+                            }
+                          });
+                          return Array.from(seen.entries()).map(([name, snap]) => ({
+                            name,
+                            qa_count: snap.qa_count || 0,
+                            tone: snap.tone || 'N/A',
+                            updated_at: snap.updated_at || '',
+                            instructions_excerpt: snap.instructions_excerpt || '',
+                          }));
+                        })();
+                    if (snapshots.length === 0) return null;
+
+                    return (
+                      <Collapsible open={knowledgeBaseOpen} onOpenChange={setKnowledgeBaseOpen} className="mb-4">
+                        <CollapsibleTrigger className="flex items-center gap-2 p-3 rounded-lg bg-muted/30 border border-border/50 hover:bg-muted/50 transition-colors w-full text-left">
+                          <BookOpen className="w-4 h-4 text-primary shrink-0" />
+                          <span className="text-sm font-medium flex-1">📋 Base de conhecimento consultada nesta análise</span>
+                          {knowledgeBaseOpen ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="mt-2 space-y-2">
+                          {snapshots.map((snap, i) => {
+                            const updatedAt = snap.updated_at ? new Date(snap.updated_at) : null;
+                            const daysSinceUpdate = updatedAt ? differenceInDays(new Date(), updatedAt) : null;
+                            const isStale = daysSinceUpdate !== null && daysSinceUpdate > 30;
+
+                            return (
+                              <div key={i} className="p-3 rounded-lg border border-border/50 bg-card/50 space-y-2">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <Bot className="w-4 h-4 text-primary" />
+                                  <span className="text-sm font-medium">{snap.name}</span>
+                                  <Badge variant="outline" className="text-[10px]">{snap.qa_count} Q&As</Badge>
+                                  <Badge variant="secondary" className="text-[10px]">Tom: {snap.tone}</Badge>
+                                </div>
+                                {snap.instructions_excerpt && (
+                                  <p className="text-xs text-muted-foreground line-clamp-2">📝 {snap.instructions_excerpt}...</p>
+                                )}
+                                {updatedAt && (
+                                  <p className="text-xs text-muted-foreground">
+                                    Última atualização: {format(updatedAt, 'dd/MM/yyyy HH:mm', { locale: ptBR })}
+                                  </p>
+                                )}
+                                {isStale && (
+                                  <div className="flex items-center gap-1 text-xs text-warning">
+                                    <AlertTriangle className="w-3 h-3" />
+                                    A base deste robô não é atualizada há {daysSinceUpdate} dias. As sugestões podem não refletir normas recentes.
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </CollapsibleContent>
+                      </Collapsible>
+                    );
+                  })()}
 
                   {loadingTraining ? (
                     <div className="space-y-3">
@@ -2363,62 +2427,159 @@ const AdminBrain = () => {
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {/* Pending first */}
-                      {trainingSuggestions.filter(s => s.status === 'pending').length > 0 && (
-                        <div className="space-y-3">
-                          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                            <AlertCircle className="w-4 h-4 text-warning" />
-                            Aguardando Aprovação ({trainingSuggestions.filter(s => s.status === 'pending').length})
-                          </h3>
-                          {trainingSuggestions.filter(s => s.status === 'pending').map(s => (
-                            <Card key={s.id} className="border-warning/30 bg-warning/5">
-                              <CardContent className="pt-4 pb-4">
-                                <div className="flex items-start gap-3">
-                                  <div className="w-8 h-8 rounded-lg bg-warning/15 flex items-center justify-center shrink-0 mt-0.5">
-                                    {s.suggestion_type === 'qa' ? <MessageSquare className="w-4 h-4 text-warning" /> : 
-                                     s.suggestion_type === 'tone' ? <Users className="w-4 h-4 text-warning" /> :
-                                     <FileText className="w-4 h-4 text-warning" />}
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <span className="text-sm font-medium">{s.title}</span>
-                                      <Badge variant="outline" className="text-[10px]">{s.robot_name}</Badge>
-                                      <Badge variant="secondary" className="text-[10px]">
-                                        {s.suggestion_type === 'qa' ? 'Q&A' : s.suggestion_type === 'tone' ? 'Tom' : 'Instrução'}
-                                      </Badge>
-                                    </div>
-                                    <p className="text-sm text-muted-foreground mt-2 whitespace-pre-wrap">{s.content}</p>
-                                    {s.reasoning && (
-                                      <p className="text-xs text-muted-foreground/70 mt-2 italic">💡 {s.reasoning}</p>
-                                    )}
-                                    <div className="flex items-center gap-2 mt-3">
-                                      <Button
-                                        size="sm"
-                                        onClick={() => handleSuggestionAction(s.id, 'approved')}
-                                        disabled={applyingId === s.id}
-                                        className="gap-1"
-                                      >
-                                        {applyingId === s.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsUp className="w-3 h-3" />}
-                                        Aprovar e Aplicar
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => handleSuggestionAction(s.id, 'rejected')}
-                                        disabled={applyingId === s.id}
-                                        className="gap-1"
-                                      >
-                                        <ThumbsDown className="w-3 h-3" />
-                                        Rejeitar
-                                      </Button>
-                                    </div>
-                                  </div>
-                                </div>
-                              </CardContent>
-                            </Card>
-                          ))}
-                        </div>
-                      )}
+                      {/* Pending aligned/review suggestions */}
+                      {(() => {
+                        const pendingNonConflict = trainingSuggestions.filter(s => s.status === 'pending' && s.compliance_status !== 'conflict');
+                        const pendingConflict = trainingSuggestions.filter(s => s.status === 'pending' && s.compliance_status === 'conflict');
+
+                        return (
+                          <>
+                            {pendingNonConflict.length > 0 && (
+                              <div className="space-y-3">
+                                <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                                  <AlertCircle className="w-4 h-4 text-warning" />
+                                  Aguardando Aprovação ({pendingNonConflict.length})
+                                </h3>
+                                {pendingNonConflict.map(s => (
+                                  <Card key={s.id} className="border-warning/30 bg-warning/5">
+                                    <CardContent className="pt-4 pb-4">
+                                      <div className="flex items-start gap-3">
+                                        <div className="w-8 h-8 rounded-lg bg-warning/15 flex items-center justify-center shrink-0 mt-0.5">
+                                          {s.suggestion_type === 'qa' ? <MessageSquare className="w-4 h-4 text-warning" /> : 
+                                           s.suggestion_type === 'tone' ? <Users className="w-4 h-4 text-warning" /> :
+                                           <FileText className="w-4 h-4 text-warning" />}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="text-sm font-medium">{s.title}</span>
+                                            <Badge variant="outline" className="text-[10px]">{s.robot_name}</Badge>
+                                            <Badge variant="secondary" className="text-[10px]">
+                                              {s.suggestion_type === 'qa' ? 'Q&A' : s.suggestion_type === 'tone' ? 'Tom' : 'Instrução'}
+                                            </Badge>
+                                            {/* Compliance badge */}
+                                            {s.compliance_status === 'aligned' && (
+                                              <Badge className="text-[10px] bg-success/20 text-success border-success/30 hover:bg-success/30">✅ Alinhado às normas</Badge>
+                                            )}
+                                            {s.compliance_status === 'review' && (
+                                              <Badge className="text-[10px] bg-warning/20 text-warning border-warning/30 hover:bg-warning/30" title={s.compliance_notes || ''}>⚠️ Revisar</Badge>
+                                            )}
+                                          </div>
+                                          <p className="text-sm text-muted-foreground mt-2 whitespace-pre-wrap">{s.content}</p>
+                                          {s.compliance_status === 'review' && s.compliance_notes && (
+                                            <div className="mt-2 p-2 rounded bg-warning/10 border border-warning/20">
+                                              <p className="text-xs text-warning">⚠️ {s.compliance_notes}</p>
+                                            </div>
+                                          )}
+                                          {s.reasoning && (
+                                            <p className="text-xs text-muted-foreground/70 mt-2 italic">💡 {s.reasoning}</p>
+                                          )}
+                                          <div className="flex items-center gap-2 mt-3">
+                                            <Button
+                                              size="sm"
+                                              onClick={() => handleSuggestionAction(s.id, 'approved')}
+                                              disabled={applyingId === s.id}
+                                              className="gap-1"
+                                            >
+                                              {applyingId === s.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsUp className="w-3 h-3" />}
+                                              Aprovar e Aplicar
+                                            </Button>
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              onClick={() => handleSuggestionAction(s.id, 'rejected')}
+                                              disabled={applyingId === s.id}
+                                              className="gap-1"
+                                            >
+                                              <ThumbsDown className="w-3 h-3" />
+                                              Rejeitar
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </CardContent>
+                                  </Card>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Conflict section */}
+                            {pendingConflict.length > 0 && (
+                              <Collapsible open={conflictSectionOpen} onOpenChange={setConflictSectionOpen}>
+                                <CollapsibleTrigger className="flex items-center gap-2 p-3 rounded-lg bg-destructive/5 border border-destructive/20 hover:bg-destructive/10 transition-colors w-full text-left mt-4">
+                                  <ShieldAlert className="w-4 h-4 text-destructive shrink-0" />
+                                  <span className="text-sm font-medium text-destructive flex-1">
+                                    Sugestões com conflito — requer atenção ({pendingConflict.length})
+                                  </span>
+                                  {conflictSectionOpen ? <ChevronDown className="w-4 h-4 text-destructive" /> : <ChevronRight className="w-4 h-4 text-destructive" />}
+                                </CollapsibleTrigger>
+                                <CollapsibleContent className="space-y-3 mt-2">
+                                  {pendingConflict.map(s => {
+                                    const isExpanded = expandedConflictIds.has(s.id);
+                                    return (
+                                      <Card key={s.id} className="border-destructive/30 bg-destructive/5">
+                                        <CardContent className="pt-4 pb-4">
+                                          <div className="flex items-start gap-3">
+                                            <div className="w-8 h-8 rounded-lg bg-destructive/15 flex items-center justify-center shrink-0 mt-0.5">
+                                              <ShieldAlert className="w-4 h-4 text-destructive" />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                              <div className="flex items-center gap-2 flex-wrap">
+                                                <span className="text-sm font-medium">{s.title}</span>
+                                                <Badge variant="outline" className="text-[10px]">{s.robot_name}</Badge>
+                                                <Badge className="text-[10px] bg-destructive/20 text-destructive border-destructive/30 hover:bg-destructive/30">❌ Conflito detectado</Badge>
+                                              </div>
+                                              <p className="text-sm text-muted-foreground mt-2 whitespace-pre-wrap">{s.content}</p>
+                                              {s.compliance_notes && (
+                                                <div className="mt-2 p-2 rounded bg-destructive/10 border border-destructive/20">
+                                                  <p className="text-xs text-destructive font-medium mb-1">Conflito encontrado:</p>
+                                                  <p className="text-xs text-destructive/80">{s.compliance_notes}</p>
+                                                </div>
+                                              )}
+                                              {!isExpanded ? (
+                                                <Button
+                                                  size="sm"
+                                                  variant="outline"
+                                                  className="mt-3 gap-1 text-destructive border-destructive/30"
+                                                  onClick={() => setExpandedConflictIds(prev => new Set([...prev, s.id]))}
+                                                >
+                                                  <Eye className="w-3 h-3" />
+                                                  Ler conflito para habilitar ações
+                                                </Button>
+                                              ) : (
+                                                <div className="flex items-center gap-2 mt-3">
+                                                  <Button
+                                                    size="sm"
+                                                    onClick={() => handleSuggestionAction(s.id, 'approved')}
+                                                    disabled={applyingId === s.id}
+                                                    className="gap-1"
+                                                  >
+                                                    {applyingId === s.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsUp className="w-3 h-3" />}
+                                                    Aprovar mesmo assim
+                                                  </Button>
+                                                  <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => handleSuggestionAction(s.id, 'rejected')}
+                                                    disabled={applyingId === s.id}
+                                                    className="gap-1"
+                                                  >
+                                                    <ThumbsDown className="w-3 h-3" />
+                                                    Rejeitar
+                                                  </Button>
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </CardContent>
+                                      </Card>
+                                    );
+                                  })}
+                                </CollapsibleContent>
+                              </Collapsible>
+                            )}
+                          </>
+                        );
+                      })()}
 
                       {/* Approved/Rejected history */}
                       {trainingSuggestions.filter(s => s.status !== 'pending').length > 0 && (
@@ -2431,13 +2592,16 @@ const AdminBrain = () => {
                             {trainingSuggestions.filter(s => s.status !== 'pending').map(s => (
                               <Card key={s.id} className={cn("opacity-70", s.status === 'approved' ? 'border-success/20' : 'border-destructive/20')}>
                                 <CardContent className="pt-3 pb-3">
-                                  <div className="flex items-center gap-2">
+                                  <div className="flex items-center gap-2 flex-wrap">
                                     {s.status === 'approved' ? <CheckCircle2 className="w-4 h-4 text-success" /> : <XCircle className="w-4 h-4 text-destructive" />}
                                     <span className="text-sm">{s.title}</span>
                                     <Badge variant="outline" className="text-[10px]">{s.robot_name}</Badge>
                                     <Badge variant={s.status === 'approved' ? 'default' : 'secondary'} className="text-[10px]">
                                       {s.status === 'approved' ? 'Aplicado' : 'Rejeitado'}
                                     </Badge>
+                                    {s.compliance_status === 'aligned' && <Badge className="text-[10px] bg-success/20 text-success border-success/30">✅</Badge>}
+                                    {s.compliance_status === 'review' && <Badge className="text-[10px] bg-warning/20 text-warning border-warning/30">⚠️</Badge>}
+                                    {s.compliance_status === 'conflict' && <Badge className="text-[10px] bg-destructive/20 text-destructive border-destructive/30">❌</Badge>}
                                   </div>
                                 </CardContent>
                               </Card>
