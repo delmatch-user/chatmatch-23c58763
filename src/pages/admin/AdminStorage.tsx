@@ -254,9 +254,9 @@ export default function AdminStorage() {
 
   return (
     <MainLayout title="Armazenamento">
-      <div className="space-y-6">
+      <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
         {/* Header Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 sm:gap-4">
           <Card>
             <CardContent className="pt-4">
               <div className="flex items-center gap-3">
