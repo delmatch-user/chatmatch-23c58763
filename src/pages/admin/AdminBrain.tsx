@@ -719,7 +719,7 @@ const AdminBrain = () => {
           const parts = suggestion.content.split('|').map((s: string) => s.trim());
           const question = parts[0]?.replace(/^Pergunta:\s*/i, '') || suggestion.title;
           const answer = parts[1]?.replace(/^Resposta:\s*/i, '') || suggestion.content;
-          const newQA = [...existingQA, { question, answer }];
+          const newQA = [...existingQA, { id: crypto.randomUUID(), question, answer }];
           await supabase.from('robots').update({ qa_pairs: newQA }).eq('id', suggestion.robot_id);
         }
       }
