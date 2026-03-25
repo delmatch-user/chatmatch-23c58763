@@ -282,6 +282,7 @@ const AdminBrain = () => {
   const [loadingTraining, setLoadingTraining] = useState(false);
   const [generatingTraining, setGeneratingTraining] = useState(false);
   const [applyingId, setApplyingId] = useState<string | null>(null);
+  const [clearingTraining, setClearingTraining] = useState(false);
   const autoTriggeredTraining = useRef(false);
 
   const getEffectivePeriod = useCallback(() => {
@@ -646,6 +647,23 @@ const AdminBrain = () => {
       toast.error('Erro ao gerar treinamento: ' + (e.message || 'Erro desconhecido'));
     } finally {
       setGeneratingTraining(false);
+    }
+  };
+
+  const clearPendingSuggestions = async () => {
+    setClearingTraining(true);
+    try {
+      const { error } = await supabase
+        .from('robot_training_suggestions' as any)
+        .delete()
+        .eq('status', 'pending');
+      if (error) throw error;
+      toast.success('Sugestões pendentes removidas!');
+      loadTrainingSuggestions();
+    } catch (e: any) {
+      toast.error('Erro ao limpar: ' + (e.message || 'Erro desconhecido'));
+    } finally {
+      setClearingTraining(false);
     }
   };
 
@@ -2268,21 +2286,29 @@ const AdminBrain = () => {
                         Treinamento Inteligente
                       </CardTitle>
                       <CardDescription>
-                        A Delma analisa gaps e sugere melhorias para os robôs parecerem mais humanos
+                        A Delma aprende com as respostas dos atendentes humanos para tornar os robôs mais naturais
                       </CardDescription>
                     </div>
-                    <Button onClick={generateTrainingSuggestions} disabled={generatingTraining} className="gap-2">
-                      {generatingTraining ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                      {generatingTraining ? 'Analisando...' : 'Gerar Sugestões'}
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      {trainingSuggestions.filter(s => s.status === 'pending').length > 0 && (
+                        <Button variant="outline" size="sm" onClick={clearPendingSuggestions} disabled={clearingTraining} className="gap-1 text-destructive hover:text-destructive">
+                          {clearingTraining ? <Loader2 className="w-3 h-3 animate-spin" /> : <XCircle className="w-3 h-3" />}
+                          Limpar Pendentes
+                        </Button>
+                      )}
+                      <Button onClick={generateTrainingSuggestions} disabled={generatingTraining} className="gap-2">
+                        {generatingTraining ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                        {generatingTraining ? 'Analisando...' : 'Gerar Sugestões'}
+                      </Button>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/5 border border-primary/20 mb-4">
                     <Info className="w-4 h-4 text-primary shrink-0" />
                     <p className="text-xs text-muted-foreground">
-                      A Delma analisa conversas recentes, identifica gaps de conhecimento e sugere Q&A e ajustes de tom. 
-                      Você aprova antes de aplicar. Execução automática: <strong>semanal</strong>.
+                      A Delma analisa conversas reais dos atendentes humanos, identifica padrões de linguagem empática e sugere Q&A e ajustes de tom baseados em como os humanos respondem.
+                      Você aprova antes de aplicar.
                     </p>
                   </div>
 
@@ -2296,7 +2322,7 @@ const AdminBrain = () => {
                     <div className="text-center py-12">
                       <GraduationCap className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
                       <p className="text-muted-foreground">Nenhuma sugestão ainda.</p>
-                      <p className="text-sm text-muted-foreground/70 mt-1">Clique em "Gerar Sugestões" para a Delma analisar os gaps.</p>
+                      <p className="text-sm text-muted-foreground/70 mt-1">Clique em "Gerar Sugestões" para a Delma aprender com os atendentes humanos.</p>
                     </div>
                   ) : (
                     <div className="space-y-3">
