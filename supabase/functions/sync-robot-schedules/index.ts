@@ -766,8 +766,141 @@ Deno.serve(async (req) => {
 
     console.log(`[auto-finalize-robot] Total finalizadas: ${robotAutoFinalizedCount}`);
 
+    // ========== QUINTA VARREDURA: auto-finalização de conversas Meta API >24h ==========
+    let metaAutoFinalizedCount = 0;
+    const DELMA_ROBOT_ID = "e0886607-cf54-4687-a440-4fa334085606";
+    const META_24H_CUTOFF = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+    {
+      // Buscar todas as conexões meta_api para identificar seus phone_number_ids
+      const { data: metaConnections } = await supabase
+        .from("whatsapp_connections")
+        .select("phone_number_id")
+        .eq("connection_type", "meta_api");
+
+      const metaInstanceIds = (metaConnections || []).map(c => c.phone_number_id);
+
+      if (metaInstanceIds.length > 0) {
+        // Buscar conversas em_atendimento ou pendente que têm whatsapp_instance_id de Meta API
+        const { data: metaConvs, error: metaConvErr } = await supabase
+          .from("conversations")
+          .select("id, contact_id, department_id, assigned_to, assigned_to_robot, tags, priority, channel, whatsapp_instance_id, created_at, protocol")
+          .in("status", ["em_atendimento", "pendente"])
+          .in("whatsapp_instance_id", metaInstanceIds);
+
+        if (metaConvErr) {
+          console.error("[auto-finalize-meta24h] Erro ao buscar conversas:", metaConvErr.message);
+        } else if (metaConvs && metaConvs.length > 0) {
+          console.log(`[auto-finalize-meta24h] Candidatas: ${metaConvs.length}`);
+
+          for (const conv of metaConvs) {
+            // Buscar última mensagem (qualquer remetente, exceto sistema)
+            const { data: lastMsg } = await supabase
+              .from("messages")
+              .select("created_at")
+              .eq("conversation_id", conv.id)
+              .neq("message_type", "system")
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            if (!lastMsg) continue;
+            if (lastMsg.created_at > META_24H_CUTOFF) continue; // ainda dentro das 24h
+
+            console.log(`[auto-finalize-meta24h] Finalizando conversa ${conv.id} (última msg: ${lastMsg.created_at}, >24h)`);
+
+            // Buscar contato e departamento
+            const [{ data: contactM }, { data: deptM }] = await Promise.all([
+              supabase.from("contacts").select("name, phone, notes, channel").eq("id", conv.contact_id).maybeSingle(),
+              supabase.from("departments").select("name").eq("id", conv.department_id).maybeSingle(),
+            ]);
+
+            // Buscar nome do atendente (se houver)
+            let assignedName: string | null = null;
+            if (conv.assigned_to) {
+              const { data: agentM } = await supabase.from("profiles").select("name").eq("id", conv.assigned_to).maybeSingle();
+              assignedName = agentM?.name || null;
+            } else if (conv.assigned_to_robot) {
+              const { data: robotM } = await supabase.from("robots").select("name").eq("id", conv.assigned_to_robot).maybeSingle();
+              assignedName = robotM?.name || null;
+            }
+
+            // NÃO envia protocolo - janela Meta expirou, mensagem seria rejeitada
+
+            // Inserir mensagem de sistema
+            await supabase.from("messages").insert({
+              conversation_id: conv.id,
+              sender_id: null,
+              sender_name: "[SISTEMA]",
+              content: `Conversa finalizada automaticamente (janela de 24h da API Oficial expirada).${(conv as any).protocol ? ` Protocolo: ${(conv as any).protocol}` : ''}`,
+              message_type: "system",
+              status: "sent",
+            });
+
+            // Buscar todas as mensagens
+            const { data: allMsgsM } = await supabase
+              .from("messages")
+              .select("id, content, sender_name, sender_id, message_type, created_at, status, delivery_status, external_id")
+              .eq("conversation_id", conv.id)
+              .order("created_at", { ascending: true });
+
+            const messagesJsonM = (allMsgsM || []).map(m => ({
+              id: m.id, content: m.content, sender_name: m.sender_name, sender_id: m.sender_id,
+              message_type: m.message_type, created_at: m.created_at, status: m.status,
+              delivery_status: m.delivery_status, external_id: m.external_id,
+            }));
+
+            // Salvar conversation_log como Delma [AUTO-24H]
+            const { error: logErrM } = await supabase.from("conversation_logs").insert({
+              conversation_id: conv.id,
+              contact_name: contactM?.name || "Desconhecido",
+              contact_phone: contactM?.phone || null,
+              contact_notes: contactM?.notes || null,
+              department_id: conv.department_id,
+              department_name: deptM?.name || null,
+              assigned_to: conv.assigned_to || null,
+              assigned_to_name: assignedName,
+              finalized_by: null,
+              finalized_by_name: "Delma [AUTO-24H]",
+              messages: messagesJsonM,
+              total_messages: messagesJsonM.length,
+              started_at: conv.created_at,
+              tags: conv.tags || [],
+              priority: conv.priority || "normal",
+              channel: conv.channel || "whatsapp",
+              whatsapp_instance_id: conv.whatsapp_instance_id || null,
+              agent_status_at_finalization: "auto_finalized_meta_24h",
+              protocol: (conv as any).protocol || null,
+            });
+
+            if (logErrM) {
+              console.error(`[auto-finalize-meta24h] Erro ao salvar log para ${conv.id}:`, logErrM.message);
+              continue;
+            }
+
+            // Deletar mensagens e conversa
+            await supabase.from("messages").delete().eq("conversation_id", conv.id);
+            const { error: delErrM } = await supabase.from("conversations").delete().eq("id", conv.id);
+
+            if (delErrM) {
+              console.error(`[auto-finalize-meta24h] Erro ao deletar conversa ${conv.id}:`, delErrM.message);
+            } else {
+              console.log(`[auto-finalize-meta24h] Conversa ${conv.id} finalizada com sucesso`);
+              metaAutoFinalizedCount++;
+            }
+          }
+        } else {
+          console.log("[auto-finalize-meta24h] Nenhuma conversa candidata.");
+        }
+      } else {
+        console.log("[auto-finalize-meta24h] Nenhuma conexão meta_api encontrada.");
+      }
+    }
+
+    console.log(`[auto-finalize-meta24h] Total finalizadas: ${metaAutoFinalizedCount}`);
+
     return new Response(
-      JSON.stringify({ updated: syncCount, assigned: assignedCount, retried: retriedCount, autoFinalized: autoFinalizedCount, robotAutoFinalized: robotAutoFinalizedCount }),
+      JSON.stringify({ updated: syncCount, assigned: assignedCount, retried: retriedCount, autoFinalized: autoFinalizedCount, robotAutoFinalized: robotAutoFinalizedCount, metaAutoFinalized: metaAutoFinalizedCount }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error: unknown) {
