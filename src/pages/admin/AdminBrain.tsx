@@ -646,11 +646,36 @@ const AdminBrain = () => {
   };
 
   const generateTrainingSuggestions = async () => {
+    // Pre-generation validation: check robots have knowledge base
+    try {
+      const { data: suporteDept } = await supabase.from('departments').select('id').ilike('name', '%suporte%').maybeSingle();
+      if (suporteDept) {
+        const { data: robotsData } = await supabase.from('robots').select('id, name, instructions, qa_pairs, departments').in('status', ['active', 'paused']);
+        const suporteRobots = (robotsData || []).filter((r: any) => {
+          const deps: string[] = r.departments || [];
+          return deps.length === 0 || deps.includes(suporteDept.id);
+        });
+        const emptyBase = suporteRobots.filter((r: any) => !r.instructions && (!Array.isArray(r.qa_pairs) || r.qa_pairs.length === 0));
+        if (emptyBase.length > 0 && emptyBase.length === suporteRobots.length) {
+          toast.error(`A base de conhecimento dos robôs está vazia. Cadastre instruções na aba Robôs antes de gerar sugestões.`);
+          return;
+        }
+        if (emptyBase.length > 0) {
+          toast.warning(`⚠️ ${emptyBase.map((r: any) => r.name).join(', ')} sem base de conhecimento. Sugestões podem ser menos precisas.`);
+        }
+        const fewQA = suporteRobots.filter((r: any) => Array.isArray(r.qa_pairs) && r.qa_pairs.length > 0 && r.qa_pairs.length < 3);
+        if (fewQA.length > 0) {
+          toast.warning(`⚠️ ${fewQA.map((r: any) => r.name).join(', ')} tem poucos Q&As cadastrados.`);
+        }
+      }
+    } catch { /* continue anyway */ }
+
     setGeneratingTraining(true);
     try {
       const { data, error } = await supabase.functions.invoke('brain-train-robots');
       if (error) throw error;
       toast.success(data.message || `${data.suggestions} sugestões geradas!`);
+      if (data.robotsAnalyzed) setTrainingRobotsAnalyzed(data.robotsAnalyzed);
       loadTrainingSuggestions();
     } catch (e: any) {
       toast.error('Erro ao gerar treinamento: ' + (e.message || 'Erro desconhecido'));
