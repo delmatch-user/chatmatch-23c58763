@@ -120,7 +120,7 @@ export default function SDRPipelinePage() {
 
   return (
     <MainLayout>
-      <div className="h-full flex flex-col p-6 overflow-hidden relative">
+      <div className="h-full flex flex-col p-3 sm:p-6 overflow-hidden relative">
         {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4 flex-shrink-0">
           <div>
