@@ -6,6 +6,7 @@ import { ConversationList } from '@/components/chat/ConversationList';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import { ContactDetails } from '@/components/chat/ContactDetails';
 import { Button } from '@/components/ui/button';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { useApp } from '@/contexts/AppContext';
 import { useIsMobile } from '@/hooks/use-mobile';
 
@@ -73,11 +74,19 @@ export default function Conversations() {
           </div>
         </div>
 
-        {/* Contact Details - 320px fixed width */}
-        {showContactDetails && (
+        {/* Contact Details - Desktop: fixed panel, Mobile: Sheet */}
+        {showContactDetails && !isMobile && (
           <div className="w-80 shrink-0 hidden xl:block">
             <ContactDetails conversation={selectedConversation} />
           </div>
+        )}
+
+        {isMobile && (
+          <Sheet open={showContactDetails} onOpenChange={setShowContactDetails}>
+            <SheetContent side="right" className="p-0 w-[85vw] sm:max-w-sm">
+              <ContactDetails conversation={selectedConversation} />
+            </SheetContent>
+          </Sheet>
         )}
       </div>
     </MainLayout>
