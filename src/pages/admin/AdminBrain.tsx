@@ -260,6 +260,23 @@ const AdminBrain = () => {
   const [notifySending, setNotifySending] = useState(false);
   const [agentNotifications, setAgentNotifications] = useState<Record<string, boolean>>({});
 
+  // Training suggestions state
+  interface TrainingSuggestion {
+    id: string;
+    robot_id: string;
+    robot_name: string;
+    suggestion_type: string;
+    title: string;
+    content: string;
+    reasoning: string | null;
+    status: string;
+    created_at: string;
+  }
+  const [trainingSuggestions, setTrainingSuggestions] = useState<TrainingSuggestion[]>([]);
+  const [loadingTraining, setLoadingTraining] = useState(false);
+  const [generatingTraining, setGeneratingTraining] = useState(false);
+  const [applyingId, setApplyingId] = useState<string | null>(null);
+
   const getEffectivePeriod = useCallback(() => {
     if (period === 'custom' && customDateRange.from && customDateRange.to) {
       return Math.max(1, differenceInDays(customDateRange.to, customDateRange.from) + 1);
