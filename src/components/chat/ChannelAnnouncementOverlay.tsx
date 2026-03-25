@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Megaphone } from 'lucide-react';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { format } from 'date-fns';
 
 interface PendingAnnouncement {
@@ -232,11 +233,11 @@ function AnnouncementDialog({
   return (
     <Dialog open={true} onOpenChange={() => {}}>
       <DialogContent
-        className="sm:max-w-md"
+        className="sm:max-w-md max-h-[85vh] flex flex-col"
         onPointerDownOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => e.preventDefault()}
       >
-        <DialogHeader>
+        <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Megaphone className="h-5 w-5 text-primary" />
             Aviso do Canal Suporte
@@ -248,24 +249,26 @@ function AnnouncementDialog({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex items-start gap-3 py-2">
-          <Avatar className="h-10 w-10 shrink-0">
-            <AvatarFallback className="bg-primary/10 text-primary text-sm">
-              {initials}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex-1 min-w-0 space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-sm">{current.sender_name}</span>
-              <span className="text-xs text-muted-foreground">
-                {format(new Date(current.created_at), 'HH:mm')}
-              </span>
+        <ScrollArea className="max-h-[40vh] sm:max-h-[50vh] flex-1 min-h-0">
+          <div className="flex items-start gap-3 py-2 pr-3">
+            <Avatar className="h-10 w-10 shrink-0">
+              <AvatarFallback className="bg-primary/10 text-primary text-sm">
+                {initials}
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex-1 min-w-0 space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-sm">{current.sender_name}</span>
+                <span className="text-xs text-muted-foreground">
+                  {format(new Date(current.created_at), 'HH:mm')}
+                </span>
+              </div>
+              <p className="text-sm whitespace-pre-wrap break-words">{current.content}</p>
             </div>
-            <p className="text-sm whitespace-pre-wrap break-words">{current.content}</p>
           </div>
-        </div>
+        </ScrollArea>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0">
           <Button onClick={onConfirm} disabled={confirming} className="w-full">
             {confirming ? 'Confirmando...' : 'Entendi'}
           </Button>
