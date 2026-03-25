@@ -14,7 +14,7 @@ const navItems = [
 export function MobileBottomNav() {
   const location = useLocation();
   const { conversations, departments } = useApp();
-  const { totalUnread } = useUnreadMessages();
+  const { unreadCount } = useUnreadMessages();
 
   const queueCount = departments.reduce((acc, dept) => acc + dept.queueCount, 0);
   const activeCount = conversations.filter(c => c.status !== 'finalizada' && c.status !== 'em_fila').length;
@@ -24,7 +24,7 @@ export function MobileBottomNav() {
     switch (key) {
       case 'queue': return queueCount;
       case 'conversations': return activeCount;
-      case 'internal': return totalUnread;
+      case 'internal': return unreadCount.internalChat;
       default: return 0;
     }
   };
