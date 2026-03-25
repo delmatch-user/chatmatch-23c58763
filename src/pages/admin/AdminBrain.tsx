@@ -282,6 +282,7 @@ const AdminBrain = () => {
   const [loadingTraining, setLoadingTraining] = useState(false);
   const [generatingTraining, setGeneratingTraining] = useState(false);
   const [applyingId, setApplyingId] = useState<string | null>(null);
+  const autoTriggeredTraining = useRef(false);
 
   const getEffectivePeriod = useCallback(() => {
     if (period === 'custom' && customDateRange.from && customDateRange.to) {
@@ -737,6 +738,14 @@ const AdminBrain = () => {
       saveMaturityScore(knowledgeData.maturityScore);
     }
   }, [metrics, saveMaturityScore]);
+
+  // Auto-trigger training generation on first visit if empty
+  useEffect(() => {
+    if (!loadingTraining && trainingSuggestions.length === 0 && !autoTriggeredTraining.current && !generatingTraining) {
+      autoTriggeredTraining.current = true;
+      generateTrainingSuggestions();
+    }
+  }, [loadingTraining, trainingSuggestions.length]);
 
   // Refresh agent live status every 30s
   useEffect(() => {

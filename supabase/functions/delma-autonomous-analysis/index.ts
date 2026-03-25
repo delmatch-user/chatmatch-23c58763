@@ -476,21 +476,130 @@ async function enrichTrainingSuggestions(
 async function storeDataSignals(supabase: any) {
   const now = new Date();
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const expiresAt = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString();
 
-  // Count recent conversation patterns
+  // 1. Count recent conversation patterns
   const { count: totalConversations } = await supabase
     .from("conversation_logs")
     .select("*", { count: "exact", head: true })
     .eq("department_name", "Suporte")
     .gte("finalized_at", weekAgo.toISOString());
 
+  // 2. Fetch logs for detailed analysis
+  const { data: recentLogs } = await supabase
+    .from("conversation_logs")
+    .select("assigned_to_name, started_at, finalized_at, wait_time, tags, channel")
+    .eq("department_name", "Suporte")
+    .gte("finalized_at", weekAgo.toISOString())
+    .limit(1000);
+
+  // 3. Snapshot of active robots in Suporte
+  const { data: robots } = await supabase
+    .from("robots")
+    .select("id, name, status, qa_pairs, departments")
+    .limit(50);
+  
+  const suporteRobots = (robots || []).filter((r: any) => 
+    (r.departments || []).some((d: string) => d.toLowerCase().includes("suporte"))
+  );
+  
+  if (suporteRobots.length > 0) {
+    await supabase.from("delma_memory").insert({
+      type: "data_signal",
+      source: "robots_snapshot",
+      content: {
+        robots: suporteRobots.map((r: any) => ({
+          name: r.name,
+          status: r.status,
+          qa_count: Array.isArray(r.qa_pairs) ? r.qa_pairs.length : 0,
+        })),
+        snapshot_at: now.toISOString(),
+      },
+      weight: 0.5,
+      expires_at: expiresAt,
+    });
+  }
+
+  // 4. Top 10 tags from last week
+  if (recentLogs && recentLogs.length > 0) {
+    const tagCounts: Record<string, number> = {};
+    const channelCounts: Record<string, number> = {};
+    const agentMetrics: Record<string, { tmaSum: number; tmeSum: number; count: number }> = {};
+
+    for (const log of recentLogs) {
+      // Tags
+      for (const tag of (log.tags || [])) {
+        const t = (tag as string).toLowerCase().trim();
+        if (t) tagCounts[t] = (tagCounts[t] || 0) + 1;
+      }
+      // Channels
+      const ch = log.channel || "whatsapp";
+      channelCounts[ch] = (channelCounts[ch] || 0) + 1;
+
+      // Agent TMA/TME
+      if (log.assigned_to_name) {
+        if (!agentMetrics[log.assigned_to_name]) agentMetrics[log.assigned_to_name] = { tmaSum: 0, tmeSum: 0, count: 0 };
+        const start = new Date(log.started_at).getTime();
+        const end = new Date(log.finalized_at).getTime();
+        const duration = (end - start) / 60000;
+        if (duration > 0 && duration < 480) {
+          agentMetrics[log.assigned_to_name].tmaSum += duration;
+          agentMetrics[log.assigned_to_name].count++;
+        }
+        if (log.wait_time != null) {
+          agentMetrics[log.assigned_to_name].tmeSum += log.wait_time;
+        }
+      }
+    }
+
+    const topTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+
+    await supabase.from("delma_memory").insert({
+      type: "data_signal",
+      source: "weekly_tags",
+      content: { top_tags: topTags, week_ending: now.toISOString() },
+      weight: 0.5,
+      expires_at: expiresAt,
+    });
+
+    // 5. Channel volume
+    await supabase.from("delma_memory").insert({
+      type: "data_signal",
+      source: "channel_volume",
+      content: { channels: channelCounts, week_ending: now.toISOString() },
+      weight: 0.5,
+      expires_at: expiresAt,
+    });
+
+    // 6. Agent TMA/TME averages
+    const agentAvgs = Object.entries(agentMetrics)
+      .filter(([, m]) => m.count > 0)
+      .map(([name, m]) => ({
+        name,
+        avg_tma: Math.round((m.tmaSum / m.count) * 10) / 10,
+        avg_tme: Math.round((m.tmeSum / m.count) * 10) / 10,
+        conversations: m.count,
+      }));
+
+    if (agentAvgs.length > 0) {
+      await supabase.from("delma_memory").insert({
+        type: "data_signal",
+        source: "agent_performance",
+        content: { agents: agentAvgs, week_ending: now.toISOString() },
+        weight: 0.5,
+        expires_at: expiresAt,
+      });
+    }
+  }
+
+  // 7. Overall weekly snapshot
   if (totalConversations && totalConversations > 0) {
     await supabase.from("delma_memory").insert({
       type: "data_signal",
       source: "weekly_snapshot",
       content: { total_conversations: totalConversations, week_ending: now.toISOString() },
       weight: 0.5,
-      expires_at: new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+      expires_at: expiresAt,
     });
   }
 }
