@@ -712,25 +712,35 @@ const AdminBrain = () => {
 
       // If approving a Q&A suggestion, add it to the robot's qa_pairs
       if (action === 'approved' && suggestion.suggestion_type === 'qa') {
-        const { data: robot } = await supabase.from('robots').select('qa_pairs').eq('id', suggestion.robot_id).single();
+        const { data: robot, error: fetchErr } = await supabase.from('robots').select('qa_pairs').eq('id', suggestion.robot_id).single();
+        if (fetchErr) throw new Error('Erro ao buscar robô: ' + fetchErr.message);
         if (robot) {
-          const existingQA = Array.isArray(robot.qa_pairs) ? robot.qa_pairs : [];
+          const rawQA = Array.isArray(robot.qa_pairs) ? robot.qa_pairs : [];
+          // Normalize existing Q&As that may be missing 'id'
+          const existingQA = rawQA.map((qa: any) => ({
+            id: qa.id || crypto.randomUUID(),
+            question: qa.question,
+            answer: qa.answer,
+          }));
           // Parse Q&A from content (format: "Pergunta: ... | Resposta: ...")
           const parts = suggestion.content.split('|').map((s: string) => s.trim());
           const question = parts[0]?.replace(/^Pergunta:\s*/i, '') || suggestion.title;
           const answer = parts[1]?.replace(/^Resposta:\s*/i, '') || suggestion.content;
           const newQA = [...existingQA, { id: crypto.randomUUID(), question, answer }];
-          await supabase.from('robots').update({ qa_pairs: newQA }).eq('id', suggestion.robot_id);
+          const { error: updateErr } = await supabase.from('robots').update({ qa_pairs: newQA }).eq('id', suggestion.robot_id);
+          if (updateErr) throw new Error('Erro ao atualizar robô: ' + updateErr.message);
         }
       }
 
       // If approving a tone/instruction suggestion, append to instructions
       if (action === 'approved' && (suggestion.suggestion_type === 'tone' || suggestion.suggestion_type === 'instruction')) {
-        const { data: robot } = await supabase.from('robots').select('instructions').eq('id', suggestion.robot_id).single();
+        const { data: robot, error: fetchErr } = await supabase.from('robots').select('instructions').eq('id', suggestion.robot_id).single();
+        if (fetchErr) throw new Error('Erro ao buscar robô: ' + fetchErr.message);
         if (robot) {
           const currentInstructions = robot.instructions || '';
           const newInstructions = currentInstructions + '\n\n' + suggestion.content;
-          await supabase.from('robots').update({ instructions: newInstructions }).eq('id', suggestion.robot_id);
+          const { error: updateErr } = await supabase.from('robots').update({ instructions: newInstructions }).eq('id', suggestion.robot_id);
+          if (updateErr) throw new Error('Erro ao atualizar robô: ' + updateErr.message);
         }
       }
 

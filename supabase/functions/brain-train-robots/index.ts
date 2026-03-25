@@ -210,7 +210,7 @@ serve(async (req) => {
 
       const conversationExamples = robotScope === "all"
         ? allConversationExamples
-        : allConversationExamples.filter(c => c.scope === robotScope || c.scope === "geral");
+        : allConversationExamples.filter(c => c.scope === robotScope);
 
       if (conversationExamples.length === 0) {
         console.log(`No relevant conversations for robot ${robot.name} (scope: ${robotScope})`);
@@ -347,10 +347,10 @@ Analise como os atendentes humanos respondem e gere sugestões validadas contra 
     }
 
     return new Response(JSON.stringify({
-      message: `Treinamento concluído! ${totalSuggestions} sugestões geradas baseadas em ${conversationExamples.length} conversas humanas.`,
+      message: `Treinamento concluído! ${totalSuggestions} sugestões geradas baseadas em ${allConversationExamples.length} conversas humanas.`,
       suggestions: totalSuggestions,
       robots: robots.length,
-      conversationsAnalyzed: conversationExamples.length,
+      conversationsAnalyzed: allConversationExamples.length,
       robotsAnalyzed,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
