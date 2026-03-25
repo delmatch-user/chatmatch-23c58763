@@ -25,10 +25,12 @@ const Notifications = () => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const fetchNotifications = async () => {
+    if (!user) return;
     try {
       const { data, error } = await supabase
         .from('agent_notifications' as any)
         .select('*')
+        .eq('agent_id', user.id)
         .order('created_at', { ascending: false });
       if (error) throw error;
       setNotifications((data as any[]) || []);
