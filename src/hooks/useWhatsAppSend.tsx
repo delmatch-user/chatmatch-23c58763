@@ -457,8 +457,10 @@ export function useWhatsAppSend() {
     }
 
     if (data && !data.success) {
-      console.error('[WhatsApp Meta] Falha no envio:', data.error);
-      return { data: null, error: new Error(data.error || 'Falha ao enviar mensagem') };
+      console.error('[WhatsApp Meta] Falha no envio:', data.error, 'errorCode:', data.errorCode);
+      const err = new Error(data.error || 'Falha ao enviar mensagem');
+      (err as any).code = data.errorCode || 'API_ERROR';
+      return { data: null, error: err };
     }
 
     console.log('[WhatsApp Meta] Mensagem enviada com sucesso:', data);

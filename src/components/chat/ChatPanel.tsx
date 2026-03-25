@@ -285,8 +285,12 @@ export function ChatPanel({ conversation, showContactDetails, onToggleContactDet
             conversation.whatsappInstanceId
           );
         }
-      } catch (protocolError) {
-        console.error('[ChatPanel] Erro ao enviar protocolo (prosseguindo com finalização):', protocolError);
+      } catch (protocolError: any) {
+        if (protocolError?.code === 'WINDOW_EXPIRED') {
+          console.warn('[ChatPanel] Janela de 24h expirada — protocolo não enviado (esperado)');
+        } else {
+          console.error('[ChatPanel] Erro ao enviar protocolo (prosseguindo com finalização):', protocolError);
+        }
       }
     }
 
