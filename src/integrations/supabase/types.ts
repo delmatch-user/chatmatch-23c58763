@@ -1374,9 +1374,13 @@ export type Database = {
       robot_training_suggestions: {
         Row: {
           applied_at: string | null
+          compliance_notes: string | null
+          compliance_status: string | null
           content: string
           created_at: string
           id: string
+          knowledge_base_snapshot: Json | null
+          knowledge_base_updated_at: string | null
           reasoning: string | null
           reviewed_at: string | null
           reviewed_by: string | null
@@ -1388,9 +1392,13 @@ export type Database = {
         }
         Insert: {
           applied_at?: string | null
+          compliance_notes?: string | null
+          compliance_status?: string | null
           content: string
           created_at?: string
           id?: string
+          knowledge_base_snapshot?: Json | null
+          knowledge_base_updated_at?: string | null
           reasoning?: string | null
           reviewed_at?: string | null
           reviewed_by?: string | null
@@ -1402,9 +1410,13 @@ export type Database = {
         }
         Update: {
           applied_at?: string | null
+          compliance_notes?: string | null
+          compliance_status?: string | null
           content?: string
           created_at?: string
           id?: string
+          knowledge_base_snapshot?: Json | null
+          knowledge_base_updated_at?: string | null
           reasoning?: string | null
           reviewed_at?: string | null
           reviewed_by?: string | null
