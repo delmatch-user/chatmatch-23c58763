@@ -554,7 +554,7 @@ export default function AdminIntegrations() {
   };
   return (
     <MainLayout title="Integrações">
-      <div className="h-full p-6 overflow-y-auto scrollbar-thin">
+      <div className="h-full p-3 sm:p-6 overflow-y-auto scrollbar-thin">
         <div className="max-w-4xl mx-auto">
           {/* Overview Cards */}
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">

@@ -465,7 +465,7 @@ export default function AdminDashboard() {
   if (loading && departments.length === 0 && users.length === 0) {
     return (
       <MainLayout title="Dashboard">
-        <div className="h-full p-6 flex items-center justify-center">
+        <div className="h-full p-3 sm:p-6 flex items-center justify-center">
           <div className="flex flex-col items-center gap-3">
             <Activity className="w-8 h-8 animate-pulse text-primary" />
             <p className="text-muted-foreground">Carregando dashboard...</p>
