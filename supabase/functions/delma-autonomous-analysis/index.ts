@@ -98,11 +98,32 @@ async function analyzeAgentGoals(
 
   if (!logs || logs.length === 0) return 0;
 
-  // Group by agent and week
+  // Fetch Suporte department members to filter
+  const { data: suporteDept } = await supabase
+    .from("departments")
+    .select("id")
+    .ilike("name", "%suporte%")
+    .limit(1)
+    .maybeSingle();
+  
+  let suporteMemberIds = new Set<string>();
+  if (suporteDept) {
+    const { data: memberLinks } = await supabase
+      .from("profile_departments")
+      .select("profile_id")
+      .eq("department_id", suporteDept.id);
+    if (memberLinks) {
+      suporteMemberIds = new Set(memberLinks.map((m: any) => m.profile_id));
+    }
+  }
+
+  // Group by agent and week — only Suporte members
   const agentWeeks: Record<string, { week1: any[]; week2: any[]; week3: any[] }> = {};
   
   for (const log of logs) {
     if (!log.assigned_to || !log.assigned_to_name) continue;
+    // Skip agents not in Suporte department
+    if (suporteMemberIds.size > 0 && !suporteMemberIds.has(log.assigned_to)) continue;
     const key = log.assigned_to;
     if (!agentWeeks[key]) agentWeeks[key] = { week1: [], week2: [], week3: [] };
     
@@ -478,6 +499,32 @@ async function storeDataSignals(supabase: any) {
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const expiresAt = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString();
 
+  // Fetch Suporte department members
+  const { data: suporteDept } = await supabase
+    .from("departments")
+    .select("id")
+    .ilike("name", "%suporte%")
+    .limit(1)
+    .maybeSingle();
+  
+  let suporteMemberNames = new Set<string>();
+  if (suporteDept) {
+    const { data: memberLinks } = await supabase
+      .from("profile_departments")
+      .select("profile_id")
+      .eq("department_id", suporteDept.id);
+    if (memberLinks && memberLinks.length > 0) {
+      const memberIds = memberLinks.map((m: any) => m.profile_id);
+      const { data: memberProfiles } = await supabase
+        .from("profiles")
+        .select("name")
+        .in("id", memberIds);
+      if (memberProfiles) {
+        suporteMemberNames = new Set(memberProfiles.map((p: any) => p.name));
+      }
+    }
+  }
+
   // 1. Count recent conversation patterns
   const { count: totalConversations } = await supabase
     .from("conversation_logs")
@@ -536,8 +583,8 @@ async function storeDataSignals(supabase: any) {
       const ch = log.channel || "whatsapp";
       channelCounts[ch] = (channelCounts[ch] || 0) + 1;
 
-      // Agent TMA/TME
-      if (log.assigned_to_name) {
+      // Agent TMA/TME — only Suporte members
+      if (log.assigned_to_name && (suporteMemberNames.size === 0 || suporteMemberNames.has(log.assigned_to_name))) {
         if (!agentMetrics[log.assigned_to_name]) agentMetrics[log.assigned_to_name] = { tmaSum: 0, tmeSum: 0, count: 0 };
         const start = new Date(log.started_at).getTime();
         const end = new Date(log.finalized_at).getTime();
