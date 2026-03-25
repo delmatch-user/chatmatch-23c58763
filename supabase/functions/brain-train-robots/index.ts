@@ -119,15 +119,28 @@ serve(async (req) => {
       });
     }
 
-    // 3. Extract human-client conversation pairs
-    const conversationExamples: Array<{
+    // 3. Extract human-client conversation pairs and classify by scope
+    const ESTABELECIMENTO_TAGS = ["erro_sistema", "cancelamento", "financeiro", "operacional", "duvida", "comercial", "b2b", "cadastro", "cardapio", "pagamento", "sistema", "contrato", "estabelecimento"];
+    const MOTOBOY_TAGS = ["motoboy", "entregador", "entrega", "corrida", "rota", "acidente", "urgente", "bloqueio"];
+
+    function classifyConversation(tags: string[]): "estabelecimento" | "motoboy" | "geral" {
+      const lower = tags.map(t => t.toLowerCase());
+      const isMotoboy = lower.some(t => MOTOBOY_TAGS.some(mt => t.includes(mt)));
+      const isEstab = lower.some(t => ESTABELECIMENTO_TAGS.some(et => t.includes(et)));
+      if (isMotoboy && !isEstab) return "motoboy";
+      if (isEstab && !isMotoboy) return "estabelecimento";
+      return "geral";
+    }
+
+    const allConversationExamples: Array<{
       agent: string;
       tags: string[];
+      scope: "estabelecimento" | "motoboy" | "geral";
       exchanges: Array<{ from: string; text: string }>;
     }> = [];
 
     for (const log of filteredLogs) {
-      if (conversationExamples.length >= 30) break;
+      if (allConversationExamples.length >= 50) break;
       const msgs = Array.isArray(log.messages) ? log.messages : [];
       if (msgs.length < 2) continue;
 
@@ -144,12 +157,22 @@ serve(async (req) => {
       }
 
       if (exchanges.length >= 2) {
-        conversationExamples.push({
+        const logTags = log.tags || [];
+        allConversationExamples.push({
           agent: log.assigned_to_name,
-          tags: log.tags || [],
+          tags: logTags,
+          scope: classifyConversation(logTags),
           exchanges,
         });
       }
+    }
+
+    // Helper to determine robot scope by name
+    function getRobotScope(name: string): "estabelecimento" | "motoboy" | "all" {
+      const lower = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (lower.includes("julia")) return "estabelecimento";
+      if (lower.includes("sebastiao")) return "motoboy";
+      return "all";
     }
 
     // 4. Fetch existing pending suggestions to avoid duplicates
@@ -179,7 +202,24 @@ serve(async (req) => {
       };
       robotsAnalyzed.push({ name: robot.name, ...snapshot });
 
+      // Determine robot scope and filter conversations
+      const robotScope = getRobotScope(robot.name);
+      const scopeLabel = robotScope === "estabelecimento" ? "ESTABELECIMENTOS (lojistas, restaurantes, parceiros)"
+        : robotScope === "motoboy" ? "MOTOBOYS (entregadores)"
+        : "todos os públicos";
+
+      const conversationExamples = robotScope === "all"
+        ? allConversationExamples
+        : allConversationExamples.filter(c => c.scope === robotScope || c.scope === "geral");
+
+      if (conversationExamples.length === 0) {
+        console.log(`No relevant conversations for robot ${robot.name} (scope: ${robotScope})`);
+        continue;
+      }
+
       const systemPrompt = `Você é a Delma, Treinadora de IA. Sua missão é analisar como os ATENDENTES HUMANOS reais respondem aos clientes e usar isso para melhorar o robô "${robot.name}".
+
+ESCOPO DO ROBÔ: Este robô atende exclusivamente ${scopeLabel}. Gere sugestões APENAS para esse público. NÃO sugira nada relacionado a ${robotScope === "estabelecimento" ? "motoboys ou entregadores" : robotScope === "motoboy" ? "estabelecimentos ou lojistas" : "outros públicos"}.
 
 CONTEXTO OBRIGATÓRIO — BASE DE CONHECIMENTO DO ROBÔ "${robot.name}":
 ${knowledgeContext}
@@ -226,7 +266,7 @@ Gere entre 2-5 sugestões relevantes. Priorize Q&A que capturem o jeito humano d
         })
         .join("\n\n");
 
-      const userPrompt = `CONVERSAS REAIS COM ATENDENTES HUMANOS (últimos 14 dias, ${conversationExamples.length} conversas analisadas):
+      const userPrompt = `CONVERSAS REAIS COM ATENDENTES HUMANOS — público: ${scopeLabel} (últimos 14 dias, ${conversationExamples.length} conversas analisadas):
 ${conversationsSample || "Nenhuma conversa disponível"}
 
 Analise como os atendentes humanos respondem e gere sugestões validadas contra a base de conhecimento do robô "${robot.name}".`;
