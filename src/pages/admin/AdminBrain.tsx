@@ -896,6 +896,15 @@ const AdminBrain = () => {
               <TabsTrigger value="knowledge">Conhecimento</TabsTrigger>
               <TabsTrigger value="top-tags">Top Tags</TabsTrigger>
               <TabsTrigger value="ai-report">Relatório IA</TabsTrigger>
+              <TabsTrigger value="training" className="gap-1">
+                <Wand2 className="w-3.5 h-3.5" />
+                Treinamento
+                {trainingSuggestions.filter(s => s.status === 'pending').length > 0 && (
+                  <Badge className="ml-1 text-[10px] bg-primary text-primary-foreground h-4 min-w-4 px-1">
+                    {trainingSuggestions.filter(s => s.status === 'pending').length}
+                  </Badge>
+                )}
+              </TabsTrigger>
             </TabsList>
 
             {/* ======================== PAINEL TAB ======================== */}
