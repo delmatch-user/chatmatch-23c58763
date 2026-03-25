@@ -61,19 +61,20 @@ const Notifications = () => {
   };
 
   useEffect(() => {
-    fetchNotifications();
-  }, []);
+    if (user) fetchNotifications();
+  }, [user]);
 
   // Subscribe to realtime
   useEffect(() => {
+    if (!user) return;
     const channel = supabase
       .channel('agent-notifications')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'agent_notifications' }, () => {
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'agent_notifications', filter: `agent_id=eq.${user.id}` }, () => {
         fetchNotifications();
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [user]);
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
 
