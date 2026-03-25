@@ -97,13 +97,14 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
           .eq('id', suggestion.content.training_suggestion_id)
           .maybeSingle();
         
-        if (trainingSuggestion && trainingSuggestion.suggestion_type === 'qa') {
+        const tsData = trainingSuggestion as any;
+        if (tsData && tsData.suggestion_type === 'qa') {
           const { data: robot } = await supabase.from('robots').select('qa_pairs').eq('id', suggestion.content.robot_id).single();
           if (robot) {
             const existingQA = Array.isArray(robot.qa_pairs) ? robot.qa_pairs : [];
-            const parts = trainingSuggestion.content.split('|').map((s: string) => s.trim());
-            const question = parts[0]?.replace(/^Pergunta:\s*/i, '') || trainingSuggestion.title;
-            const answer = parts[1]?.replace(/^Resposta:\s*/i, '') || trainingSuggestion.content;
+            const parts = (tsData.content as string).split('|').map((s: string) => s.trim());
+            const question = parts[0]?.replace(/^Pergunta:\s*/i, '') || tsData.title;
+            const answer = parts[1]?.replace(/^Resposta:\s*/i, '') || tsData.content;
             await supabase.from('robots').update({ qa_pairs: [...existingQA, { question, answer }] }).eq('id', suggestion.content.robot_id);
           }
         }
