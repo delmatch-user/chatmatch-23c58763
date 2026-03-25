@@ -1,34 +1,27 @@
 
 
-# Auto-finalizar conversas Meta API >24h como robô Delma
+# Finalizar 119 conversas do Suporte como Delma (erro)
 
-## Problema
-Conversas vindas da API Oficial do WhatsApp (Meta) geram erro ao tentar responder após 24h (erro 131047). Essas conversas devem ser finalizadas automaticamente como robô "Delma".
+## Situação atual
+Existem **119 conversas** ativas no departamento de Suporte (em_fila, em_atendimento, pendente) que precisam ser finalizadas imediatamente como robô Delma, indicando que ocorreu um erro.
 
 ## Solução
-Adicionar uma **5ª varredura** na edge function `sync-robot-schedules` que:
+Criar uma **edge function temporária** `bulk-finalize` que será executada uma única vez para:
 
-1. Busca conversas `em_atendimento` ou `pendente` que vieram da **Meta API** (identificadas por `whatsapp_instance_id = '428510647008415'` ou conexão `meta_api`)
-2. Verifica se a **última mensagem** tem mais de **24 horas**
-3. Finaliza como robô **Delma** (`e0886607-cf54-4687-a440-4fa334085606`), salvando log com `finalized_by_name: "Delma [AUTO-24H]"`
-4. **Não envia protocolo** (Meta rejeitaria a mensagem por janela expirada)
+1. Buscar todas as 119 conversas do Suporte (status em_fila/em_atendimento/pendente)
+2. Para cada conversa:
+   - Buscar mensagens existentes
+   - Salvar log no `conversation_logs` com `finalized_by_name: "Delma [ERRO]"` e robot ID `e0886607-cf54-4687-a440-4fa334085606`
+   - Deletar mensagens da conversa
+   - Deletar a conversa
+3. **Não enviar protocolo/mensagem** ao cliente (muitas passaram de 24h e dariam erro Meta)
 
 ## Arquivo
 
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/sync-robot-schedules/index.ts` | Adicionar varredura de conversas Meta API >24h após a 4ª varredura existente |
+| Arquivo | Ação |
+|---------|------|
+| `supabase/functions/bulk-finalize/index.ts` | Criar edge function para finalização em massa |
 
-## Lógica da nova varredura
-
-```text
-Para cada conversa em (em_atendimento, pendente):
-  - Tem whatsapp_instance_id?
-  - Esse instance_id pertence a uma whatsapp_connection com connection_type = 'meta_api'?
-  - A última mensagem (qualquer remetente) foi há >24h?
-  → Sim: salvar log (finalized_by_name = "Delma [AUTO-24H]"), deletar msgs + conversa
-  → Não: pular
-```
-
-Não envia mensagem de protocolo pois a janela Meta já expirou. O log no histórico identificará claramente que foi auto-finalizado por limite de 24h da API oficial.
+## Após execução
+Invocar a função uma vez via `supabase.functions.invoke('bulk-finalize')` e depois remover o arquivo.
 
