@@ -202,7 +202,24 @@ serve(async (req) => {
       };
       robotsAnalyzed.push({ name: robot.name, ...snapshot });
 
+      // Determine robot scope and filter conversations
+      const robotScope = getRobotScope(robot.name);
+      const scopeLabel = robotScope === "estabelecimento" ? "ESTABELECIMENTOS (lojistas, restaurantes, parceiros)"
+        : robotScope === "motoboy" ? "MOTOBOYS (entregadores)"
+        : "todos os públicos";
+
+      const conversationExamples = robotScope === "all"
+        ? allConversationExamples
+        : allConversationExamples.filter(c => c.scope === robotScope || c.scope === "geral");
+
+      if (conversationExamples.length === 0) {
+        console.log(`No relevant conversations for robot ${robot.name} (scope: ${robotScope})`);
+        continue;
+      }
+
       const systemPrompt = `Você é a Delma, Treinadora de IA. Sua missão é analisar como os ATENDENTES HUMANOS reais respondem aos clientes e usar isso para melhorar o robô "${robot.name}".
+
+ESCOPO DO ROBÔ: Este robô atende exclusivamente ${scopeLabel}. Gere sugestões APENAS para esse público. NÃO sugira nada relacionado a ${robotScope === "estabelecimento" ? "motoboys ou entregadores" : robotScope === "motoboy" ? "estabelecimentos ou lojistas" : "outros públicos"}.
 
 CONTEXTO OBRIGATÓRIO — BASE DE CONHECIMENTO DO ROBÔ "${robot.name}":
 ${knowledgeContext}
@@ -249,7 +266,7 @@ Gere entre 2-5 sugestões relevantes. Priorize Q&A que capturem o jeito humano d
         })
         .join("\n\n");
 
-      const userPrompt = `CONVERSAS REAIS COM ATENDENTES HUMANOS (últimos 14 dias, ${conversationExamples.length} conversas analisadas):
+      const userPrompt = `CONVERSAS REAIS COM ATENDENTES HUMANOS — público: ${scopeLabel} (últimos 14 dias, ${conversationExamples.length} conversas analisadas):
 ${conversationsSample || "Nenhuma conversa disponível"}
 
 Analise como os atendentes humanos respondem e gere sugestões validadas contra a base de conhecimento do robô "${robot.name}".`;
