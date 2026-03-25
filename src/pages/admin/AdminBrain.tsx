@@ -278,6 +278,10 @@ const AdminBrain = () => {
     reasoning: string | null;
     status: string;
     created_at: string;
+    compliance_status?: string;
+    compliance_notes?: string;
+    knowledge_base_snapshot?: { qa_count: number; instructions_excerpt: string; tone: string; updated_at: string };
+    knowledge_base_updated_at?: string;
   }
   const [trainingSuggestions, setTrainingSuggestions] = useState<TrainingSuggestion[]>([]);
   const [loadingTraining, setLoadingTraining] = useState(false);
@@ -285,6 +289,10 @@ const AdminBrain = () => {
   const [applyingId, setApplyingId] = useState<string | null>(null);
   const [clearingTraining, setClearingTraining] = useState(false);
   const autoTriggeredTraining = useRef(false);
+  const [trainingRobotsAnalyzed, setTrainingRobotsAnalyzed] = useState<Array<{ name: string; qa_count: number; tone: string; updated_at: string; instructions_excerpt: string }>>([]);
+  const [knowledgeBaseOpen, setKnowledgeBaseOpen] = useState(false);
+  const [conflictSectionOpen, setConflictSectionOpen] = useState(false);
+  const [expandedConflictIds, setExpandedConflictIds] = useState<Set<string>>(new Set());
 
   const getEffectivePeriod = useCallback(() => {
     if (period === 'custom' && customDateRange.from && customDateRange.to) {
