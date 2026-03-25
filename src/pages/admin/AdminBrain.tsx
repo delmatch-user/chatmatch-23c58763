@@ -588,9 +588,91 @@ const AdminBrain = () => {
     }
   };
 
-  useEffect(() => {
-    fetchMetrics();
-  }, [fetchMetrics]);
+  // Training suggestions functions
+  const loadTrainingSuggestions = async () => {
+    setLoadingTraining(true);
+    try {
+      const { data, error } = await supabase
+        .from('robot_training_suggestions' as any)
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setTrainingSuggestions((data as any[]) || []);
+    } catch (e) {
+      console.error('Error loading training suggestions:', e);
+    } finally {
+      setLoadingTraining(false);
+    }
+  };
+
+  const generateTrainingSuggestions = async () => {
+    setGeneratingTraining(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('brain-train-robots');
+      if (error) throw error;
+      toast.success(data.message || `${data.suggestions} sugestões geradas!`);
+      loadTrainingSuggestions();
+    } catch (e: any) {
+      toast.error('Erro ao gerar treinamento: ' + (e.message || 'Erro desconhecido'));
+    } finally {
+      setGeneratingTraining(false);
+    }
+  };
+
+  const handleSuggestionAction = async (id: string, action: 'approved' | 'rejected') => {
+    setApplyingId(id);
+    try {
+      const suggestion = trainingSuggestions.find(s => s.id === id);
+      if (!suggestion) throw new Error('Sugestão não encontrada');
+
+      const { data: authData } = await supabase.auth.getUser();
+      if (!authData?.user) throw new Error('Não autenticado');
+
+      // If approving a Q&A suggestion, add it to the robot's qa_pairs
+      if (action === 'approved' && suggestion.suggestion_type === 'qa') {
+        const { data: robot } = await supabase.from('robots').select('qa_pairs').eq('id', suggestion.robot_id).single();
+        if (robot) {
+          const existingQA = Array.isArray(robot.qa_pairs) ? robot.qa_pairs : [];
+          // Parse Q&A from content (format: "Pergunta: ... | Resposta: ...")
+          const parts = suggestion.content.split('|').map((s: string) => s.trim());
+          const question = parts[0]?.replace(/^Pergunta:\s*/i, '') || suggestion.title;
+          const answer = parts[1]?.replace(/^Resposta:\s*/i, '') || suggestion.content;
+          const newQA = [...existingQA, { question, answer }];
+          await supabase.from('robots').update({ qa_pairs: newQA }).eq('id', suggestion.robot_id);
+        }
+      }
+
+      // If approving a tone/instruction suggestion, append to instructions
+      if (action === 'approved' && (suggestion.suggestion_type === 'tone' || suggestion.suggestion_type === 'instruction')) {
+        const { data: robot } = await supabase.from('robots').select('instructions').eq('id', suggestion.robot_id).single();
+        if (robot) {
+          const currentInstructions = robot.instructions || '';
+          const newInstructions = currentInstructions + '\n\n' + suggestion.content;
+          await supabase.from('robots').update({ instructions: newInstructions }).eq('id', suggestion.robot_id);
+        }
+      }
+
+      // Update suggestion status
+      await supabase
+        .from('robot_training_suggestions' as any)
+        .update({
+          status: action,
+          reviewed_by: authData.user.id,
+          reviewed_at: new Date().toISOString(),
+          ...(action === 'approved' ? { applied_at: new Date().toISOString() } : {}),
+        })
+        .eq('id', id);
+
+      toast.success(action === 'approved' ? `Sugestão aplicada no robô ${suggestion.robot_name}!` : 'Sugestão rejeitada.');
+      loadTrainingSuggestions();
+    } catch (e: any) {
+      toast.error('Erro: ' + (e.message || 'Erro desconhecido'));
+    } finally {
+      setApplyingId(null);
+    }
+  };
+
+
 
   useEffect(() => {
     intervalRef.current = setInterval(() => fetchMetrics(), 30000);
