@@ -1,48 +1,51 @@
 
 
-# Filtrar Cérebro exclusivamente para membros do Suporte
+# Filtrar Treinamento apenas para Robôs do Suporte (Júlia e Sebastião)
 
 ## Problema
-O gráfico "Comparativo de TMA por Atendente" e outras seções do Cérebro mostram pessoas de outros departamentos (ex: Castanheira) que atenderam conversas transferidas do Suporte mas não pertencem ao departamento. O Cérebro deve mostrar apenas membros efetivos do Suporte.
+A Edge Function `brain-train-robots` busca **todos** os robôs com status active/paused, incluindo o Arthur (que pertence ao departamento Comercial/SDR). O treinamento deve ser exclusivo para robôs do Suporte.
 
 ## Solução
 
-### 1. Edge Function `brain-analysis/index.ts`
-- Após buscar os logs, consultar `profile_departments` + `departments` para obter a lista de `user_id`s que pertencem ao departamento Suporte
-- Consultar `profiles` para mapear `user_id` → `name`
-- Filtrar `suporteLogs` (linha 187) para incluir apenas agentes cujo nome está na lista de membros do Suporte
-- Mesmo filtro no `prevAgentStats` (linha 235)
+### Arquivo: `supabase/functions/brain-train-robots/index.ts`
 
-### 2. Frontend `AdminBrain.tsx` — `loadAgentLiveStatus`
-- Na função `loadAgentLiveStatus` (linha 459), buscar `profile_departments` filtrando pelo `department_id` do Suporte
-- Filtrar `profiles` para incluir apenas os membros do Suporte no status ao vivo
+Na query de robôs (linha 21-24), adicionar filtro pelo departamento Suporte:
 
-### 3. Edge Function `delma-autonomous-analysis/index.ts`
-- Na função `analyzeAgentGoals`, após buscar os logs, filtrar por membros do Suporte usando `profile_departments`
-- Na função `storeDataSignals`, filtrar `agentMetrics` para incluir apenas membros do Suporte
+1. Buscar o ID do departamento Suporte: `departments.select('id').ilike('name', '%suporte%').maybeSingle()`
+2. Após buscar os robôs, filtrar apenas os que têm o `department_id` do Suporte no array `departments`, **ou** que não têm departamentos definidos (robôs globais que atendem Suporte)
+3. Alternativamente, como a coluna `departments` na tabela `robots` armazena IDs de departamentos como array de strings, filtrar com `.contains('departments', [suporteDeptId])`
 
-### Detalhes técnicos
-```text
-brain-analysis/index.ts:
-  1. Buscar dept Suporte: departments.select('id').ilike('name', '%suporte%')
-  2. Buscar membros: profile_departments.select('profile_id').eq('department_id', suporteDeptId)
-  3. Buscar nomes: profiles.select('id, name').in('id', memberIds)
-  4. Criar Set<string> com nomes de membros
-  5. Filtrar suporteLogs: l.assigned_to_name IN memberNames
-
-AdminBrain.tsx loadAgentLiveStatus:
-  1. Buscar dept Suporte por nome
-  2. Buscar profile_departments para aquele dept
-  3. Filtrar profiles para incluir apenas membros
-
-delma-autonomous-analysis/index.ts:
-  1. Mesmo padrão: buscar dept → membros → filtrar logs
+Mudança concreta — substituir:
+```typescript
+const { data: robots } = await supabase
+  .from("robots")
+  .select("id, name, instructions, qa_pairs, tone, reference_links")
+  .in("status", ["active", "paused"]);
 ```
 
-### Arquivos a editar
+Por:
+```typescript
+// Buscar dept Suporte
+const { data: suporteDept } = await supabase
+  .from("departments").select("id").ilike("name", "%suporte%").maybeSingle();
+const suporteDeptId = suporteDept?.id;
+
+// Buscar robôs e filtrar por Suporte
+const { data: allRobots } = await supabase
+  .from("robots")
+  .select("id, name, instructions, qa_pairs, tone, reference_links, departments")
+  .in("status", ["active", "paused"]);
+
+const robots = (allRobots || []).filter(r => {
+  const deps = r.departments || [];
+  return deps.length === 0 || (suporteDeptId && deps.includes(suporteDeptId));
+});
+```
+
+Isso garante que apenas Júlia e Sebastião (vinculados ao Suporte) recebam sugestões de treinamento, excluindo o Arthur.
+
+### Arquivo único a editar
 | Arquivo | Mudança |
 |---------|---------|
-| `supabase/functions/brain-analysis/index.ts` | Filtrar agentStats por membros do Suporte |
-| `src/pages/admin/AdminBrain.tsx` | Filtrar loadAgentLiveStatus por membros do Suporte |
-| `supabase/functions/delma-autonomous-analysis/index.ts` | Filtrar analyzeAgentGoals e storeDataSignals por membros |
+| `supabase/functions/brain-train-robots/index.ts` | Filtrar robôs pelo departamento Suporte |
 
