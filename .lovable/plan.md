@@ -1,46 +1,50 @@
 
 
-# Visualizador de Memorias da Delma — Drawer Lateral
+# Reestruturar Treinamento Inteligente — Aprender com Atendentes Humanos
 
-## Resumo
-Criar um novo componente `DelmaMemoryDrawer.tsx` que abre como drawer lateral ao clicar no card "Memorias Ativas" na aba Evolucao. O card existente recebe apenas `onClick` e `cursor-pointer` — nenhuma outra alteracao no `DelmaEvolutionTab.tsx`.
+## Problema
+O sistema atual gera sugestões baseadas em gaps de tags e tópicos genéricos, resultando em 65 sugestões pouco relevantes. O treinamento deve aprender com as **respostas reais dos atendentes humanos** do Suporte para tornar os robôs mais naturais e humanos.
 
-## Arquivos
+## Solução
 
-### 1. Novo: `src/components/admin/DelmaMemoryDrawer.tsx`
-Componente completo com:
+### 1. Botão "Limpar Sugestões Pendentes" no frontend
+- Adicionar botão ao lado de "Gerar Sugestões" na aba Treinamento em `AdminBrain.tsx`
+- Ao clicar, deletar todos os registros com `status = 'pending'` da tabela `robot_training_suggestions`
+- Confirmação via dialog antes de executar
 
-**Props:** `open: boolean`, `onOpenChange: (open: boolean) => void`, `memories: any[]`, `onMemoriesUpdate: () => void`
+### 2. Reescrever Edge Function `brain-train-robots/index.ts`
+Nova abordagem: analisar conversas finalizadas por humanos e extrair padrões de respostas excelentes.
 
-**Estrutura do drawer (Sheet side="right", ~600px):**
+**Fluxo:**
+1. Buscar robôs do Suporte (filtro existente mantido)
+2. Buscar `conversation_logs` dos últimos 14 dias onde `assigned_to_name IS NOT NULL` (atendidas por humanos)
+3. Filtrar apenas membros do Suporte (via `profile_departments`)
+4. Do campo `messages` (jsonb), extrair pares pergunta-cliente → resposta-humano
+5. Enviar para IA com prompt focado em:
+   - Identificar **padrões de linguagem** dos atendentes (saudações, empatia, encerramento)
+   - Extrair **respostas frequentes** que o robô não tem no Q&A
+   - Sugerir **ajustes de tom** baseados no tom real dos humanos
+   - Comparar como o robô responderia vs como o humano respondeu
+6. Gerar sugestões de Q&A e tom com exemplos reais dos atendentes
 
-- **Cabecalho:** "O que a Delma sabe" + subtitulo dinamico com contagem e timestamp da memoria mais recente
-- **3 mini-cards horizontais:** Total | Sinais de Dados | Feedbacks do Gestor
-- **Busca + Filtros:**
-  - Input de busca (filtra client-side no `content` stringificado)
-  - Select tipo: Todas | data_signal | manager_feedback
-  - Select area: Todas | Treinamento | Metas | Relatorios | Erros (derivado de `source`)
-  - Select peso: Todas | Alta (>=0.8) | Media (0.4-0.79) | Baixa (<0.4)
-  - Select ordenacao: Recentes | Maior peso | Menor peso | Proximas a expirar
-- **Lista paginada (20 por vez):** cards expansiveis via Collapsible
-  - Colapsado: icone tipo, titulo (de `source` ou `content`), badge area, barra peso colorida, data criacao, "Expira em X dias"
-  - Expandido: `content` JSON formatado legivel (chaves traduzidas pt-BR), detalhes por tipo, botao "Esquecer" com AlertDialog confirmacao → `update expires_at = now()`
-- **Secao "O que a Delma aprendeu a nao fazer":** memorias peso <= 0.1, botao "Reabilitar" → `update weight = 0.5`
-- **Secao "Memorias proximas de expirar":** expires_at < 7 dias, badge laranja, botao "Renovar" → `update expires_at += 90 dias`
-- **Estado vazio:** icone Brain + texto orientativo
-- **Botao "Carregar mais"** para paginacao
+**Prompt da IA reformulado:**
+```text
+Analise as conversas REAIS entre atendentes humanos e clientes.
+Compare com o Q&A atual do robô.
+Identifique:
+1. Respostas humanas recorrentes que o robô não possui
+2. Padrões de linguagem empática dos atendentes
+3. Formas de saudação e encerramento que funcionam
+4. Respostas onde o humano resolve de forma diferente do robô
+Gere sugestões para o robô parecer mais humano e resolver mais.
+```
 
-### 2. Editar: `src/components/admin/DelmaEvolutionTab.tsx`
-Mudancas minimas e aditivas:
-- Importar `DelmaMemoryDrawer` e `useState` para `memoryDrawerOpen`
-- Adicionar `onClick` e `cursor-pointer` ao card de Memorias Ativas (linhas 177-190)
-- Renderizar `<DelmaMemoryDrawer>` no final do JSX, passando `memories`, `open`, `onOpenChange`, `onMemoriesUpdate={loadData}`
+### 3. Atualizar descrição da aba no frontend
+- Mudar texto informativo de "analisa gaps de conhecimento" para "aprende com as respostas dos atendentes humanos"
 
-### Detalhes tecnicos
-- Usa `Sheet` (side="right") do shadcn para o drawer lateral com overlay escuro
-- Paginacao client-side: slice dos dados ja carregados, botao "Carregar mais" incrementa o limite em 20
-- Soft delete = `supabase.from('delma_memory').update({ expires_at: new Date().toISOString() }).eq('id', memoryId)`
-- Renovar = `update({ expires_at: new Date(Date.now() + 90*24*60*60*1000).toISOString() })`
-- Reabilitar = `update({ weight: 0.5 })`
-- JSON content rendering: funcao helper que percorre o objeto traduzindo chaves comuns (ex: `total_conversations` → `Total de Conversas`)
+### Arquivos a editar
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/brain-train-robots/index.ts` | Reescrever lógica para aprender com respostas humanas |
+| `src/pages/admin/AdminBrain.tsx` | Adicionar botão limpar + atualizar textos descritivos |
 
