@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Brain, TrendingUp, TrendingDown, Clock, Users, Bot, AlertTriangle, Sparkles, RefreshCw, MessageSquare, Lightbulb, Activity, Store, Bike, BookOpen, Link2, FileText, CheckCircle2, XCircle, Zap, BarChart3, Target, ShieldAlert, Gauge, ArrowUpRight, ArrowDownRight, Minus, GraduationCap, Trophy, AlertCircle, Rocket, CheckSquare, CircleDot, UserX, Star, Wifi, WifiOff, CalendarDays, ChevronDown, ChevronRight, Flame, Repeat2, Filter, Medal, Crown, Eye, Download, CalendarClock, FileDown, History, Info, Bell } from 'lucide-react';
+import { Brain, TrendingUp, TrendingDown, Clock, Users, Bot, AlertTriangle, Sparkles, RefreshCw, MessageSquare, Lightbulb, Activity, Store, Bike, BookOpen, Link2, FileText, CheckCircle2, XCircle, Zap, BarChart3, Target, ShieldAlert, Gauge, ArrowUpRight, ArrowDownRight, Minus, GraduationCap, Trophy, AlertCircle, Rocket, CheckSquare, CircleDot, UserX, Star, Wifi, WifiOff, CalendarDays, ChevronDown, ChevronRight, Flame, Repeat2, Filter, Medal, Crown, Eye, Download, CalendarClock, FileDown, History, Info, Bell, Wand2, ThumbsUp, ThumbsDown, Loader2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line, PieChart, Pie, Legend } from 'recharts';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -259,6 +259,23 @@ const AdminBrain = () => {
   const [notifyGenerating, setNotifyGenerating] = useState(false);
   const [notifySending, setNotifySending] = useState(false);
   const [agentNotifications, setAgentNotifications] = useState<Record<string, boolean>>({});
+
+  // Training suggestions state
+  interface TrainingSuggestion {
+    id: string;
+    robot_id: string;
+    robot_name: string;
+    suggestion_type: string;
+    title: string;
+    content: string;
+    reasoning: string | null;
+    status: string;
+    created_at: string;
+  }
+  const [trainingSuggestions, setTrainingSuggestions] = useState<TrainingSuggestion[]>([]);
+  const [loadingTraining, setLoadingTraining] = useState(false);
+  const [generatingTraining, setGeneratingTraining] = useState(false);
+  const [applyingId, setApplyingId] = useState<string | null>(null);
 
   const getEffectivePeriod = useCallback(() => {
     if (period === 'custom' && customDateRange.from && customDateRange.to) {
@@ -571,9 +588,91 @@ const AdminBrain = () => {
     }
   };
 
-  useEffect(() => {
-    fetchMetrics();
-  }, [fetchMetrics]);
+  // Training suggestions functions
+  const loadTrainingSuggestions = async () => {
+    setLoadingTraining(true);
+    try {
+      const { data, error } = await supabase
+        .from('robot_training_suggestions' as any)
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setTrainingSuggestions((data as any[]) || []);
+    } catch (e) {
+      console.error('Error loading training suggestions:', e);
+    } finally {
+      setLoadingTraining(false);
+    }
+  };
+
+  const generateTrainingSuggestions = async () => {
+    setGeneratingTraining(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('brain-train-robots');
+      if (error) throw error;
+      toast.success(data.message || `${data.suggestions} sugestões geradas!`);
+      loadTrainingSuggestions();
+    } catch (e: any) {
+      toast.error('Erro ao gerar treinamento: ' + (e.message || 'Erro desconhecido'));
+    } finally {
+      setGeneratingTraining(false);
+    }
+  };
+
+  const handleSuggestionAction = async (id: string, action: 'approved' | 'rejected') => {
+    setApplyingId(id);
+    try {
+      const suggestion = trainingSuggestions.find(s => s.id === id);
+      if (!suggestion) throw new Error('Sugestão não encontrada');
+
+      const { data: authData } = await supabase.auth.getUser();
+      if (!authData?.user) throw new Error('Não autenticado');
+
+      // If approving a Q&A suggestion, add it to the robot's qa_pairs
+      if (action === 'approved' && suggestion.suggestion_type === 'qa') {
+        const { data: robot } = await supabase.from('robots').select('qa_pairs').eq('id', suggestion.robot_id).single();
+        if (robot) {
+          const existingQA = Array.isArray(robot.qa_pairs) ? robot.qa_pairs : [];
+          // Parse Q&A from content (format: "Pergunta: ... | Resposta: ...")
+          const parts = suggestion.content.split('|').map((s: string) => s.trim());
+          const question = parts[0]?.replace(/^Pergunta:\s*/i, '') || suggestion.title;
+          const answer = parts[1]?.replace(/^Resposta:\s*/i, '') || suggestion.content;
+          const newQA = [...existingQA, { question, answer }];
+          await supabase.from('robots').update({ qa_pairs: newQA }).eq('id', suggestion.robot_id);
+        }
+      }
+
+      // If approving a tone/instruction suggestion, append to instructions
+      if (action === 'approved' && (suggestion.suggestion_type === 'tone' || suggestion.suggestion_type === 'instruction')) {
+        const { data: robot } = await supabase.from('robots').select('instructions').eq('id', suggestion.robot_id).single();
+        if (robot) {
+          const currentInstructions = robot.instructions || '';
+          const newInstructions = currentInstructions + '\n\n' + suggestion.content;
+          await supabase.from('robots').update({ instructions: newInstructions }).eq('id', suggestion.robot_id);
+        }
+      }
+
+      // Update suggestion status
+      await supabase
+        .from('robot_training_suggestions' as any)
+        .update({
+          status: action,
+          reviewed_by: authData.user.id,
+          reviewed_at: new Date().toISOString(),
+          ...(action === 'approved' ? { applied_at: new Date().toISOString() } : {}),
+        })
+        .eq('id', id);
+
+      toast.success(action === 'approved' ? `Sugestão aplicada no robô ${suggestion.robot_name}!` : 'Sugestão rejeitada.');
+      loadTrainingSuggestions();
+    } catch (e: any) {
+      toast.error('Erro: ' + (e.message || 'Erro desconhecido'));
+    } finally {
+      setApplyingId(null);
+    }
+  };
+
+
 
   useEffect(() => {
     intervalRef.current = setInterval(() => fetchMetrics(), 30000);
@@ -596,6 +695,7 @@ const AdminBrain = () => {
     loadScheduleConfig();
     loadAgentLiveStatus();
     loadAgentNotifications();
+    loadTrainingSuggestions();
   }, [getEffectivePeriod, loadAgentLiveStatus, loadAgentNotifications]);
 
   // Save maturity score when metrics update
@@ -796,6 +896,15 @@ const AdminBrain = () => {
               <TabsTrigger value="knowledge">Conhecimento</TabsTrigger>
               <TabsTrigger value="top-tags">Top Tags</TabsTrigger>
               <TabsTrigger value="ai-report">Relatório IA</TabsTrigger>
+              <TabsTrigger value="training" className="gap-1">
+                <Wand2 className="w-3.5 h-3.5" />
+                Treinamento
+                {trainingSuggestions.filter(s => s.status === 'pending').length > 0 && (
+                  <Badge className="ml-1 text-[10px] bg-primary text-primary-foreground h-4 min-w-4 px-1">
+                    {trainingSuggestions.filter(s => s.status === 'pending').length}
+                  </Badge>
+                )}
+              </TabsTrigger>
             </TabsList>
 
             {/* ======================== PAINEL TAB ======================== */}
@@ -2062,6 +2171,137 @@ const AdminBrain = () => {
                   </CardContent>
                 </Card>
               )}
+            </TabsContent>
+
+            {/* ======================== TRAINING TAB ======================== */}
+            <TabsContent value="training" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <Wand2 className="w-5 h-5 text-primary" />
+                        Treinamento Inteligente
+                      </CardTitle>
+                      <CardDescription>
+                        A Delma analisa gaps e sugere melhorias para os robôs parecerem mais humanos
+                      </CardDescription>
+                    </div>
+                    <Button onClick={generateTrainingSuggestions} disabled={generatingTraining} className="gap-2">
+                      {generatingTraining ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                      {generatingTraining ? 'Analisando...' : 'Gerar Sugestões'}
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/5 border border-primary/20 mb-4">
+                    <Info className="w-4 h-4 text-primary shrink-0" />
+                    <p className="text-xs text-muted-foreground">
+                      A Delma analisa conversas recentes, identifica gaps de conhecimento e sugere Q&A e ajustes de tom. 
+                      Você aprova antes de aplicar. Execução automática: <strong>semanal</strong>.
+                    </p>
+                  </div>
+
+                  {loadingTraining ? (
+                    <div className="space-y-3">
+                      {[1, 2, 3].map(i => (
+                        <div key={i} className="h-24 rounded-lg animate-pulse bg-muted/30" />
+                      ))}
+                    </div>
+                  ) : trainingSuggestions.length === 0 ? (
+                    <div className="text-center py-12">
+                      <GraduationCap className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+                      <p className="text-muted-foreground">Nenhuma sugestão ainda.</p>
+                      <p className="text-sm text-muted-foreground/70 mt-1">Clique em "Gerar Sugestões" para a Delma analisar os gaps.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {/* Pending first */}
+                      {trainingSuggestions.filter(s => s.status === 'pending').length > 0 && (
+                        <div className="space-y-3">
+                          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 text-warning" />
+                            Aguardando Aprovação ({trainingSuggestions.filter(s => s.status === 'pending').length})
+                          </h3>
+                          {trainingSuggestions.filter(s => s.status === 'pending').map(s => (
+                            <Card key={s.id} className="border-warning/30 bg-warning/5">
+                              <CardContent className="pt-4 pb-4">
+                                <div className="flex items-start gap-3">
+                                  <div className="w-8 h-8 rounded-lg bg-warning/15 flex items-center justify-center shrink-0 mt-0.5">
+                                    {s.suggestion_type === 'qa' ? <MessageSquare className="w-4 h-4 text-warning" /> : 
+                                     s.suggestion_type === 'tone' ? <Users className="w-4 h-4 text-warning" /> :
+                                     <FileText className="w-4 h-4 text-warning" />}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-sm font-medium">{s.title}</span>
+                                      <Badge variant="outline" className="text-[10px]">{s.robot_name}</Badge>
+                                      <Badge variant="secondary" className="text-[10px]">
+                                        {s.suggestion_type === 'qa' ? 'Q&A' : s.suggestion_type === 'tone' ? 'Tom' : 'Instrução'}
+                                      </Badge>
+                                    </div>
+                                    <p className="text-sm text-muted-foreground mt-2 whitespace-pre-wrap">{s.content}</p>
+                                    {s.reasoning && (
+                                      <p className="text-xs text-muted-foreground/70 mt-2 italic">💡 {s.reasoning}</p>
+                                    )}
+                                    <div className="flex items-center gap-2 mt-3">
+                                      <Button
+                                        size="sm"
+                                        onClick={() => handleSuggestionAction(s.id, 'approved')}
+                                        disabled={applyingId === s.id}
+                                        className="gap-1"
+                                      >
+                                        {applyingId === s.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsUp className="w-3 h-3" />}
+                                        Aprovar e Aplicar
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => handleSuggestionAction(s.id, 'rejected')}
+                                        disabled={applyingId === s.id}
+                                        className="gap-1"
+                                      >
+                                        <ThumbsDown className="w-3 h-3" />
+                                        Rejeitar
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Approved/Rejected history */}
+                      {trainingSuggestions.filter(s => s.status !== 'pending').length > 0 && (
+                        <Collapsible>
+                          <CollapsibleTrigger className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-full py-2">
+                            <ChevronRight className="w-4 h-4" />
+                            Histórico ({trainingSuggestions.filter(s => s.status !== 'pending').length} sugestões processadas)
+                          </CollapsibleTrigger>
+                          <CollapsibleContent className="space-y-2 mt-2">
+                            {trainingSuggestions.filter(s => s.status !== 'pending').map(s => (
+                              <Card key={s.id} className={cn("opacity-70", s.status === 'approved' ? 'border-success/20' : 'border-destructive/20')}>
+                                <CardContent className="pt-3 pb-3">
+                                  <div className="flex items-center gap-2">
+                                    {s.status === 'approved' ? <CheckCircle2 className="w-4 h-4 text-success" /> : <XCircle className="w-4 h-4 text-destructive" />}
+                                    <span className="text-sm">{s.title}</span>
+                                    <Badge variant="outline" className="text-[10px]">{s.robot_name}</Badge>
+                                    <Badge variant={s.status === 'approved' ? 'default' : 'secondary'} className="text-[10px]">
+                                      {s.status === 'approved' ? 'Aplicado' : 'Rejeitado'}
+                                    </Badge>
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            ))}
+                          </CollapsibleContent>
+                        </Collapsible>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </TabsContent>
           </Tabs>
         )}

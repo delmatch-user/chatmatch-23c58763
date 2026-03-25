@@ -1240,6 +1240,59 @@ export type Database = {
           },
         ]
       }
+      robot_training_suggestions: {
+        Row: {
+          applied_at: string | null
+          content: string
+          created_at: string
+          id: string
+          reasoning: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          robot_id: string
+          robot_name: string
+          status: string
+          suggestion_type: string
+          title: string
+        }
+        Insert: {
+          applied_at?: string | null
+          content: string
+          created_at?: string
+          id?: string
+          reasoning?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          robot_id: string
+          robot_name: string
+          status?: string
+          suggestion_type?: string
+          title: string
+        }
+        Update: {
+          applied_at?: string | null
+          content?: string
+          created_at?: string
+          id?: string
+          reasoning?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          robot_id?: string
+          robot_name?: string
+          status?: string
+          suggestion_type?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "robot_training_suggestions_robot_id_fkey"
+            columns: ["robot_id"]
+            isOneToOne: false
+            referencedRelation: "robots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       robots: {
         Row: {
           auto_assign: boolean
