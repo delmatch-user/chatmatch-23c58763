@@ -98,11 +98,32 @@ async function analyzeAgentGoals(
 
   if (!logs || logs.length === 0) return 0;
 
-  // Group by agent and week
+  // Fetch Suporte department members to filter
+  const { data: suporteDept } = await supabase
+    .from("departments")
+    .select("id")
+    .ilike("name", "%suporte%")
+    .limit(1)
+    .maybeSingle();
+  
+  let suporteMemberIds = new Set<string>();
+  if (suporteDept) {
+    const { data: memberLinks } = await supabase
+      .from("profile_departments")
+      .select("profile_id")
+      .eq("department_id", suporteDept.id);
+    if (memberLinks) {
+      suporteMemberIds = new Set(memberLinks.map((m: any) => m.profile_id));
+    }
+  }
+
+  // Group by agent and week — only Suporte members
   const agentWeeks: Record<string, { week1: any[]; week2: any[]; week3: any[] }> = {};
   
   for (const log of logs) {
     if (!log.assigned_to || !log.assigned_to_name) continue;
+    // Skip agents not in Suporte department
+    if (suporteMemberIds.size > 0 && !suporteMemberIds.has(log.assigned_to)) continue;
     const key = log.assigned_to;
     if (!agentWeeks[key]) agentWeeks[key] = { week1: [], week2: [], week3: [] };
     
@@ -536,7 +557,8 @@ async function storeDataSignals(supabase: any) {
       const ch = log.channel || "whatsapp";
       channelCounts[ch] = (channelCounts[ch] || 0) + 1;
 
-      // Agent TMA/TME
+      // Agent TMA/TME — note: storeDataSignals uses logs already filtered by department_name=Suporte
+      // but we also need to filter by membership; we'll do post-filter below
       if (log.assigned_to_name) {
         if (!agentMetrics[log.assigned_to_name]) agentMetrics[log.assigned_to_name] = { tmaSum: 0, tmeSum: 0, count: 0 };
         const start = new Date(log.started_at).getTime();

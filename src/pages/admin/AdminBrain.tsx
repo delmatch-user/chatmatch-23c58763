@@ -455,9 +455,28 @@ const AdminBrain = () => {
     } catch {}
   };
 
-  // Load agent live status
+  // Load agent live status — only Suporte department members
   const loadAgentLiveStatus = useCallback(async () => {
     try {
+      // Find Suporte department
+      const { data: suporteDept } = await supabase
+        .from('departments')
+        .select('id')
+        .ilike('name', '%suporte%')
+        .limit(1)
+        .maybeSingle();
+
+      let suporteMemberIds = new Set<string>();
+      if (suporteDept) {
+        const { data: memberLinks } = await supabase
+          .from('profile_departments')
+          .select('profile_id')
+          .eq('department_id', suporteDept.id);
+        if (memberLinks) {
+          suporteMemberIds = new Set(memberLinks.map((m: any) => m.profile_id));
+        }
+      }
+
       const { data: profiles } = await supabase.from('profiles').select('id, name, status');
       const { data: conversations } = await supabase.from('conversations').select('assigned_to').neq('status', 'finalizada');
       if (profiles && conversations) {
@@ -466,7 +485,11 @@ const AdminBrain = () => {
           if (c.assigned_to) openCounts[c.assigned_to] = (openCounts[c.assigned_to] || 0) + 1;
         });
         const statusMap: Record<string, { status: string; openConversations: number; profileId: string }> = {};
-        profiles.forEach((p: any) => {
+        // Only include Suporte members
+        const filteredProfiles = suporteMemberIds.size > 0
+          ? profiles.filter((p: any) => suporteMemberIds.has(p.id))
+          : profiles;
+        filteredProfiles.forEach((p: any) => {
           statusMap[p.name] = { status: p.status, openConversations: openCounts[p.id] || 0, profileId: p.id };
         });
         setAgentLiveStatus(statusMap);

@@ -96,6 +96,32 @@ serve(async (req) => {
     }
 
     // Fetch ALL logs with pagination (no 1000-row limit)
+    // Fetch Suporte department members
+    const { data: suporteDept } = await supabase
+      .from("departments")
+      .select("id")
+      .ilike("name", "%suporte%")
+      .limit(1)
+      .maybeSingle();
+    
+    let suporteMemberNames = new Set<string>();
+    if (suporteDept) {
+      const { data: memberLinks } = await supabase
+        .from("profile_departments")
+        .select("profile_id")
+        .eq("department_id", suporteDept.id);
+      if (memberLinks && memberLinks.length > 0) {
+        const memberIds = memberLinks.map((m: any) => m.profile_id);
+        const { data: memberProfiles } = await supabase
+          .from("profiles")
+          .select("name")
+          .in("id", memberIds);
+        if (memberProfiles) {
+          suporteMemberNames = new Set(memberProfiles.map((p: any) => p.name));
+        }
+      }
+    }
+
     const [logs, prev] = await Promise.all([
       fetchAllLogs(supabase, "*", effectiveStart, effectiveEnd, true),
       fetchAllLogs(supabase, "started_at, finalized_at, wait_time, assigned_to_name, department_name, tags, priority, channel", prevStart, prevEnd, false),
@@ -183,8 +209,8 @@ serve(async (req) => {
     ).length;
     const abandonRate = totalConversas > 0 ? Math.round((abandonedCount / totalConversas) * 1000) / 10 : 0;
 
-    // Agent performance — only agents from "Suporte" department
-    const suporteLogs = logs.filter(l => l.assigned_to_name);
+    // Agent performance — only agents who are members of the Suporte department
+    const suporteLogs = logs.filter(l => l.assigned_to_name && (suporteMemberNames.size === 0 || suporteMemberNames.has(l.assigned_to_name)));
     const agentStats: Record<string, { count: number; totalTime: number; totalWait: number; waitCount: number; tags: Record<string, number>; channels: Record<string, number>; transferredOut: number }> = {};
     const agentDailyStats: Record<string, Record<string, { count: number; tmaSum: number; tmaCount: number; tmeSum: number; tmeCount: number }>> = {};
     suporteLogs.forEach(l => {
@@ -231,9 +257,9 @@ serve(async (req) => {
       }
     });
 
-    // Previous period agent stats — also only "Suporte"
+    // Previous period agent stats — only Suporte members
     const prevAgentStats: Record<string, { count: number; totalTime: number }> = {};
-    prev.filter(l => l.assigned_to_name).forEach(l => {
+    prev.filter(l => l.assigned_to_name && (suporteMemberNames.size === 0 || suporteMemberNames.has(l.assigned_to_name))).forEach(l => {
       const name = l.assigned_to_name!;
       if (!prevAgentStats[name]) prevAgentStats[name] = { count: 0, totalTime: 0 };
       prevAgentStats[name].count++;
