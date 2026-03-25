@@ -181,7 +181,7 @@ export default function AdminRankingConfig() {
   if (!suporteDept) {
     return (
       <MainLayout>
-        <div className="p-6">
+        <div className="p-3 sm:p-6">
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
@@ -195,7 +195,7 @@ export default function AdminRankingConfig() {
 
   return (
     <MainLayout>
-      <div className="p-6 space-y-6 max-w-4xl mx-auto">
+      <div className="p-3 sm:p-6 space-y-4 sm:space-y-6 max-w-4xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">

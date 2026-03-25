@@ -166,7 +166,7 @@ export default function SDRSchedulingPage() {
 
   return (
     <MainLayout>
-      <div className="h-full flex flex-col p-6 overflow-hidden">
+      <div className="h-full flex flex-col p-3 sm:p-6 overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between mb-4 flex-shrink-0">
           <div>

@@ -208,8 +208,8 @@ export default function SDRContactsPage() {
 
   return (
     <MainLayout>
-      <div className="p-8 h-full overflow-y-auto">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4">
+      <div className="p-3 sm:p-6 lg:p-8 h-full overflow-y-auto">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 sm:mb-8 gap-4">
           <div>
             <h2 className="text-3xl font-bold tracking-tight">Contatos</h2>
             <p className="text-sm text-muted-foreground mt-1">Contatos do WhatsApp sincronizados automaticamente.</p>

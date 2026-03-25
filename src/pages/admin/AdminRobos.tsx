@@ -393,32 +393,32 @@ export default function AdminRobos() {
       <MainLayout>
         <div className="flex h-[calc(100vh-4rem)]">
           {/* Config Panel */}
-          <div className="flex-1 flex flex-col border-r border-border">
+          <div className="flex-1 flex flex-col border-r border-border min-w-0">
             {/* Tabs Header */}
             <div className="border-b border-border">
               <Tabs value={configTab} onValueChange={setConfigTab}>
-                <TabsList className="w-full justify-start rounded-none border-b bg-transparent p-0">
+                <TabsList className="w-full justify-start rounded-none border-b bg-transparent p-0 overflow-x-auto no-scrollbar">
                   <TabsTrigger 
                     value="personalidade" 
-                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-6 py-3"
+                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-3 sm:px-6 py-3 text-xs sm:text-sm whitespace-nowrap"
                   >
                     Personalidade
                   </TabsTrigger>
                   <TabsTrigger 
                     value="conhecimento"
-                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-6 py-3"
+                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-3 sm:px-6 py-3 text-xs sm:text-sm whitespace-nowrap"
                   >
                     Base de conhecimento
                   </TabsTrigger>
                   <TabsTrigger 
                     value="ferramentas"
-                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-6 py-3"
+                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-3 sm:px-6 py-3 text-xs sm:text-sm whitespace-nowrap"
                   >
                     Ferramentas
                   </TabsTrigger>
                   <TabsTrigger 
                     value="horarios"
-                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-6 py-3"
+                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-3 sm:px-6 py-3 text-xs sm:text-sm whitespace-nowrap"
                   >
                     Horários
                   </TabsTrigger>
@@ -428,11 +428,11 @@ export default function AdminRobos() {
 
             {/* Tab Content */}
             <ScrollArea className="flex-1">
-              <div className="p-6">
+              <div className="p-3 sm:p-6">
                 {configTab === 'personalidade' && (
                   <div className="space-y-6">
                     {/* Avatar and Name Row */}
-                    <div className="flex gap-6">
+                    <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
                       <div className="flex items-start gap-4 flex-1">
                         <div className="relative group">
                           <Avatar className="h-16 w-16">
