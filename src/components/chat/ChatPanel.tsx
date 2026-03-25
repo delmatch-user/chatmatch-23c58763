@@ -276,7 +276,7 @@ export function ChatPanel({ conversation, showContactDetails, onToggleContactDet
           const senderLabel = user.role === 'franqueado' ? `${firstName} - Franqueado` : `${firstName} - ${department?.name || 'Atendimento'}`;
           const formattedMsg = isMachine ? protocolMessage : `*${senderLabel}*: ${protocolMessage}`;
 
-          await sendWhatsAppMessage(
+          const protocolResult = await sendWhatsAppMessage(
             sendTo, formattedMsg, 'text',
             conversation.contact.id, conversation.departmentId,
             undefined, undefined,
@@ -284,9 +284,16 @@ export function ChatPanel({ conversation, showContactDetails, onToggleContactDet
             isMachine ? senderLabel : undefined,
             conversation.whatsappInstanceId
           );
+          if (protocolResult.error) {
+            throw protocolResult.error;
+          }
         }
-      } catch (protocolError) {
-        console.error('[ChatPanel] Erro ao enviar protocolo (prosseguindo com finalização):', protocolError);
+      } catch (protocolError: any) {
+        if (protocolError?.code === 'WINDOW_EXPIRED') {
+          console.warn('[ChatPanel] Janela de 24h expirada — protocolo não enviado (esperado)');
+        } else {
+          console.error('[ChatPanel] Erro ao enviar protocolo (prosseguindo com finalização):', protocolError);
+        }
       }
     }
 

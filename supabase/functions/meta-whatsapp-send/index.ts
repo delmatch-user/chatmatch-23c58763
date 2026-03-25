@@ -153,6 +153,25 @@ serve(async (req) => {
 
     if (!response.ok) {
       console.error('[Meta Send] Erro da API:', responseData);
+      const metaErrorCode = responseData.error?.code;
+      const isWindowExpired = metaErrorCode === 131000 || metaErrorCode === 131047;
+      
+      if (isWindowExpired) {
+        console.warn('[Meta Send] ⚠️ Janela de 24h expirada para:', formattedTo);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'Janela de 24h expirada — não é possível enviar mensagem',
+            errorCode: 'WINDOW_EXPIRED',
+            metaCode: metaErrorCode
+          }),
+          {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          }
+        );
+      }
+      
       throw new Error(responseData.error?.message || 'Erro ao enviar mensagem');
     }
 
