@@ -14,6 +14,59 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_goals: {
+        Row: {
+          agent_id: string
+          agent_name: string
+          current_value: number
+          decided_at: string | null
+          decided_by: string | null
+          id: string
+          metric: string
+          reject_reason: string | null
+          status: string
+          suggested_at: string
+          suggested_value: number
+          suggestion_id: string | null
+        }
+        Insert: {
+          agent_id: string
+          agent_name?: string
+          current_value?: number
+          decided_at?: string | null
+          decided_by?: string | null
+          id?: string
+          metric?: string
+          reject_reason?: string | null
+          status?: string
+          suggested_at?: string
+          suggested_value?: number
+          suggestion_id?: string | null
+        }
+        Update: {
+          agent_id?: string
+          agent_name?: string
+          current_value?: number
+          decided_at?: string | null
+          decided_by?: string | null
+          id?: string
+          metric?: string
+          reject_reason?: string | null
+          status?: string
+          suggested_at?: string
+          suggested_value?: number
+          suggestion_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_goals_suggestion_id_fkey"
+            columns: ["suggestion_id"]
+            isOneToOne: false
+            referencedRelation: "delma_suggestions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agent_notifications: {
         Row: {
           agent_id: string
@@ -497,6 +550,84 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      delma_memory: {
+        Row: {
+          content: Json
+          created_at: string
+          expires_at: string
+          id: string
+          related_suggestion_id: string | null
+          source: string
+          type: string
+          weight: number
+        }
+        Insert: {
+          content?: Json
+          created_at?: string
+          expires_at?: string
+          id?: string
+          related_suggestion_id?: string | null
+          source?: string
+          type?: string
+          weight?: number
+        }
+        Update: {
+          content?: Json
+          created_at?: string
+          expires_at?: string
+          id?: string
+          related_suggestion_id?: string | null
+          source?: string
+          type?: string
+          weight?: number
+        }
+        Relationships: []
+      }
+      delma_suggestions: {
+        Row: {
+          category: string
+          confidence_score: number
+          content: Json
+          created_at: string
+          decided_at: string | null
+          decided_by: string | null
+          id: string
+          justification: string
+          memories_used: Json
+          reject_reason: string | null
+          status: string
+          title: string
+        }
+        Insert: {
+          category?: string
+          confidence_score?: number
+          content?: Json
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          id?: string
+          justification?: string
+          memories_used?: Json
+          reject_reason?: string | null
+          status?: string
+          title: string
+        }
+        Update: {
+          category?: string
+          confidence_score?: number
+          content?: Json
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          id?: string
+          justification?: string
+          memories_used?: Json
+          reject_reason?: string | null
+          status?: string
+          title?: string
+        }
+        Relationships: []
       }
       departments: {
         Row: {
