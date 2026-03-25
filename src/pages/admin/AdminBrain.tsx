@@ -2172,6 +2172,137 @@ const AdminBrain = () => {
                 </Card>
               )}
             </TabsContent>
+
+            {/* ======================== TRAINING TAB ======================== */}
+            <TabsContent value="training" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <Wand2 className="w-5 h-5 text-primary" />
+                        Treinamento Inteligente
+                      </CardTitle>
+                      <CardDescription>
+                        A Delma analisa gaps e sugere melhorias para os robôs parecerem mais humanos
+                      </CardDescription>
+                    </div>
+                    <Button onClick={generateTrainingSuggestions} disabled={generatingTraining} className="gap-2">
+                      {generatingTraining ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                      {generatingTraining ? 'Analisando...' : 'Gerar Sugestões'}
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/5 border border-primary/20 mb-4">
+                    <Info className="w-4 h-4 text-primary shrink-0" />
+                    <p className="text-xs text-muted-foreground">
+                      A Delma analisa conversas recentes, identifica gaps de conhecimento e sugere Q&A e ajustes de tom. 
+                      Você aprova antes de aplicar. Execução automática: <strong>semanal</strong>.
+                    </p>
+                  </div>
+
+                  {loadingTraining ? (
+                    <div className="space-y-3">
+                      {[1, 2, 3].map(i => (
+                        <div key={i} className="h-24 rounded-lg animate-pulse bg-muted/30" />
+                      ))}
+                    </div>
+                  ) : trainingSuggestions.length === 0 ? (
+                    <div className="text-center py-12">
+                      <GraduationCap className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+                      <p className="text-muted-foreground">Nenhuma sugestão ainda.</p>
+                      <p className="text-sm text-muted-foreground/70 mt-1">Clique em "Gerar Sugestões" para a Delma analisar os gaps.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {/* Pending first */}
+                      {trainingSuggestions.filter(s => s.status === 'pending').length > 0 && (
+                        <div className="space-y-3">
+                          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 text-warning" />
+                            Aguardando Aprovação ({trainingSuggestions.filter(s => s.status === 'pending').length})
+                          </h3>
+                          {trainingSuggestions.filter(s => s.status === 'pending').map(s => (
+                            <Card key={s.id} className="border-warning/30 bg-warning/5">
+                              <CardContent className="pt-4 pb-4">
+                                <div className="flex items-start gap-3">
+                                  <div className="w-8 h-8 rounded-lg bg-warning/15 flex items-center justify-center shrink-0 mt-0.5">
+                                    {s.suggestion_type === 'qa' ? <MessageSquare className="w-4 h-4 text-warning" /> : 
+                                     s.suggestion_type === 'tone' ? <Users className="w-4 h-4 text-warning" /> :
+                                     <FileText className="w-4 h-4 text-warning" />}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-sm font-medium">{s.title}</span>
+                                      <Badge variant="outline" className="text-[10px]">{s.robot_name}</Badge>
+                                      <Badge variant="secondary" className="text-[10px]">
+                                        {s.suggestion_type === 'qa' ? 'Q&A' : s.suggestion_type === 'tone' ? 'Tom' : 'Instrução'}
+                                      </Badge>
+                                    </div>
+                                    <p className="text-sm text-muted-foreground mt-2 whitespace-pre-wrap">{s.content}</p>
+                                    {s.reasoning && (
+                                      <p className="text-xs text-muted-foreground/70 mt-2 italic">💡 {s.reasoning}</p>
+                                    )}
+                                    <div className="flex items-center gap-2 mt-3">
+                                      <Button
+                                        size="sm"
+                                        onClick={() => handleSuggestionAction(s.id, 'approved')}
+                                        disabled={applyingId === s.id}
+                                        className="gap-1"
+                                      >
+                                        {applyingId === s.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsUp className="w-3 h-3" />}
+                                        Aprovar e Aplicar
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => handleSuggestionAction(s.id, 'rejected')}
+                                        disabled={applyingId === s.id}
+                                        className="gap-1"
+                                      >
+                                        <ThumbsDown className="w-3 h-3" />
+                                        Rejeitar
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Approved/Rejected history */}
+                      {trainingSuggestions.filter(s => s.status !== 'pending').length > 0 && (
+                        <Collapsible>
+                          <CollapsibleTrigger className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-full py-2">
+                            <ChevronRight className="w-4 h-4" />
+                            Histórico ({trainingSuggestions.filter(s => s.status !== 'pending').length} sugestões processadas)
+                          </CollapsibleTrigger>
+                          <CollapsibleContent className="space-y-2 mt-2">
+                            {trainingSuggestions.filter(s => s.status !== 'pending').map(s => (
+                              <Card key={s.id} className={cn("opacity-70", s.status === 'approved' ? 'border-success/20' : 'border-destructive/20')}>
+                                <CardContent className="pt-3 pb-3">
+                                  <div className="flex items-center gap-2">
+                                    {s.status === 'approved' ? <CheckCircle2 className="w-4 h-4 text-success" /> : <XCircle className="w-4 h-4 text-destructive" />}
+                                    <span className="text-sm">{s.title}</span>
+                                    <Badge variant="outline" className="text-[10px]">{s.robot_name}</Badge>
+                                    <Badge variant={s.status === 'approved' ? 'default' : 'secondary'} className="text-[10px]">
+                                      {s.status === 'approved' ? 'Aplicado' : 'Rejeitado'}
+                                    </Badge>
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            ))}
+                          </CollapsibleContent>
+                        </Collapsible>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
           </Tabs>
         )}
 
