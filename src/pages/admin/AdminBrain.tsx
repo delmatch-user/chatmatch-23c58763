@@ -262,6 +262,10 @@ const AdminBrain = () => {
   const [notifySending, setNotifySending] = useState(false);
   const [agentNotifications, setAgentNotifications] = useState<Record<string, boolean>>({});
 
+  // Delma autonomous state
+  const [delmaSuggestionsCount, setDelmaSuggestionsCount] = useState(0);
+  const [observationMode, setObservationMode] = useState(false);
+
   // Training suggestions state
   interface TrainingSuggestion {
     id: string;
@@ -691,6 +695,31 @@ const AdminBrain = () => {
     return () => { supabase.removeChannel(channel); };
   }, [fetchMetrics]);
 
+  // Load observation mode
+  const loadObservationMode = async () => {
+    try {
+      const { data } = await supabase.from('app_settings').select('value').eq('key', 'delma_observation_mode').maybeSingle();
+      setObservationMode(data?.value === 'true');
+    } catch {}
+  };
+
+  const toggleObservationMode = async () => {
+    const newVal = !observationMode;
+    setObservationMode(newVal);
+    try {
+      const { data: existing } = await supabase.from('app_settings').select('id').eq('key', 'delma_observation_mode').maybeSingle();
+      if (existing) {
+        await supabase.from('app_settings').update({ value: String(newVal) }).eq('key', 'delma_observation_mode');
+      } else {
+        await supabase.from('app_settings').insert({ key: 'delma_observation_mode', value: String(newVal) });
+      }
+      toast.success(newVal ? 'Delma em modo observação' : 'Delma ativa — sugestões visíveis');
+    } catch {
+      setObservationMode(!newVal);
+      toast.error('Erro ao alterar modo');
+    }
+  };
+
   useEffect(() => {
     loadReportHistory();
     loadMaturityHistory();
@@ -698,6 +727,7 @@ const AdminBrain = () => {
     loadAgentLiveStatus();
     loadAgentNotifications();
     loadTrainingSuggestions();
+    loadObservationMode();
   }, [getEffectivePeriod, loadAgentLiveStatus, loadAgentNotifications]);
 
   // Save maturity score when metrics update
@@ -818,6 +848,13 @@ const AdminBrain = () => {
               </p>
             </div>
           </div>
+          <div className="flex items-center gap-2 ml-2">
+            <Switch checked={!observationMode} onCheckedChange={() => toggleObservationMode()} />
+            <span className="text-xs text-muted-foreground flex items-center gap-1">
+              {observationMode ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+              {observationMode ? 'Observação' : 'Ativa'}
+            </span>
+          </div>
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-secondary/50 px-2.5 py-1.5 rounded-md">
               <div className={cn("w-2 h-2 rounded-full", statusCfg.color)} />
@@ -906,6 +943,19 @@ const AdminBrain = () => {
                     {trainingSuggestions.filter(s => s.status === 'pending').length}
                   </Badge>
                 )}
+              </TabsTrigger>
+              <TabsTrigger value="delma-suggestions" className="gap-1">
+                <Sparkles className="w-3.5 h-3.5" />
+                Sugestões
+                {delmaSuggestionsCount > 0 && (
+                  <Badge className="ml-1 text-[10px] bg-primary text-primary-foreground h-4 min-w-4 px-1">
+                    {delmaSuggestionsCount}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="delma-evolution" className="gap-1">
+                <Activity className="w-3.5 h-3.5" />
+                Evolução
               </TabsTrigger>
             </TabsList>
 
@@ -2304,6 +2354,16 @@ const AdminBrain = () => {
                   )}
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            {/* ======================== DELMA SUGGESTIONS TAB ======================== */}
+            <TabsContent value="delma-suggestions">
+              <DelmaSuggestionsTab onSuggestionsCountChange={setDelmaSuggestionsCount} />
+            </TabsContent>
+
+            {/* ======================== DELMA EVOLUTION TAB ======================== */}
+            <TabsContent value="delma-evolution">
+              <DelmaEvolutionTab />
             </TabsContent>
           </Tabs>
         )}
