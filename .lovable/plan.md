@@ -1,72 +1,34 @@
 
 
-# Corrigir roteamento de resposta: Meta API vs Baileys
+# Auto-finalizar conversas Meta API >24h como robô Delma
 
 ## Problema
-
-Quando uma conversa chega pela **API Oficial (Meta)**, ao responder, o sistema roteia a mensagem pelo **Baileys** (número QR Code) ao invés da API Oficial. Isso faz a resposta sair pelo número errado e o Meta cria uma nova conversa duplicada.
-
-**Causa raiz**: A função `getConnectionForDepartment()` em `useWhatsAppSend.tsx` **sempre prioriza Baileys sobre Meta API**, independentemente de qual canal originou a conversa. Se o lookup por `whatsappInstanceId` falhar por qualquer motivo (status diferente, ID não encontrado), o fallback ignora a origem e pega Baileys.
+Conversas vindas da API Oficial do WhatsApp (Meta) geram erro ao tentar responder após 24h (erro 131047). Essas conversas devem ser finalizadas automaticamente como robô "Delma".
 
 ## Solução
+Adicionar uma **5ª varredura** na edge function `sync-robot-schedules` que:
 
-Duas correções no arquivo `src/hooks/useWhatsAppSend.tsx`:
+1. Busca conversas `em_atendimento` ou `pendente` que vieram da **Meta API** (identificadas por `whatsapp_instance_id = '428510647008415'` ou conexão `meta_api`)
+2. Verifica se a **última mensagem** tem mais de **24 horas**
+3. Finaliza como robô **Delma** (`e0886607-cf54-4687-a440-4fa334085606`), salvando log com `finalized_by_name: "Delma [AUTO-24H]"`
+4. **Não envia protocolo** (Meta rejeitaria a mensagem por janela expirada)
 
-### 1. Tornar o lookup por instanceId mais robusto
-
-Na função `getConnectionByInstanceId`, remover o filtro de status para que encontre a conexão Meta API mesmo se o status não for exatamente `connected/active`:
-
-```typescript
-// Antes: .in('status', ['connected', 'active'])
-// Depois: buscar sem filtro de status, priorizando ativas
-async function getConnectionByInstanceId(instanceId: string) {
-  // Primeiro tentar com status ativo
-  const { data } = await supabase
-    .from('whatsapp_connections')
-    .select(...)
-    .eq('phone_number_id', instanceId)
-    .in('connection_type', ['baileys', 'meta_api'])
-    .in('status', ['connected', 'active'])
-    .limit(1).maybeSingle();
-  
-  if (data) return data;
-  
-  // Fallback: qualquer status (Meta API pode ter status diferente)
-  const { data: fallback } = await supabase
-    .from('whatsapp_connections')
-    .select(...)
-    .eq('phone_number_id', instanceId)
-    .in('connection_type', ['baileys', 'meta_api'])
-    .limit(1).maybeSingle();
-  
-  return fallback;
-}
-```
-
-### 2. Respeitar o canal da conversa no fallback por departamento
-
-Na lógica principal de `sendMessage`, quando o `whatsappInstanceId` não resolve mas a conversa tem canal definido, buscar pelo tipo de conexão correto:
-
-```typescript
-// Após falha do instanceId, antes do fallback por departamento:
-// Se a conversa tem whatsappInstanceId definido (veio da Meta), 
-// forçar busca por meta_api no departamento
-if (!connection && whatsappInstanceId && departmentId) {
-  // O instanceId não resolveu, mas sabemos que veio da Meta API
-  // Buscar conexão meta_api para o departamento
-  connection = await getMetaConnectionForDepartment(departmentId);
-}
-```
-
-Criar uma função `getMetaConnectionForDepartment` que busca exclusivamente conexões `meta_api` (sem priorizar Baileys).
-
-### 3. Fallback final que respeita a origem
-
-Se mesmo assim não encontrar, e o `whatsappInstanceId` estava definido (indicando que veio da Meta), buscar qualquer conexão Meta API ativa em vez de qualquer Baileys.
-
-## Arquivos
+## Arquivo
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/hooks/useWhatsAppSend.tsx` | Tornar `getConnectionByInstanceId` mais robusto; adicionar lógica de fallback que respeita o canal da conversa; criar `getMetaConnectionForDepartment` |
+| `supabase/functions/sync-robot-schedules/index.ts` | Adicionar varredura de conversas Meta API >24h após a 4ª varredura existente |
+
+## Lógica da nova varredura
+
+```text
+Para cada conversa em (em_atendimento, pendente):
+  - Tem whatsapp_instance_id?
+  - Esse instance_id pertence a uma whatsapp_connection com connection_type = 'meta_api'?
+  - A última mensagem (qualquer remetente) foi há >24h?
+  → Sim: salvar log (finalized_by_name = "Delma [AUTO-24H]"), deletar msgs + conversa
+  → Não: pular
+```
+
+Não envia mensagem de protocolo pois a janela Meta já expirou. O log no histórico identificará claramente que foi auto-finalizado por limite de 24h da API oficial.
 
