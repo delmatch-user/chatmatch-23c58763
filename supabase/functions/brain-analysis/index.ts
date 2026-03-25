@@ -50,6 +50,7 @@ async function fetchAllLogs(
     let query = supabase
       .from("conversation_logs")
       .select(selectColumns)
+      .eq("department_name", "Suporte")
       .gte("finalized_at", gteDate);
     query = useLte ? query.lte("finalized_at", ltDate) : query.lt("finalized_at", ltDate);
     query = query.is("reset_at", null).range(from, from + PAGE_SIZE - 1);
@@ -183,7 +184,7 @@ serve(async (req) => {
     const abandonRate = totalConversas > 0 ? Math.round((abandonedCount / totalConversas) * 1000) / 10 : 0;
 
     // Agent performance — only agents from "Suporte" department
-    const suporteLogs = logs.filter(l => l.assigned_to_name && l.department_name && l.department_name.toLowerCase() === 'suporte');
+    const suporteLogs = logs.filter(l => l.assigned_to_name);
     const agentStats: Record<string, { count: number; totalTime: number; totalWait: number; waitCount: number; tags: Record<string, number>; channels: Record<string, number>; transferredOut: number }> = {};
     const agentDailyStats: Record<string, Record<string, { count: number; tmaSum: number; tmaCount: number; tmeSum: number; tmeCount: number }>> = {};
     suporteLogs.forEach(l => {
@@ -232,7 +233,7 @@ serve(async (req) => {
 
     // Previous period agent stats — also only "Suporte"
     const prevAgentStats: Record<string, { count: number; totalTime: number }> = {};
-    prev.filter(l => l.assigned_to_name && l.department_name && l.department_name.toLowerCase() === 'suporte').forEach(l => {
+    prev.filter(l => l.assigned_to_name).forEach(l => {
       const name = l.assigned_to_name!;
       if (!prevAgentStats[name]) prevAgentStats[name] = { count: 0, totalTime: 0 };
       prevAgentStats[name].count++;
@@ -422,7 +423,7 @@ ${agentErrorBlock || 'Nenhuma conversa problemática atribuída a agentes'}`;
     let conversationDetailsBlock = '';
     if (reqUserContext) {
       const detailLogs = logs
-        .filter((l: any) => l.assigned_to_name && l.department_name?.toLowerCase() === 'suporte')
+        .filter((l: any) => l.assigned_to_name)
         .slice(0, 100);
       
       conversationDetailsBlock = detailLogs.map((l: any) => {
