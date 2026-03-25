@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Sparkles, MessageSquare, Users, FileText, Target, CalendarClock, ChevronRight, ChevronDown, CheckCircle2, XCircle, Loader2, Brain, Info, AlertCircle, ThumbsUp, ThumbsDown, Edit3 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -67,6 +67,30 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
   }, [onSuggestionsCountChange]);
 
   useEffect(() => { loadSuggestions(); }, [loadSuggestions]);
+
+  const autoTriggered = useRef(false);
+
+  // Auto-trigger analysis on first load if no suggestions exist
+  useEffect(() => {
+    if (!loading && suggestions.length === 0 && !autoTriggered.current && !generating) {
+      autoTriggered.current = true;
+      triggerAnalysisAuto();
+    }
+  }, [loading, suggestions.length]);
+
+  const triggerAnalysisAuto = async () => {
+    setGenerating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('delma-autonomous-analysis');
+      if (error) throw error;
+      toast.success(data.message || 'Análise inicial concluída!');
+      loadSuggestions();
+    } catch (e: any) {
+      console.error('Auto analysis error:', e);
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   const triggerAnalysis = async () => {
     setGenerating(true);

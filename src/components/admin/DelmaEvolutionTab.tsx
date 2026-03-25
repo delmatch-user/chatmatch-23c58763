@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { TrendingUp, Brain, Target, CalendarClock, CheckCircle2, XCircle, Activity, BarChart3, Filter } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -27,6 +27,8 @@ export function DelmaEvolutionTab() {
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterPeriod, setFilterPeriod] = useState('30');
 
+  const autoTriggered = useRef(false);
+
   useEffect(() => {
     loadData();
   }, []);
@@ -46,6 +48,21 @@ export function DelmaEvolutionTab() {
       setLoading(false);
     }
   };
+
+  // Auto-trigger analysis if no data exists
+  useEffect(() => {
+    if (!loading && suggestions.length === 0 && memories.length === 0 && !autoTriggered.current) {
+      autoTriggered.current = true;
+      (async () => {
+        try {
+          await supabase.functions.invoke('delma-autonomous-analysis');
+          loadData();
+        } catch (e) {
+          console.error('Auto evolution trigger error:', e);
+        }
+      })();
+    }
+  }, [loading, suggestions.length, memories.length]);
 
   // Calculate weekly approval rates
   const weeklyRates: WeeklyApprovalRate[] = (() => {
