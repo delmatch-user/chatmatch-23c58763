@@ -25,10 +25,12 @@ const Notifications = () => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const fetchNotifications = async () => {
+    if (!user) return;
     try {
       const { data, error } = await supabase
         .from('agent_notifications' as any)
         .select('*')
+        .eq('agent_id', user.id)
         .order('created_at', { ascending: false });
       if (error) throw error;
       setNotifications((data as any[]) || []);
@@ -61,19 +63,20 @@ const Notifications = () => {
   };
 
   useEffect(() => {
-    fetchNotifications();
-  }, []);
+    if (user) fetchNotifications();
+  }, [user]);
 
   // Subscribe to realtime
   useEffect(() => {
+    if (!user) return;
     const channel = supabase
       .channel('agent-notifications')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'agent_notifications' }, () => {
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'agent_notifications', filter: `agent_id=eq.${user.id}` }, () => {
         fetchNotifications();
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [user]);
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
 
