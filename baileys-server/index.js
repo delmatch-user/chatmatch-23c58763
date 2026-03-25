@@ -121,6 +121,42 @@ class InstanceState {
     // Cache de IDs de mensagens já processadas (deduplicação para append)
     this.processedMessageIds = new Set();
     this.processedMessageCleanupTimer = null;
+    // Cache de mensagens enviadas para getMessage (re-criptografia E2E)
+    this.sentMessages = new Map();
+  }
+
+  // Armazena mensagem enviada no cache com TTL de 1h e limite de 500 entries
+  cacheSentMessage(messageId, messageContent) {
+    if (!messageId || !messageContent) return;
+    
+    // Limitar tamanho do cache
+    const MAX_CACHE_SIZE = 500;
+    if (this.sentMessages.size >= MAX_CACHE_SIZE) {
+      // Remover a entrada mais antiga
+      const oldestKey = this.sentMessages.keys().next().value;
+      this.sentMessages.delete(oldestKey);
+    }
+    
+    this.sentMessages.set(messageId, {
+      content: messageContent,
+      cachedAt: Date.now(),
+    });
+  }
+
+  // Recupera mensagem do cache (retorna o conteúdo original do Baileys)
+  getCachedMessage(messageId) {
+    if (!messageId) return undefined;
+    const entry = this.sentMessages.get(messageId);
+    if (!entry) return undefined;
+    
+    // TTL de 1 hora
+    const ONE_HOUR = 60 * 60 * 1000;
+    if (Date.now() - entry.cachedAt > ONE_HOUR) {
+      this.sentMessages.delete(messageId);
+      return undefined;
+    }
+    
+    return entry.content;
   }
 }
 
@@ -507,7 +543,15 @@ async function startWhatsApp(instanceId) {
       defaultQueryTimeoutMs: 60000,
       keepAliveIntervalMs: 30000,
       retryRequestDelayMs: 500,
-      getMessage: async () => undefined,
+      getMessage: async (key) => {
+        const cached = instance.getCachedMessage(key?.id);
+        if (cached) {
+          logger.info({ instanceId, messageId: key.id }, 'getMessage: retornando do cache');
+          return cached;
+        }
+        logger.debug({ instanceId, messageId: key?.id }, 'getMessage: mensagem não encontrada no cache');
+        return undefined;
+      },
     });
 
     logger.info({ instanceId }, 'Socket Baileys criado com sucesso');
@@ -1649,6 +1693,25 @@ app.post('/instances/:instanceId/send', async (req, res) => {
             mimetype: req.body.mimetype || 'application/octet-stream',
             fileName: req.body.fileName || 'document',
           });
+        }
+
+        // Cachear mensagem enviada para getMessage (re-criptografia E2E)
+        if (result?.key?.id) {
+          let msgContent;
+          if (type === 'text') {
+            msgContent = { text: message };
+          } else if (type === 'image') {
+            msgContent = { image: { url: message }, caption: req.body.caption || '' };
+          } else if (type === 'audio') {
+            msgContent = { audio: audioBuffer, mimetype: 'audio/ogg; codecs=opus', ptt: true };
+          } else if (type === 'video') {
+            msgContent = { video: { url: message }, caption: req.body.caption || '' };
+          } else if (type === 'document') {
+            msgContent = { document: { url: message }, mimetype: req.body.mimetype || 'application/octet-stream', fileName: req.body.fileName || 'document' };
+          }
+          if (msgContent) {
+            instance.cacheSentMessage(result.key.id, msgContent);
+          }
         }
 
         usedJid = jid;
