@@ -29,6 +29,7 @@ export function DelmaEvolutionTab() {
   const [filterPeriod, setFilterPeriod] = useState('30');
 
   const autoTriggered = useRef(false);
+  const [memoryDrawerOpen, setMemoryDrawerOpen] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -175,7 +176,7 @@ export function DelmaEvolutionTab() {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="cursor-pointer hover:border-warning/30 transition-colors" onClick={() => setMemoryDrawerOpen(true)}>
           <CardContent className="pt-5">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center">
