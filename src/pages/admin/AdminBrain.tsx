@@ -2435,12 +2435,30 @@ const AdminBrain = () => {
                         return (
                           <>
                             {pendingNonConflict.length > 0 && (
-                              <div className="space-y-3">
+                              <div className="space-y-4">
                                 <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
                                   <AlertCircle className="w-4 h-4 text-warning" />
                                   Aguardando Aprovação ({pendingNonConflict.length})
                                 </h3>
-                                {pendingNonConflict.map(s => (
+                                {/* Group by robot_name */}
+                                {(() => {
+                                  const grouped = new Map<string, typeof pendingNonConflict>();
+                                  pendingNonConflict.forEach(s => {
+                                    const arr = grouped.get(s.robot_name) || [];
+                                    arr.push(s);
+                                    grouped.set(s.robot_name, arr);
+                                  });
+                                  return Array.from(grouped.entries()).map(([robotName, suggestions]) => {
+                                    const lowerName = robotName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                                    const RobotIcon = lowerName.includes("julia") ? Store : lowerName.includes("sebastiao") ? Bike : Bot;
+                                    return (
+                                      <div key={robotName} className="space-y-3">
+                                        <div className="flex items-center gap-2 px-1">
+                                          <RobotIcon className="w-4 h-4 text-primary" />
+                                          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{robotName}</span>
+                                          <Badge variant="outline" className="text-[10px]">{suggestions.length}</Badge>
+                                        </div>
+                                        {suggestions.map(s => (
                                   <Card key={s.id} className="border-warning/30 bg-warning/5">
                                     <CardContent className="pt-4 pb-4">
                                       <div className="flex items-start gap-3">
@@ -2452,11 +2470,9 @@ const AdminBrain = () => {
                                         <div className="flex-1 min-w-0">
                                           <div className="flex items-center gap-2 flex-wrap">
                                             <span className="text-sm font-medium">{s.title}</span>
-                                            <Badge variant="outline" className="text-[10px]">{s.robot_name}</Badge>
                                             <Badge variant="secondary" className="text-[10px]">
                                               {s.suggestion_type === 'qa' ? 'Q&A' : s.suggestion_type === 'tone' ? 'Tom' : 'Instrução'}
                                             </Badge>
-                                            {/* Compliance badge */}
                                             {s.compliance_status === 'aligned' && (
                                               <Badge className="text-[10px] bg-success/20 text-success border-success/30 hover:bg-success/30">✅ Alinhado às normas</Badge>
                                             )}
@@ -2498,7 +2514,11 @@ const AdminBrain = () => {
                                       </div>
                                     </CardContent>
                                   </Card>
-                                ))}
+                                        ))}
+                                      </div>
+                                    );
+                                  });
+                                })()}
                               </div>
                             )}
 
