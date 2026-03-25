@@ -1,50 +1,99 @@
 
 
-# Reestruturar Treinamento Inteligente — Aprender com Atendentes Humanos
+# Reestruturar Aba Sugestoes + Nova Edge Function brain-learn-from-conversations
 
-## Problema
-O sistema atual gera sugestões baseadas em gaps de tags e tópicos genéricos, resultando em 65 sugestões pouco relevantes. O treinamento deve aprender com as **respostas reais dos atendentes humanos** do Suporte para tornar os robôs mais naturais e humanos.
+## Resumo
+Redirecionar sugestoes de tipo `report_schedule` para a aba Relatorio IA, adicionar novos tipos de sugestao (aprendizado_humano, aprendizado_robo, melhoria_delma), criar Edge Function `brain-learn-from-conversations` e atualizar o frontend com mini-cards de origem e filtros por tipo.
 
-## Solução
+## Arquivos a criar/editar
 
-### 1. Botão "Limpar Sugestões Pendentes" no frontend
-- Adicionar botão ao lado de "Gerar Sugestões" na aba Treinamento em `AdminBrain.tsx`
-- Ao clicar, deletar todos os registros com `status = 'pending'` da tabela `robot_training_suggestions`
-- Confirmação via dialog antes de executar
+### 1. Nova Edge Function: `supabase/functions/brain-learn-from-conversations/index.ts`
+- Busca `conversation_logs` dos ultimos 7 dias, separando:
+  - Conversas humanas: `finalized_by IS NOT NULL` (atendente humano finalizou)
+  - Conversas de robo: `finalized_by IS NULL` (robo finalizou, sem transferencia)
+  - Conversas de robo transferidas: `finalized_by IS NULL` com transferencia posterior
+- Para conversas humanas: extrai padroes de resposta eficaz (TMA baixo, resolucao rapida)
+- Para conversas de robos: identifica transferencias desnecessarias cruzando com `transfer_logs`
+- Envia lote para IA (Gemini Flash) com prompt estruturado pedindo sugestoes tipadas
+- Salva em `delma_suggestions` com category = `aprendizado_humano`, `aprendizado_robo` ou `melhoria_delma`
+- Salva padroes identificados em `delma_memory` como `data_signal`
+- Deduplicacao: verifica sugestoes similares (mesmo robot + mesma categoria) nos ultimos 14 dias
+- Anonimizacao: remove nomes, telefones e emails dos exemplos de conversa
 
-### 2. Reescrever Edge Function `brain-train-robots/index.ts`
-Nova abordagem: analisar conversas finalizadas por humanos e extrair padrões de respostas excelentes.
-
-**Fluxo:**
-1. Buscar robôs do Suporte (filtro existente mantido)
-2. Buscar `conversation_logs` dos últimos 14 dias onde `assigned_to_name IS NOT NULL` (atendidas por humanos)
-3. Filtrar apenas membros do Suporte (via `profile_departments`)
-4. Do campo `messages` (jsonb), extrair pares pergunta-cliente → resposta-humano
-5. Enviar para IA com prompt focado em:
-   - Identificar **padrões de linguagem** dos atendentes (saudações, empatia, encerramento)
-   - Extrair **respostas frequentes** que o robô não tem no Q&A
-   - Sugerir **ajustes de tom** baseados no tom real dos humanos
-   - Comparar como o robô responderia vs como o humano respondeu
-6. Gerar sugestões de Q&A e tom com exemplos reais dos atendentes
-
-**Prompt da IA reformulado:**
-```text
-Analise as conversas REAIS entre atendentes humanos e clientes.
-Compare com o Q&A atual do robô.
-Identifique:
-1. Respostas humanas recorrentes que o robô não possui
-2. Padrões de linguagem empática dos atendentes
-3. Formas de saudação e encerramento que funcionam
-4. Respostas onde o humano resolve de forma diferente do robô
-Gere sugestões para o robô parecer mais humano e resolver mais.
+### 2. `supabase/config.toml` — adicionar entrada
+```toml
+[functions.brain-learn-from-conversations]
+verify_jwt = false
 ```
 
-### 3. Atualizar descrição da aba no frontend
-- Mudar texto informativo de "analisa gaps de conhecimento" para "aprende com as respostas dos atendentes humanos"
+### 3. Editar: `src/components/admin/DelmaSuggestionsTab.tsx`
+Mudancas aditivas:
+- Filtrar `report_schedule` da lista de sugestoes exibidas (`pending` e `processed` excluem category === 'report_schedule'`)
+- Adicionar novos tipos ao `categoryConfig`:
+  - `aprendizado_humano`: label "Aprendizado Humano", icone Users, cor azul
+  - `aprendizado_robo`: label "Aprendizado Robo", icone Bot, cor roxa
+  - `melhoria_delma`: label "Melhoria Delma", icone Brain, cor amber
+- Adicionar filtro Select de tipo no header (Todas | Treinamento | Metas | Aprendizado Humano | Aprendizado Robo | Melhoria Delma)
+- Substituir o info-box por 3 mini-cards horizontais no topo:
+  - 👤 X padroes com humanos (count de `aprendizado_humano` historico)
+  - 🤖 X padroes com robos (count de `aprendizado_robo` historico)
+  - ✅ X melhorias aplicadas (count de approved/edited de qualquer tipo)
+- Adicionar botao "Analisar Conversas Agora" ao lado do "Executar Analise" que invoca `brain-learn-from-conversations`
+- Para cards dos novos tipos na visao expandida: exibir justificativa, exemplos de conversa (do campo `content.examples`), acao proposta (`content.proposed_action`), e memorias relacionadas
+- Adicionar campo de motivo ao rejeitar (ja existe, manter)
+- A logica de aprovacao para novos tipos: `aprendizado_humano` e `aprendizado_robo` seguem o fluxo de `robot_training` se tiverem `content.robot_id` e `content.training_suggestion_id`; caso contrario apenas marcam como aprovado e registram memoria
 
-### Arquivos a editar
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/brain-train-robots/index.ts` | Reescrever lógica para aprender com respostas humanas |
-| `src/pages/admin/AdminBrain.tsx` | Adicionar botão limpar + atualizar textos descritivos |
+### 4. Editar: `src/pages/admin/AdminBrain.tsx` — aba Relatorio IA
+Mudanca aditiva na `TabsContent value="ai-report"`:
+- Apos o bloco de Historico de Relatorios, adicionar secao "Agendamentos Sugeridos pela Delma"
+- Buscar `delma_suggestions` com `category = 'report_schedule'` e `status = 'pending'`
+- Renderizar cards com botoes Aprovar/Rejeitar (reutilizando logica similar ao DelmaSuggestionsTab)
+- Ao aprovar, inserir em `report_schedule` igual ja faz no DelmaSuggestionsTab
+
+### 5. Editar: `src/components/admin/DelmaEvolutionTab.tsx`
+Mudanca aditiva no `categoryConfig`:
+- Adicionar os 3 novos tipos para que os filtros e labels funcionem na timeline
+
+## Detalhes da Edge Function
+
+```text
+Prompt para IA:
+"Analise as conversas de suporte dos ultimos 7 dias.
+
+CONVERSAS HUMANAS (atendentes reais):
+[resumos anonimizados com TMA e tags]
+
+CONVERSAS DE ROBOS:
+[resumos com taxa de transferencia e tags]
+
+Para cada padrao identificado, gere uma sugestao estruturada:
+{
+  "type": "aprendizado_humano" | "aprendizado_robo" | "melhoria_delma",
+  "title": "titulo curto",
+  "justification": "dados: volume, periodo, nomes de robos",
+  "content": {
+    "pattern": "descricao do padrao",
+    "examples": ["exemplo anonimizado 1", "exemplo 2"],
+    "proposed_action": "acao concreta proposta",
+    "robot_name": "nome do robo (se aplicavel)",
+    "robot_id": "id (se aplicavel)",
+    "agent_alias": "Atendente A (anonimizado)"
+  },
+  "confidence_score": 75
+}"
+```
+
+## Fluxo de aprovacao
+- Novos tipos seguem o mesmo fluxo existente (Aprovar / Editar e Aprovar / Rejeitar)
+- Se `content.robot_id` estiver presente e a acao for Q&A, aplica no robo automaticamente
+- Rejeicao continua alimentando `delma_memory` como ja ocorre
+
+## Cron job
+- Usar `pg_cron` para agendar `brain-learn-from-conversations` toda segunda 7h BRT (10:00 UTC)
+- SQL via insert tool (nao migration):
+```sql
+SELECT cron.schedule('brain-learn-conversations-weekly', '0 10 * * 1', $$
+  SELECT net.http_post(url:='...', headers:='...'::jsonb, body:='{}'::jsonb) as request_id;
+$$);
+```
 
