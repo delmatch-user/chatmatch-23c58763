@@ -77,11 +77,10 @@ Deno.serve(async (req) => {
     // 4. Buscar conversas em_fila sem robô e sem atendente
     const { data: queuedConversations, error: convError } = await supabase
       .from("conversations")
-      .select("id, department_id, channel, contact_id, external_id")
+      .select("id, department_id, channel, contact_id, external_id, sdr_deal_id, robot_transferred")
       .eq("status", "em_fila")
       .is("assigned_to", null)
       .is("assigned_to_robot", null)
-      .eq("robot_transferred", false)
       .order("created_at", { ascending: true });
 
     if (convError) throw convError;
@@ -101,10 +100,30 @@ Deno.serve(async (req) => {
 
     for (const conv of queuedConversations) {
       const channel = conv.channel || "whatsapp";
+      const hasSdrDeal = !!conv.sdr_deal_id;
+
+      // Preservar comportamento antigo para filas não-SDR transferidas por robô
+      if (conv.robot_transferred && !hasSdrDeal) {
+        continue;
+      }
+
+      // Evitar reativar automaticamente leads SDR já perdidos/encerrados por desinteresse
+      if (conv.robot_transferred && hasSdrDeal) {
+        const { data: sdrDealState } = await supabase
+          .from("sdr_deals")
+          .select("lost_at, remarketing_stopped")
+          .eq("id", conv.sdr_deal_id)
+          .maybeSingle();
+
+        if (sdrDealState?.lost_at || sdrDealState?.remarketing_stopped) {
+          console.log(`[sync-robot-schedules] Conversa ${conv.id} com deal SDR encerrado, pulando reativação automática`);
+          continue;
+        }
+      }
 
       // Buscar última mensagem do cliente para verificação de keywords (usado pelo SDR)
       let lastClientMsg = "";
-      if (sdrRobotId && sdrKeywords.length > 0) {
+      if (sdrRobotId && sdrKeywords.length > 0 && !hasSdrDeal) {
         const { data: lm } = await supabase
           .from("messages")
           .select("content")
@@ -132,13 +151,15 @@ Deno.serve(async (req) => {
             console.log(`[sync-robot-schedules] Robô SDR pulado para ${conv.id} (dept não é Comercial)`);
             continue;
           }
-          if (sdrKeywords.length > 0) {
+          if (!hasSdrDeal && sdrKeywords.length > 0) {
             const msgLower = lastClientMsg.toLowerCase();
             const hasKeyword = sdrKeywords.some(kw => msgLower.includes(kw.toLowerCase()));
             if (!hasKeyword) {
               console.log(`[sync-robot-schedules] Robô SDR pulado para ${conv.id} (sem keyword)`);
               continue;
             }
+          } else if (hasSdrDeal) {
+            console.log(`[sync-robot-schedules] Conversa ${conv.id} já é SDR (deal ${conv.sdr_deal_id}), ignorando filtro de keyword`);
           }
         }
         matchedRobot = r;
@@ -208,8 +229,11 @@ Deno.serve(async (req) => {
         connectionType = "instagram";
       }
 
-      // Chamar robot-chat para o robô responder
+      // Chamar função correta para o robô responder
       try {
+        const isSdrConversation = !!conv.sdr_deal_id;
+        const functionName = isSdrConversation ? "sdr-robot-chat" : "robot-chat";
+
         const robotChatPayload: Record<string, unknown> = {
           robotId: matchedRobot.id,
           conversationId: conv.id,
@@ -222,7 +246,12 @@ Deno.serve(async (req) => {
           robotChatPayload.phoneNumberId = phoneNumberId;
         }
 
-        const robotChatUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/robot-chat`;
+        if (isSdrConversation) {
+          robotChatPayload.dealId = conv.sdr_deal_id;
+          robotChatPayload.isTransfer = !!conv.robot_transferred;
+        }
+
+        const robotChatUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/${functionName}`;
         const robotChatResponse = await fetch(robotChatUrl, {
           method: "POST",
           headers: {
@@ -234,12 +263,12 @@ Deno.serve(async (req) => {
 
         if (!robotChatResponse.ok) {
           const errText = await robotChatResponse.text();
-          console.error(`[sync-robot-schedules] Erro ao chamar robot-chat para ${conv.id}:`, errText);
+          console.error(`[sync-robot-schedules] Erro ao chamar ${functionName} para ${conv.id}:`, errText);
         } else {
-          console.log(`[sync-robot-schedules] robot-chat chamado com sucesso para ${conv.id}`);
+          console.log(`[sync-robot-schedules] ${functionName} chamado com sucesso para ${conv.id}`);
         }
       } catch (chatError) {
-        console.error(`[sync-robot-schedules] Erro ao invocar robot-chat:`, chatError);
+        console.error(`[sync-robot-schedules] Erro ao invocar função de chat:`, chatError);
       }
     }
 
@@ -250,7 +279,7 @@ Deno.serve(async (req) => {
 
     const { data: stuckConversations, error: stuckError } = await supabase
       .from("conversations")
-      .select("id, department_id, channel, contact_id, external_id, assigned_to_robot, sdr_deal_id")
+      .select("id, department_id, channel, contact_id, external_id, assigned_to_robot, sdr_deal_id, robot_transferred")
       .eq("status", "em_atendimento")
       .not("assigned_to_robot", "is", null)
       .is("assigned_to", null)
@@ -276,37 +305,53 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Verificar se o robô já respondeu (mensagem com [ROBOT] no sender_name)
-        const { data: robotMessages, error: msgCheckError } = await supabase
+        // Buscar última mensagem do cliente
+        const { data: lastCustomerMessage, error: lastCustomerError } = await supabase
           .from("messages")
-          .select("id")
+          .select("content, created_at")
+          .eq("conversation_id", conv.id)
+          .not("sender_name", "ilike", "%[ROBOT]%")
+          .neq("message_type", "system")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (lastCustomerError) {
+          console.error(`[sync-robot-schedules] Erro ao buscar última mensagem do cliente para ${conv.id}:`, lastCustomerError.message);
+          continue;
+        }
+
+        if (!lastCustomerMessage) {
+          console.log(`[sync-robot-schedules] Conversa ${conv.id} sem mensagem de cliente, pulando retry`);
+          continue;
+        }
+
+        // Verificar se o robô já respondeu depois da última mensagem do cliente
+        const { data: lastRobotMessage, error: msgCheckError } = await supabase
+          .from("messages")
+          .select("created_at")
           .eq("conversation_id", conv.id)
           .like("sender_name", "%[ROBOT]%")
-          .limit(1);
+          .neq("message_type", "system")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
         if (msgCheckError) {
           console.error(`[sync-robot-schedules] Erro ao verificar msgs robô para ${conv.id}:`, msgCheckError.message);
           continue;
         }
 
-        // Se já tem resposta do robô, pular
-        if (robotMessages && robotMessages.length > 0) {
+        // Se já tem resposta do robô após a última msg do cliente, pular
+        if (
+          lastRobotMessage?.created_at &&
+          new Date(lastRobotMessage.created_at).getTime() >= new Date(lastCustomerMessage.created_at).getTime()
+        ) {
           continue;
         }
 
         console.log(`[sync-robot-schedules] Conversa travada detectada: ${conv.id} (robô atribuído mas sem resposta)`);
-
-        // Buscar última mensagem do cliente
-        const { data: lastMsg } = await supabase
-          .from("messages")
-          .select("content")
-          .eq("conversation_id", conv.id)
-          .is("sender_id", null)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        const msgContent = lastMsg?.content || "Olá";
+        const msgContent = lastCustomerMessage.content || "Olá";
 
         // Buscar contato
         const { data: contactData } = await supabase
@@ -355,6 +400,7 @@ Deno.serve(async (req) => {
           
           if (isSDR) {
             payload.dealId = conv.sdr_deal_id;
+            payload.isTransfer = !!conv.robot_transferred;
           }
 
           const chatUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/${functionName}`;
