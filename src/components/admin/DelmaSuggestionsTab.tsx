@@ -38,7 +38,21 @@ const categoryConfig: Record<string, { label: string; icon: any; color: string }
   aprendizado_robo: { label: 'Aprendizado Robô', icon: Bot, color: 'bg-purple-500/15 text-purple-500 border-purple-500/20' },
   melhoria_delma: { label: 'Melhoria Delma', icon: Brain, color: 'bg-amber-500/15 text-amber-500 border-amber-500/20' },
   melhoria_instrucao: { label: 'Melhoria de Instrução', icon: FileText, color: 'bg-emerald-500/15 text-emerald-500 border-emerald-500/20' },
+  anomalia_detectada: { label: 'Anomalia Detectada', icon: AlertCircle, color: 'bg-red-500/15 text-red-500 border-red-500/20' },
 };
+
+function ImpactBar({ score }: { score: number }) {
+  const color = score > 85 ? 'bg-red-500' : score > 70 ? 'bg-orange-500' : score > 40 ? 'bg-yellow-500' : 'bg-green-500';
+  const label = score > 85 ? 'Crítico' : score > 70 ? 'Alto' : score > 40 ? 'Médio' : 'Baixo';
+  return (
+    <div className="flex items-center gap-2">
+      <div className="w-20 h-2 bg-muted rounded-full overflow-hidden">
+        <div className={cn("h-full rounded-full transition-all", color)} style={{ width: `${score}%` }} />
+      </div>
+      <span className="text-[10px] font-medium text-muted-foreground">{label} ({score})</span>
+    </div>
+  );
+}
 
 export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestionsTabProps) {
   const [suggestions, setSuggestions] = useState<DelmaSuggestion[]>([]);
