@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { DelmaMemoryDrawer } from './DelmaMemoryDrawer';
-import { TrendingUp, Brain, Target, CalendarClock, CheckCircle2, XCircle, Activity, BarChart3, Filter } from 'lucide-react';
+import { TrendingUp, Brain, Target, CalendarClock, CheckCircle2, XCircle, Activity, BarChart3, Filter, Terminal } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -27,6 +27,7 @@ const categoryConfig: Record<string, { label: string; color: string }> = {
 export function DelmaEvolutionTab() {
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [memories, setMemories] = useState<any[]>([]);
+  const [chatLogs, setChatLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterPeriod, setFilterPeriod] = useState('30');
@@ -41,12 +42,14 @@ export function DelmaEvolutionTab() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [suggestionsRes, memoriesRes] = await Promise.all([
+      const [suggestionsRes, memoriesRes, chatLogsRes] = await Promise.all([
         supabase.from('delma_suggestions' as any).select('*').order('created_at', { ascending: false }).limit(500),
         supabase.from('delma_memory' as any).select('*').gte('expires_at', new Date().toISOString()).order('created_at', { ascending: false }).limit(500),
+        supabase.from('delma_chat_logs' as any).select('*').order('created_at', { ascending: false }).limit(30),
       ]);
       setSuggestions((suggestionsRes.data as any[]) || []);
       setMemories((memoriesRes.data as any[]) || []);
+      setChatLogs((chatLogsRes.data as any[]) || []);
     } catch (e) {
       console.error('Error loading evolution data:', e);
     } finally {
@@ -366,6 +369,44 @@ export function DelmaEvolutionTab() {
           )}
         </CardContent>
       </Card>
+
+      {/* Command History */}
+      {chatLogs.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Terminal className="w-4 h-4" />
+              Histórico de Comandos
+            </CardTitle>
+            <CardDescription>Últimos comandos executados via chat da Delma</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2 max-h-[300px] overflow-y-auto">
+              {chatLogs.map((log: any) => (
+                <div key={log.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-secondary/20 hover:bg-secondary/40 transition-colors">
+                  <div className={cn("w-2 h-2 rounded-full shrink-0",
+                    log.result === 'success' ? 'bg-success' :
+                    log.result === 'error' ? 'bg-destructive' :
+                    log.result === 'awaiting_confirmation' ? 'bg-warning' : 'bg-muted-foreground'
+                  )} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm truncate">{log.command}</p>
+                    <p className="text-[10px] text-muted-foreground">{log.action_type}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Badge variant="outline" className="text-[10px]">
+                      {log.result === 'success' ? '✅' : log.result === 'error' ? '❌' : log.result === 'awaiting_confirmation' ? '⏳' : '—'}
+                    </Badge>
+                    <span className="text-[10px] text-muted-foreground">
+                      {new Date(log.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <DelmaMemoryDrawer
         open={memoryDrawerOpen}
