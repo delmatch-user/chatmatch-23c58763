@@ -79,6 +79,7 @@ import { useRobots, Robot, defaultTools, QAPair, ReferenceLink, ALL_CHANNELS, Ro
 import { Checkbox } from '@/components/ui/checkbox';
 import { useRobotSchedules, getDayName } from '@/hooks/useRobotSchedules';
 import { supabase } from '@/integrations/supabase/client';
+import { Dialog as RollbackDialog, DialogContent as RollbackDialogContent, DialogHeader as RollbackDialogHeader, DialogTitle as RollbackDialogTitle, DialogFooter as RollbackDialogFooter, DialogDescription as RollbackDialogDescription } from '@/components/ui/dialog';
 
 const intelligenceOptions = [
   { value: 'novato', label: 'Novato 🌱', description: 'Versão gratuita - Ideal para começar', model: 'gemini-2.5-flash-lite', free: true },
