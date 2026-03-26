@@ -125,6 +125,12 @@ export default function AdminRobos() {
   // Track which robots have active schedules
   const [robotScheduleMap, setRobotScheduleMap] = useState<Record<string, boolean>>({});
 
+  // Track Delma-applied changes for rollback
+  const [delmaChanges, setDelmaChanges] = useState<Record<string, { id: string; applied_at: string; current_instruction: string; new_instruction: string; affected_section: string }>>({});
+  const [rollbackRobotId, setRollbackRobotId] = useState<string | null>(null);
+  const [rollbackLoading, setRollbackLoading] = useState(false);
+  const [diffDialogRobotId, setDiffDialogRobotId] = useState<string | null>(null);
+
   useEffect(() => {
     const loadAllSchedules = async () => {
       const { data } = await supabase
@@ -139,6 +145,54 @@ export default function AdminRobos() {
     };
     loadAllSchedules();
   }, [robots]);
+
+  // Load latest applied Delma changes per robot
+  useEffect(() => {
+    const loadDelmaChanges = async () => {
+      const { data } = await supabase
+        .from('robot_change_schedule' as any)
+        .select('*')
+        .eq('status', 'applied')
+        .order('applied_at', { ascending: false })
+        .limit(50);
+      if (data) {
+        const map: Record<string, any> = {};
+        for (const c of data as any[]) {
+          if (!map[c.robot_id]) {
+            map[c.robot_id] = c;
+          }
+        }
+        setDelmaChanges(map);
+      }
+    };
+    loadDelmaChanges();
+  }, [robots]);
+
+  const handleRollback = async (robotId: string) => {
+    const change = delmaChanges[robotId];
+    if (!change) return;
+    setRollbackLoading(true);
+    try {
+      await supabase.from('robots').update({ instructions: change.current_instruction, updated_at: new Date().toISOString() }).eq('id', robotId);
+      await supabase.from('robot_change_schedule' as any).update({ status: 'rolled_back' }).eq('id', change.id);
+      await supabase.from('delma_memory' as any).insert({
+        type: 'manager_feedback',
+        source: 'melhoria_instrucao',
+        content: { action: 'rollback', robot_id: robotId, change_id: change.id },
+        weight: 0.2,
+        expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+      });
+      toast.success('Instrução revertida com sucesso!');
+      setRollbackRobotId(null);
+      const newChanges = { ...delmaChanges };
+      delete newChanges[robotId];
+      setDelmaChanges(newChanges);
+    } catch (e: any) {
+      toast.error('Erro ao reverter: ' + (e.message || 'Erro'));
+    } finally {
+      setRollbackLoading(false);
+    }
+  };
 
   // Load schedules when opening config for an existing robot
   useEffect(() => {
