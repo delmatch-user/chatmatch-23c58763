@@ -142,6 +142,9 @@ serve(async (req) => {
     const existingTitles = (existingSuggestions || []).map(s => s.title?.toLowerCase());
 
     // Build the AI prompt
+    const dataWindowStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR');
+    const dataWindowEnd = new Date().toLocaleDateString('pt-BR');
+
     const prompt = `Analise as conversas de suporte dos últimos 7 dias e gere sugestões de melhoria.
 
 CONVERSAS HUMANAS (atendentes reais) — ${humanSummaries.length} conversas:
@@ -171,15 +174,25 @@ Cada sugestão deve ter:
 - type: um dos tipos acima
 - justification: dados que justificam (volume, período, nomes de robôs)
 - confidence_score: 0-100
+- impact_score: 0-100 calculado como: (volume_afetado × 0.35) + (reducao_tma_estimada × 0.25) + (recorrencia × 0.20) + (urgencia × 0.20). Cada componente normalizado de 0 a 100.
+- impact_breakdown: { volume_weight: 0-100, tma_reduction: 0-100, recurrence: 0-100, urgency: 0-100 }
+- data_window: "${dataWindowStart} a ${dataWindowEnd}"
+- conversation_count: número exato de conversas que embasam a sugestão (OBRIGATÓRIO > 0)
+- estimated_impact: estimativa em linguagem natural (ex: "Resolver isso pode reduzir ~3min do TMA e impactar ~15 conversas/semana")
+- recurrence_pattern: "pontual" | "semanal" | "cronico"
 - content.pattern: descrição do padrão encontrado
 - content.examples: array com até 3 exemplos anonimizados de mensagens
 - content.proposed_action: ação concreta proposta
 - content.robot_name: nome do robô (se aplicável, senão null)
 - content.robot_id: id do robô (se aplicável, senão null)
 - content.agent_alias: "Atendente A" etc (se aplicável, senão null)
+- content.affected_entity: nome do robô ou atendente com maior impacto no problema
 
-IMPORTANTE: Não incluir dados identificáveis (nome real, telefone, email). Usar alias para atendentes.
-Não duplicar sugestões já existentes.`;
+REGRAS DE QUALIDADE:
+- Se conversation_count for 0, descarte a sugestão
+- Não incluir dados identificáveis (nome real, telefone, email). Usar alias para atendentes.
+- Não duplicar sugestões já existentes.
+- Cada sugestão DEVE ter evidência real (trechos de conversas, números concretos).`;
 
     // Call AI
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -271,9 +284,36 @@ Não duplicar sugestões já existentes.`;
       }
     }
 
+    // Smart suppression: check rejected/approved in last 30 days
+    const { data: recentDecided } = await supabase
+      .from("delma_suggestions")
+      .select("title, status")
+      .in("status", ["rejected", "approved", "edited"])
+      .gte("decided_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
+    const rejectedTitles = new Set((recentDecided || []).filter((s: any) => s.status === "rejected").map((s: any) => s.title?.toLowerCase()));
+    const approvedTitles = new Set((recentDecided || []).filter((s: any) => s.status === "approved" || s.status === "edited").map((s: any) => s.title?.toLowerCase()));
+
+    // Count pending occurrences per title
+    const { data: pendingSuggestions } = await supabase
+      .from("delma_suggestions")
+      .select("title")
+      .eq("status", "pending");
+    const pendingCounts: Record<string, number> = {};
+    (pendingSuggestions || []).forEach((s: any) => {
+      const t = s.title?.toLowerCase();
+      if (t) pendingCounts[t] = (pendingCounts[t] || 0) + 1;
+    });
+
     // Deduplicate against existing suggestions
     const filtered = suggestions.filter(s => {
       const titleLower = s.title?.toLowerCase();
+      if (!titleLower) return false;
+      // Reject if conversation_count is 0
+      if (s.conversation_count !== undefined && s.conversation_count <= 0) return false;
+      // Suppress if rejected in last 30 days
+      if (rejectedTitles.has(titleLower)) return false;
+      // Suppress if already approved
+      if (approvedTitles.has(titleLower)) return false;
       return !existingTitles.some(existing => 
         existing && titleLower && (
           existing === titleLower ||
@@ -286,11 +326,24 @@ Não duplicar sugestões já existentes.`;
     // Insert suggestions into delma_suggestions
     let insertedCount = 0;
     for (const s of filtered.slice(0, 8)) {
+      // Check if this title has 3+ pending occurrences → mark as awaiting_attention
+      const awaitingAttention = (pendingCounts[s.title?.toLowerCase()] || 0) >= 3;
+
       const { error: insertError } = await supabase.from("delma_suggestions").insert({
         category: s.type,
         title: s.title,
         justification: s.justification,
-        content: s.content,
+        content: {
+          ...s.content,
+          impact_score: s.impact_score || 50,
+          impact_breakdown: s.impact_breakdown || { volume_weight: 50, tma_reduction: 50, recurrence: 50, urgency: 50 },
+          data_window: s.data_window || `${dataWindowStart} a ${dataWindowEnd}`,
+          conversation_count: s.conversation_count || 0,
+          estimated_impact: s.estimated_impact || "",
+          recurrence_pattern: s.recurrence_pattern || "pontual",
+          affected_entity: s.content?.affected_entity || s.content?.robot_name || s.content?.agent_alias || null,
+          awaiting_attention: awaitingAttention,
+        },
         confidence_score: Math.min(100, Math.max(0, s.confidence_score || 50)),
         memories_used: [],
         status: "pending",
