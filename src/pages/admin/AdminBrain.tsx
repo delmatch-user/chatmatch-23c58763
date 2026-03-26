@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Brain, TrendingUp, TrendingDown, Clock, Users, Bot, AlertTriangle, Sparkles, RefreshCw, MessageSquare, Lightbulb, Activity, Store, Bike, BookOpen, Link2, FileText, CheckCircle2, XCircle, Zap, BarChart3, Target, ShieldAlert, Gauge, ArrowUpRight, ArrowDownRight, Minus, GraduationCap, Trophy, AlertCircle, Rocket, CheckSquare, CircleDot, UserX, Star, Wifi, WifiOff, CalendarDays, ChevronDown, ChevronRight, Flame, Repeat2, Filter, Medal, Crown, Eye, Download, CalendarClock, FileDown, History, Info, Bell, Wand2, ThumbsUp, ThumbsDown, Loader2, EyeOff } from 'lucide-react';
 import { DelmaSuggestionsTab } from '@/components/admin/DelmaSuggestionsTab';
+import { DelmaChatWidget } from '@/components/admin/DelmaChatWidget';
 import { DelmaEvolutionTab } from '@/components/admin/DelmaEvolutionTab';
 import { DelmaReportScheduleSuggestions } from '@/components/admin/DelmaReportScheduleSuggestions';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line, PieChart, Pie, Legend } from 'recharts';
@@ -3043,4 +3044,11 @@ function KPICard({ title, value, icon: Icon, trend, subtitle }: {
   );
 }
 
-export default AdminBrain;
+export default function AdminBrainWrapper() {
+  return (
+    <>
+      <AdminBrain />
+      <DelmaChatWidget />
+    </>
+  );
+}
