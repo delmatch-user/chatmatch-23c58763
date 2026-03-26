@@ -79,6 +79,7 @@ import { useRobots, Robot, defaultTools, QAPair, ReferenceLink, ALL_CHANNELS, Ro
 import { Checkbox } from '@/components/ui/checkbox';
 import { useRobotSchedules, getDayName } from '@/hooks/useRobotSchedules';
 import { supabase } from '@/integrations/supabase/client';
+import { Dialog as RollbackDialog, DialogContent as RollbackDialogContent, DialogHeader as RollbackDialogHeader, DialogTitle as RollbackDialogTitle, DialogFooter as RollbackDialogFooter, DialogDescription as RollbackDialogDescription } from '@/components/ui/dialog';
 
 const intelligenceOptions = [
   { value: 'novato', label: 'Novato 🌱', description: 'Versão gratuita - Ideal para começar', model: 'gemini-2.5-flash-lite', free: true },
@@ -124,6 +125,12 @@ export default function AdminRobos() {
   // Track which robots have active schedules
   const [robotScheduleMap, setRobotScheduleMap] = useState<Record<string, boolean>>({});
 
+  // Track Delma-applied changes for rollback
+  const [delmaChanges, setDelmaChanges] = useState<Record<string, { id: string; applied_at: string; current_instruction: string; new_instruction: string; affected_section: string }>>({});
+  const [rollbackRobotId, setRollbackRobotId] = useState<string | null>(null);
+  const [rollbackLoading, setRollbackLoading] = useState(false);
+  const [diffDialogRobotId, setDiffDialogRobotId] = useState<string | null>(null);
+
   useEffect(() => {
     const loadAllSchedules = async () => {
       const { data } = await supabase
@@ -138,6 +145,54 @@ export default function AdminRobos() {
     };
     loadAllSchedules();
   }, [robots]);
+
+  // Load latest applied Delma changes per robot
+  useEffect(() => {
+    const loadDelmaChanges = async () => {
+      const { data } = await supabase
+        .from('robot_change_schedule' as any)
+        .select('*')
+        .eq('status', 'applied')
+        .order('applied_at', { ascending: false })
+        .limit(50);
+      if (data) {
+        const map: Record<string, any> = {};
+        for (const c of data as any[]) {
+          if (!map[c.robot_id]) {
+            map[c.robot_id] = c;
+          }
+        }
+        setDelmaChanges(map);
+      }
+    };
+    loadDelmaChanges();
+  }, [robots]);
+
+  const handleRollback = async (robotId: string) => {
+    const change = delmaChanges[robotId];
+    if (!change) return;
+    setRollbackLoading(true);
+    try {
+      await supabase.from('robots').update({ instructions: change.current_instruction, updated_at: new Date().toISOString() }).eq('id', robotId);
+      await supabase.from('robot_change_schedule' as any).update({ status: 'rolled_back' }).eq('id', change.id);
+      await supabase.from('delma_memory' as any).insert({
+        type: 'manager_feedback',
+        source: 'melhoria_instrucao',
+        content: { action: 'rollback', robot_id: robotId, change_id: change.id },
+        weight: 0.2,
+        expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+      });
+      toast.success('Instrução revertida com sucesso!');
+      setRollbackRobotId(null);
+      const newChanges = { ...delmaChanges };
+      delete newChanges[robotId];
+      setDelmaChanges(newChanges);
+    } catch (e: any) {
+      toast.error('Erro ao reverter: ' + (e.message || 'Erro'));
+    } finally {
+      setRollbackLoading(false);
+    }
+  };
 
   // Load schedules when opening config for an existing robot
   useEffect(() => {
@@ -1796,6 +1851,16 @@ export default function AdminRobos() {
                       <div>
                         <CardTitle className="text-base">{robot.name}</CardTitle>
                         {getStatusBadge(robot.status, robot.id)}
+                        {delmaChanges[robot.id] && (
+                          <div className="flex items-center gap-1 mt-1">
+                            <Badge variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-500 gap-1">
+                              <Sparkles className="w-3 h-3" />
+                              Atualizado pela Delma — {new Date(delmaChanges[robot.id].applied_at).toLocaleDateString('pt-BR')}
+                            </Badge>
+                            <Button variant="ghost" size="sm" className="h-5 px-1 text-[10px] text-primary" onClick={(e) => { e.stopPropagation(); setDiffDialogRobotId(robot.id); }}>Ver</Button>
+                            <Button variant="ghost" size="sm" className="h-5 px-1 text-[10px] text-destructive" onClick={(e) => { e.stopPropagation(); setRollbackRobotId(robot.id); }}>Reverter</Button>
+                          </div>
+                        )}
                       </div>
                     </div>
                     <DropdownMenu>
@@ -1870,6 +1935,49 @@ export default function AdminRobos() {
           </div>
         )}
       </div>
+
+      {/* Rollback Confirmation Dialog */}
+      <RollbackDialog open={!!rollbackRobotId} onOpenChange={() => setRollbackRobotId(null)}>
+        <RollbackDialogContent>
+          <RollbackDialogHeader>
+            <RollbackDialogTitle>Reverter instrução</RollbackDialogTitle>
+            <RollbackDialogDescription>
+              Isso restaurará a instrução anterior (antes da alteração da Delma) e registrará como sinal negativo no aprendizado.
+            </RollbackDialogDescription>
+          </RollbackDialogHeader>
+          <RollbackDialogFooter>
+            <Button variant="outline" onClick={() => setRollbackRobotId(null)}>Cancelar</Button>
+            <Button variant="destructive" disabled={rollbackLoading} onClick={() => rollbackRobotId && handleRollback(rollbackRobotId)}>
+              {rollbackLoading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+              Reverter
+            </Button>
+          </RollbackDialogFooter>
+        </RollbackDialogContent>
+      </RollbackDialog>
+
+      {/* Diff Dialog */}
+      <RollbackDialog open={!!diffDialogRobotId} onOpenChange={() => setDiffDialogRobotId(null)}>
+        <RollbackDialogContent className="max-w-2xl">
+          <RollbackDialogHeader>
+            <RollbackDialogTitle>Alteração aplicada pela Delma</RollbackDialogTitle>
+            <RollbackDialogDescription>
+              {diffDialogRobotId && delmaChanges[diffDialogRobotId] ? `Seção: ${delmaChanges[diffDialogRobotId].affected_section || 'Geral'}` : ''}
+            </RollbackDialogDescription>
+          </RollbackDialogHeader>
+          {diffDialogRobotId && delmaChanges[diffDialogRobotId] && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg border border-border/50 p-3 bg-secondary/20">
+                <p className="text-[10px] font-semibold text-muted-foreground mb-2">📄 INSTRUÇÃO ANTERIOR</p>
+                <p className="text-xs text-muted-foreground whitespace-pre-wrap max-h-64 overflow-auto">{delmaChanges[diffDialogRobotId].current_instruction || '(vazio)'}</p>
+              </div>
+              <div className="rounded-lg border border-success/30 p-3 bg-success/5">
+                <p className="text-[10px] font-semibold text-success mb-2">✨ INSTRUÇÃO APLICADA</p>
+                <p className="text-xs text-foreground whitespace-pre-wrap max-h-64 overflow-auto">{delmaChanges[diffDialogRobotId].new_instruction || '(vazio)'}</p>
+              </div>
+            </div>
+          )}
+        </RollbackDialogContent>
+      </RollbackDialog>
     </MainLayout>
   );
 }
