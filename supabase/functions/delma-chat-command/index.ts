@@ -26,7 +26,7 @@ serve(async (req) => {
 
     // If confirming an action
     if (confirmed && actionId) {
-      return await executeAction(supabase, actionId, userId, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, OPENAI_API_KEY);
+      return await executeAction(supabase, actionId, userId, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, LOVABLE_API_KEY);
     }
 
     // Classify the command using AI
