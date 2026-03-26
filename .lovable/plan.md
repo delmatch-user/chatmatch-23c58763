@@ -1,68 +1,54 @@
 
 
-# Corrigir Atribuicao de robot_id nas Sugestoes de Treinamento
+# Remover Classificacao por Tags — Classificar pela Leitura da Conversa
 
-## Diagnostico
+## Problema
+Hoje a classificacao de conversas como "estabelecimento" ou "motoboy" depende de listas de tags (`ESTABELECIMENTO_TAGS`, `MOTOBOY_TAGS`). Muitas conversas nao tem tags corretas, caindo em "geral" e sendo ignoradas. O conteudo da conversa quase sempre deixa claro se e sobre motoboy ou estabelecimento.
 
-Apos analise do codigo, identifiquei dois problemas raiz:
+## Solucao
+Substituir a classificacao por tags por uma classificacao baseada no texto das mensagens da conversa. Usar keywords no conteudo das mensagens (nao nas tags).
 
-1. **`brain-train-robots/index.ts`**: A classificacao de conversas por tags usa listas muito restritas. Tags como "agendamento", "repasse", "antecipacao", "delbeneficios", "veiculo", "fila", "coleta" para motoboys e "recarga", "integracao", "pin", "cardapio", "franquia" para estabelecimentos NAO estao presentes. Muitas conversas caem em "geral" e sao ignoradas para o Sebastiao.
+## Mudancas
 
-2. **`brain-learn-from-conversations/index.ts`**: O prompt pede `content.robot_id` e `content.robot_name` mas nao fornece classificacao obrigatoria com IDs reais. A IA decide livremente e tende a atribuir tudo a Julia.
+### 1. `supabase/functions/brain-train-robots/index.ts`
 
-3. **Frontend (AdminBrain.tsx)**: O agrupamento por `robot_name` ja existe (linhas 2400-2477) mas depende do campo `robot_name` estar correto na tabela.
+- Remover `ESTABELECIMENTO_TAGS` e `MOTOBOY_TAGS` (linhas 123-124)
+- Reescrever `classifyConversation` para receber o array de `exchanges` em vez de `tags`
+- Concatenar todo o texto das mensagens e buscar keywords de motoboy (`motoboy`, `entregador`, `corrida`, `agendamento`, `repasse`, `antecipacao`, `saque`, `delbeneficios`, `veiculo`, `fila`, `coleta`, `rota`, `app do entregador`, `bloqueio`) e estabelecimento (`loja`, `estabelecimento`, `restaurante`, `recarga`, `cardapio`, `pedido`, `cancelamento`, `integracao`, `ifood`, `saipos`, `pin`, `franquia`, `parceiro`) diretamente no conteudo
+- Atualizar a chamada `classifyConversation(logTags)` (linha 164) para `classifyConversation(exchanges)`
 
-## Plano de Correcao
+### 2. `supabase/functions/brain-learn-instruction-patterns/index.ts`
 
-### 1. Expandir tags de classificacao (brain-train-robots)
+- Mesma mudanca: remover `ESTABELECIMENTO_TAGS` e `MOTOBOY_TAGS` (linhas 89-90)
+- Reescrever `classifyConversation` para ler o conteudo das mensagens
+- Na linha 132, em vez de `classifyConversation(l.tags || [])`, extrair o texto das mensagens do log e passar para a funcao
 
-Adicionar as keywords solicitadas pelo usuario nas listas:
+### Logica da nova `classifyConversation`
 
+```typescript
+function classifyByContent(messages: any[]): "estabelecimento" | "motoboy" | "geral" {
+  const text = messages.map(m => (m.content || "").toLowerCase()).join(" ");
+  const MOTOBOY_KW = ["motoboy", "entregador", "corrida", "agendamento", "repasse", 
+    "antecipacao", "antecipação", "saque", "delbeneficios", "delbenefícios", "veiculo", 
+    "veículo", "fila", "coleta", "rota", "bloqueio", "app do entregador", "entrega"];
+  const ESTAB_KW = ["loja", "estabelecimento", "restaurante", "recarga", "cardapio", 
+    "cardápio", "pedido", "cancelamento", "integracao", "integração", "ifood", "saipos", 
+    "drogavem", "pin", "franquia", "parceiro", "agrupamento"];
+  const isMotoboy = MOTOBOY_KW.some(kw => text.includes(kw));
+  const isEstab = ESTAB_KW.some(kw => text.includes(kw));
+  if (isMotoboy && !isEstab) return "motoboy";
+  if (isEstab && !isMotoboy) return "estabelecimento";
+  if (isMotoboy && isEstab) return "geral"; // ambiguo
+  return "geral";
+}
 ```
-ESTABELECIMENTO_TAGS += ["recarga", "integracao", "pin", "cardapio", "franquia", "ifood", "saipos", "drogavem", "loja", "parceiro", "restaurante"]
-MOTOBOY_TAGS += ["agendamento", "repasse", "antecipacao", "saque", "delbeneficios", "veiculo", "fila", "coleta", "app"]
-```
-
-Mesma expansao no `brain-learn-instruction-patterns/index.ts`.
-
-### 2. Classificacao obrigatoria no prompt (brain-learn-from-conversations)
-
-Injetar os IDs reais dos robos (buscados da tabela `robots`) no prompt com bloco de classificacao:
-
-```
-CLASSIFICAÇÃO OBRIGATÓRIA:
-- Motoboy/entregador/corrida/agendamento/repasse/antecipação → robot_id = [ID_SEBASTIAO], robot_name = "Sebastião"
-- Loja/estabelecimento/restaurante/recarga/cardápio/franquia → robot_id = [ID_JULIA], robot_name = "Júlia"
-- Triagem/classificação geral → robot_id = [ID_DELMA], robot_name = "Delma"
-- Se houver dúvida → Delma
-```
-
-### 3. Validacao antes de inserir (ambas EFs)
-
-Antes de salvar em `delma_suggestions` ou `robot_training_suggestions`:
-- Verificar coerencia: se texto menciona keywords de motoboy mas robot_id aponta Julia → corrigir
-- Se robot_id nulo → classificar por keywords ou marcar como nao classificado
-- Se ambos escopos presentes → dividir em duas sugestoes
-
-### 4. Frontend — secao "Nao classificadas" (AdminBrain.tsx)
-
-No agrupamento por robot (linhas 2400-2477), adicionar secao para sugestoes com `robot_name` nulo ou desconhecido:
-- Icone ⚠️ com label "Nao classificadas"
-- Exibicao no final da lista
-
-### 5. Reprocessar sugestoes pendentes incorretas
-
-SQL via insert tool para corrigir sugestoes existentes com `status = 'pending'`:
-- Analisar `content` e `title` por keywords
-- Atualizar `robot_id` e `robot_name` quando incorretos
 
 ## Arquivos a editar
 
 | # | Arquivo | Mudanca |
 |---|---------|---------|
-| 1 | `supabase/functions/brain-train-robots/index.ts` | Expandir MOTOBOY_TAGS e ESTABELECIMENTO_TAGS |
+| 1 | `supabase/functions/brain-train-robots/index.ts` | Remover tag lists, classificar pelo conteudo das mensagens |
 | 2 | `supabase/functions/brain-learn-instruction-patterns/index.ts` | Idem |
-| 3 | `supabase/functions/brain-learn-from-conversations/index.ts` | Injetar IDs reais + classificacao obrigatoria + validacao |
-| 4 | `src/pages/admin/AdminBrain.tsx` | Secao "Nao classificadas" no agrupamento |
-| 5 | SQL (insert tool) | Reprocessar sugestoes pendentes |
+
+Nenhuma outra funcionalidade alterada. Deploy das duas EFs apos edicao.
 
