@@ -80,6 +80,10 @@ async function logAudit(
     conversation_id?: string | null;
     contact_id?: string | null;
     raw_snippet?: string | null;
+    field?: string | null;
+    entry_id?: string | null;
+    signature_valid?: boolean | null;
+    is_test?: boolean;
   }
 ) {
   try {
@@ -94,6 +98,10 @@ async function logAudit(
       conversation_id: data.conversation_id || null,
       contact_id: data.contact_id || null,
       raw_snippet: data.raw_snippet || null,
+      field: data.field || null,
+      entry_id: data.entry_id || null,
+      signature_valid: data.signature_valid ?? null,
+      is_test: data.is_test ?? false,
     });
   } catch (e) {
     console.error('[Meta Webhook] Erro ao gravar auditoria:', e);
@@ -196,6 +204,35 @@ serve(async (req) => {
 
       const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+      // ===== EARLY TELEMETRY: log every entry+change at the gate =====
+      for (const entry of body.entry || []) {
+        const entryId = entry.id || null; // WABA ID
+        for (const change of entry.changes || []) {
+          const fieldName = change.field || 'unknown';
+          const value = change.value || {};
+          const phoneNumberIdTelemetry = value.metadata?.phone_number_id || null;
+
+          // Grab first message wamid if present for is_test check
+          const firstMsg = (value.messages || [])[0];
+          const firstWamid = firstMsg?.id || null;
+          const isTest = firstWamid ? firstWamid.startsWith('wamid.TEST_') : false;
+
+          await logAudit(supabase, {
+            from_phone: firstMsg?.from || null,
+            phone_number_id_payload: phoneNumberIdTelemetry,
+            wamid: firstWamid,
+            event_kind: 'webhook_received',
+            decision: 'webhook_received',
+            reason: `field=${fieldName}, msgs=${(value.messages || []).length}, statuses=${(value.statuses || []).length}`,
+            field: fieldName,
+            entry_id: entryId,
+            signature_valid: isValid,
+            is_test: isTest,
+          });
+        }
+      }
+
+      // ===== PROCESS ENTRIES =====
       for (const entry of body.entry || []) {
         for (const change of entry.changes || []) {
           if (change.field !== 'messages') continue;
@@ -234,7 +271,6 @@ serve(async (req) => {
 
           if (!connection) {
             console.error('[Meta Webhook] Nenhuma conexão Meta API encontrada');
-            // Audit all messages in this batch as skipped
             for (const msg of value.messages || []) {
               await logAudit(supabase, {
                 from_phone: msg.from,
@@ -243,6 +279,9 @@ serve(async (req) => {
                 event_kind: 'message',
                 decision: 'skipped_no_connection',
                 reason: `Nenhuma conexão meta_api encontrada para phone_number_id=${phoneNumberId}`,
+                field: 'messages',
+                entry_id: entry.id || null,
+                signature_valid: isValid,
               });
             }
             continue;
@@ -269,6 +308,9 @@ serve(async (req) => {
               decision: 'skipped_empty',
               reason: 'Batch sem mensagens nem statuses',
               connection_id: connection.id,
+              field: 'messages',
+              entry_id: entry.id || null,
+              signature_valid: isValid,
             });
           }
 
@@ -292,6 +334,9 @@ serve(async (req) => {
                 decision: 'skipped_duplicate',
                 reason: 'Mensagem já existe (external_id duplicado)',
                 connection_id: connection.id,
+                field: 'messages',
+                entry_id: entry.id || null,
+                signature_valid: isValid,
               });
               continue;
             }
@@ -354,6 +399,9 @@ serve(async (req) => {
                       decision: 'error_contact',
                       reason: `Race condition sem resolução: ${createError.message}`,
                       connection_id: connection.id,
+                      field: 'messages',
+                      entry_id: entry.id || null,
+                      signature_valid: isValid,
                     });
                     continue;
                   }
@@ -366,6 +414,9 @@ serve(async (req) => {
                     decision: 'error_contact',
                     reason: `Erro ao criar contato: ${createError.message}`,
                     connection_id: connection.id,
+                    field: 'messages',
+                    entry_id: entry.id || null,
+                    signature_valid: isValid,
                   });
                   continue;
                 }
@@ -396,6 +447,9 @@ serve(async (req) => {
                 reason: 'Nenhum departamento disponível',
                 connection_id: connection.id,
                 contact_id: contactId || undefined,
+                field: 'messages',
+                entry_id: entry.id || null,
+                signature_valid: isValid,
               });
               continue;
             }
@@ -523,6 +577,9 @@ serve(async (req) => {
                       reason: 'Unique violation 23505 mas nenhuma conversa ativa encontrada',
                       connection_id: connection.id,
                       contact_id: contactId || undefined,
+                      field: 'messages',
+                      entry_id: entry.id || null,
+                      signature_valid: isValid,
                     });
                     continue;
                   }
@@ -546,6 +603,9 @@ serve(async (req) => {
                     reason: `Erro ao criar conversa: ${convError.message}`,
                     connection_id: connection.id,
                     contact_id: contactId || undefined,
+                    field: 'messages',
+                    entry_id: entry.id || null,
+                    signature_valid: isValid,
                   });
                   continue;
                 }
@@ -736,6 +796,9 @@ serve(async (req) => {
                 connection_id: connection.id,
                 conversation_id: conversationId || undefined,
                 contact_id: contactId || undefined,
+                field: 'messages',
+                entry_id: entry.id || null,
+                signature_valid: isValid,
               });
               continue;
             }
@@ -790,6 +853,9 @@ serve(async (req) => {
               connection_id: connection.id,
               conversation_id: conversationId || undefined,
               contact_id: contactId || undefined,
+              field: 'messages',
+              entry_id: entry.id || null,
+              signature_valid: isValid,
             });
 
             // Chamar robot-chat se houver robô atribuído E não houver atendente humano E não foi transferida por robô
