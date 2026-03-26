@@ -149,7 +149,7 @@ Para cada comando, retorne:
   }
 });
 
-async function executeAction(supabase: any, actionId: string, userId: string, supabaseUrl: string, serviceKey: string, anthropicKey: string) {
+async function executeAction(supabase: any, actionId: string, userId: string, supabaseUrl: string, serviceKey: string, openaiKey: string) {
   // Find the pending action
   const { data: logs } = await supabase
     .from("delma_chat_logs")
