@@ -28,7 +28,6 @@ function formatBrazilianPhone(raw: string | null | undefined): string | null {
   return null;
 }
 
-// Verificar assinatura usando Web Crypto API nativa do Deno
 async function verifySignature(payload: string, signature: string): Promise<boolean> {
   if (!appSecret) {
     console.warn('[Meta Webhook] APP_SECRET não configurado, pulando verificação');
@@ -67,7 +66,40 @@ async function verifySignature(payload: string, signature: string): Promise<bool
   }
 }
 
-// Chamar robot-chat para processar mensagem
+// Helper to log audit entry
+async function logAudit(
+  supabase: any,
+  data: {
+    from_phone?: string | null;
+    phone_number_id_payload?: string | null;
+    wamid?: string | null;
+    event_kind?: string;
+    decision: string;
+    reason?: string | null;
+    connection_id?: string | null;
+    conversation_id?: string | null;
+    contact_id?: string | null;
+    raw_snippet?: string | null;
+  }
+) {
+  try {
+    await supabase.from('meta_webhook_audit').insert({
+      from_phone: data.from_phone || null,
+      phone_number_id_payload: data.phone_number_id_payload || null,
+      wamid: data.wamid || null,
+      event_kind: data.event_kind || 'message',
+      decision: data.decision,
+      reason: data.reason || null,
+      connection_id: data.connection_id || null,
+      conversation_id: data.conversation_id || null,
+      contact_id: data.contact_id || null,
+      raw_snippet: data.raw_snippet || null,
+    });
+  } catch (e) {
+    console.error('[Meta Webhook] Erro ao gravar auditoria:', e);
+  }
+}
+
 async function callRobotChat(
   robotId: string,
   conversationId: string,
@@ -98,7 +130,7 @@ async function callRobotChat(
       const errorText = await robotResponse.text();
       console.error('[Meta Webhook] Erro ao chamar robot-chat:', errorText);
     } else {
-      await robotResponse.text(); // consume body
+      await robotResponse.text();
       console.log('[Meta Webhook] robot-chat chamado com sucesso');
     }
   } catch (error) {
@@ -151,7 +183,6 @@ serve(async (req) => {
     if (req.method === 'POST') {
       const rawBody = await req.text();
 
-      // Verificar assinatura
       const signature = req.headers.get('x-hub-signature-256') || '';
       const isValid = await verifySignature(rawBody, signature);
 
@@ -165,7 +196,6 @@ serve(async (req) => {
 
       const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-      // Processar cada entry
       for (const entry of body.entry || []) {
         for (const change of entry.changes || []) {
           if (change.field !== 'messages') continue;
@@ -174,22 +204,54 @@ serve(async (req) => {
           const phoneNumberId = value.metadata?.phone_number_id;
 
           // Buscar conexão pelo phone_number_id
-          const { data: connection } = await supabase
+          let connection: any = null;
+          const { data: connData } = await supabase
             .from('whatsapp_connections')
             .select('id, department_id, name, access_token')
             .eq('phone_number_id', phoneNumberId)
             .eq('connection_type', 'meta_api')
+            .not('status', 'eq', 'disconnected')
             .maybeSingle();
 
+          connection = connData;
+
+          // Fallback: buscar qualquer conexão meta_api ativa se phone_number_id não bateu
           if (!connection) {
-            console.warn('[Meta Webhook] Conexão não encontrada para phone_number_id:', phoneNumberId);
+            console.warn(`[Meta Webhook] Conexão não encontrada para phone_number_id: ${phoneNumberId}, tentando fallback...`);
+            const { data: fallbackConn } = await supabase
+              .from('whatsapp_connections')
+              .select('id, department_id, name, access_token')
+              .eq('connection_type', 'meta_api')
+              .in('status', ['active', 'connected'])
+              .limit(1)
+              .maybeSingle();
+
+            if (fallbackConn) {
+              connection = fallbackConn;
+              console.log(`[Meta Webhook] Fallback: usando conexão ${fallbackConn.name} (${fallbackConn.id})`);
+            }
+          }
+
+          if (!connection) {
+            console.error('[Meta Webhook] Nenhuma conexão Meta API encontrada');
+            // Audit all messages in this batch as skipped
+            for (const msg of value.messages || []) {
+              await logAudit(supabase, {
+                from_phone: msg.from,
+                phone_number_id_payload: phoneNumberId,
+                wamid: msg.id,
+                event_kind: 'message',
+                decision: 'skipped_no_connection',
+                reason: `Nenhuma conexão meta_api encontrada para phone_number_id=${phoneNumberId}`,
+              });
+            }
             continue;
           }
 
           const departmentId = connection.department_id;
           console.log('[Meta Webhook] Conexão encontrada:', connection.name, 'Dept:', departmentId);
 
-          // Atualizar status da conexão para 'connected' ao receber webhook
+          // Atualizar status da conexão para 'connected'
           await supabase
             .from('whatsapp_connections')
             .update({ status: 'connected', updated_at: new Date().toISOString() })
@@ -201,6 +263,13 @@ serve(async (req) => {
 
           if (messagesCount === 0 && statusesCount === 0) {
             console.log('[Meta Webhook] Nenhuma mensagem ou status no batch, ignorando');
+            await logAudit(supabase, {
+              phone_number_id_payload: phoneNumberId,
+              event_kind: 'empty_batch',
+              decision: 'skipped_empty',
+              reason: 'Batch sem mensagens nem statuses',
+              connection_id: connection.id,
+            });
           }
 
           // Processar mensagens recebidas
@@ -216,6 +285,14 @@ serve(async (req) => {
 
             if (existingMsg) {
               console.log('[Meta Webhook] Mensagem duplicada ignorada:', message.id);
+              await logAudit(supabase, {
+                from_phone: message.from,
+                phone_number_id_payload: phoneNumberId,
+                wamid: message.id,
+                decision: 'skipped_duplicate',
+                reason: 'Mensagem já existe (external_id duplicado)',
+                connection_id: connection.id,
+              });
               continue;
             }
 
@@ -262,7 +339,6 @@ serve(async (req) => {
                 .single();
 
               if (createError) {
-                // Race condition: buscar contato que ganhou a corrida
                 if (createError.code === '23505') {
                   console.log(`[Meta Webhook] ⚡ Race condition - buscando contato existente para phone ${senderPhone}`);
                   const { data: raceResults } = await supabase
@@ -271,10 +347,26 @@ serve(async (req) => {
                     contactId = raceResults[0].id;
                   } else {
                     console.error('[Meta Webhook] Erro ao criar contato:', createError);
+                    await logAudit(supabase, {
+                      from_phone: senderPhone,
+                      phone_number_id_payload: phoneNumberId,
+                      wamid: message.id,
+                      decision: 'error_contact',
+                      reason: `Race condition sem resolução: ${createError.message}`,
+                      connection_id: connection.id,
+                    });
                     continue;
                   }
                 } else {
                   console.error('[Meta Webhook] Erro ao criar contato:', createError);
+                  await logAudit(supabase, {
+                    from_phone: senderPhone,
+                    phone_number_id_payload: phoneNumberId,
+                    wamid: message.id,
+                    decision: 'error_contact',
+                    reason: `Erro ao criar contato: ${createError.message}`,
+                    connection_id: connection.id,
+                  });
                   continue;
                 }
               } else {
@@ -296,6 +388,15 @@ serve(async (req) => {
 
             if (!targetDepartmentId) {
               console.error('[Meta Webhook] Nenhum departamento disponível');
+              await logAudit(supabase, {
+                from_phone: senderPhone,
+                phone_number_id_payload: phoneNumberId,
+                wamid: message.id,
+                decision: 'skipped_no_department',
+                reason: 'Nenhum departamento disponível',
+                connection_id: connection.id,
+                contact_id: contactId || undefined,
+              });
               continue;
             }
 
@@ -307,7 +408,7 @@ serve(async (req) => {
               .eq('auto_assign', true)
               .contains('departments', [targetDepartmentId]);
 
-            // Buscar config SDR para guarda
+            // Buscar config SDR
             const { data: metaSdrConfig } = await supabase
               .from('sdr_robot_config')
               .select('robot_id')
@@ -339,7 +440,6 @@ serve(async (req) => {
             for (const r of (activeRobots || [])) {
               if (!(r.channels || ['whatsapp', 'instagram', 'machine']).includes('whatsapp')) continue;
 
-              // Guarda SDR
               if (metaSdrRobotId && r.id === metaSdrRobotId) {
                 if (metaComercialDeptId && targetDepartmentId !== metaComercialDeptId) {
                   console.log(`[Meta Webhook] Robô SDR pulado (dept não é Comercial)`);
@@ -377,7 +477,6 @@ serve(async (req) => {
               conversationId = existingConv.id;
               assignedRobotId = existingConv.assigned_to_robot;
 
-              // Auto-correção: sempre sincronizar com o número oficial que recebeu a mensagem
               if (phoneNumberId && existingConv.whatsapp_instance_id !== phoneNumberId) {
                 console.log(`[Meta Webhook] Sincronizando whatsapp_instance_id da conversa ${conversationId}: ${existingConv.whatsapp_instance_id || 'null'} → ${phoneNumberId}`);
                 await supabase
@@ -403,7 +502,6 @@ serve(async (req) => {
                 .single();
 
               if (convError) {
-                // Handle unique constraint violation - conversation already exists for this contact
                 if (convError.code === '23505') {
                   console.log(`[Meta Webhook] Conversa já existente para contato ${contactId}, buscando conversa ativa...`);
                   const { data: existingConv } = await supabase
@@ -417,13 +515,21 @@ serve(async (req) => {
 
                   if (!existingConv) {
                     console.error('[Meta Webhook] Constraint 23505 mas nenhuma conversa ativa encontrada para contato:', contactId);
+                    await logAudit(supabase, {
+                      from_phone: senderPhone,
+                      phone_number_id_payload: phoneNumberId,
+                      wamid: message.id,
+                      decision: 'error_conversation',
+                      reason: 'Unique violation 23505 mas nenhuma conversa ativa encontrada',
+                      connection_id: connection.id,
+                      contact_id: contactId || undefined,
+                    });
                     continue;
                   }
                   conversationId = existingConv.id;
                   assignedRobotId = existingConv.assigned_to_robot || null;
                   console.log(`[Meta Webhook] Reutilizando conversa existente: ${conversationId}`);
 
-                  // Sync whatsapp_instance_id
                   if (phoneNumberId) {
                     await supabase
                       .from('conversations')
@@ -432,6 +538,15 @@ serve(async (req) => {
                   }
                 } else {
                   console.error('[Meta Webhook] Erro ao criar conversa:', JSON.stringify(convError));
+                  await logAudit(supabase, {
+                    from_phone: senderPhone,
+                    phone_number_id_payload: phoneNumberId,
+                    wamid: message.id,
+                    decision: 'error_conversation',
+                    reason: `Erro ao criar conversa: ${convError.message}`,
+                    connection_id: connection.id,
+                    contact_id: contactId || undefined,
+                  });
                   continue;
                 }
               } else {
@@ -463,15 +578,12 @@ serve(async (req) => {
                 const mimeType = message[message.type]?.mime_type;
                 const fileName = message[message.type]?.filename || `${message.type}_${Date.now()}`;
 
-                // Tentar baixar mídia da Meta API e fazer upload para Storage
                 let mediaUrl = `meta_media:${mediaId}`;
-                // Priorizar token do banco (mais atualizado), fallback para env
                 const metaAccessToken = connection.access_token || Deno.env.get('META_WHATSAPP_ACCESS_TOKEN');
                 console.log(`[Meta Webhook] Token source: ${connection.access_token ? 'database' : 'env'}`);
                 
                 if (mediaId && metaAccessToken) {
                   try {
-                    // 1. Obter URL do media
                     const mediaInfoRes = await fetch(
                       `https://graph.facebook.com/v21.0/${mediaId}`,
                       { headers: { 'Authorization': `Bearer ${metaAccessToken}` } }
@@ -482,7 +594,6 @@ serve(async (req) => {
                       const downloadUrl = mediaInfo.url;
                       
                       if (downloadUrl) {
-                        // 2. Baixar o arquivo
                         const mediaRes = await fetch(downloadUrl, {
                           headers: { 'Authorization': `Bearer ${metaAccessToken}` }
                         });
@@ -492,7 +603,6 @@ serve(async (req) => {
                           const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
                           const uniqueFileName = `${Date.now()}_meta_${safeName}`;
                           
-                          // 3. Upload para Storage
                           const { error: uploadError } = await supabase
                             .storage
                             .from('chat-uploads')
@@ -617,6 +727,16 @@ serve(async (req) => {
 
             if (msgError) {
               console.error('[Meta Webhook] Erro ao salvar mensagem:', msgError);
+              await logAudit(supabase, {
+                from_phone: senderPhone,
+                phone_number_id_payload: phoneNumberId,
+                wamid: message.id,
+                decision: 'error_message_insert',
+                reason: `Erro ao inserir mensagem: ${msgError.message}`,
+                connection_id: connection.id,
+                conversation_id: conversationId || undefined,
+                contact_id: contactId || undefined,
+              });
               continue;
             }
 
@@ -644,13 +764,39 @@ serve(async (req) => {
 
             console.log('[Meta Webhook] ✅ Mensagem salva com sucesso:', message.id);
 
-            // Chamar robot-chat se houver robô atribuído E não houver atendente humano E não foi transferida por robô
+            // Determine decision for audit
             const hasHumanAgent = existingConv?.assigned_to;
             const wasRobotTransferred = existingConv?.robot_transferred === true;
-            if (assignedRobotId && conversationId && !hasHumanAgent && !wasRobotTransferred) {
+            const willCallRobot = assignedRobotId && conversationId && !hasHumanAgent && !wasRobotTransferred;
+            
+            const auditDecision = willCallRobot
+              ? 'processed_robot'
+              : (isNewConversation && !filteredRobot)
+                ? 'processed_queue'
+                : existingConv
+                  ? 'processed_existing'
+                  : 'processed_queue';
+
+            await logAudit(supabase, {
+              from_phone: senderPhone,
+              phone_number_id_payload: phoneNumberId,
+              wamid: message.id,
+              decision: auditDecision,
+              reason: willCallRobot
+                ? `Robô: ${filteredRobot?.name || assignedRobotId}`
+                : isNewConversation
+                  ? 'Nova conversa criada na fila'
+                  : 'Mensagem adicionada à conversa existente',
+              connection_id: connection.id,
+              conversation_id: conversationId || undefined,
+              contact_id: contactId || undefined,
+            });
+
+            // Chamar robot-chat se houver robô atribuído E não houver atendente humano E não foi transferida por robô
+            if (willCallRobot) {
               await callRobotChat(
-                assignedRobotId,
-                conversationId,
+                assignedRobotId!,
+                conversationId!,
                 content,
                 senderPhone,
                 phoneNumberId
