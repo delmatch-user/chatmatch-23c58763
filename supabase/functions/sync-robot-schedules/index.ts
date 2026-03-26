@@ -265,7 +265,7 @@ Deno.serve(async (req) => {
 
     const { data: stuckConversations, error: stuckError } = await supabase
       .from("conversations")
-      .select("id, department_id, channel, contact_id, external_id, assigned_to_robot, sdr_deal_id")
+      .select("id, department_id, channel, contact_id, external_id, assigned_to_robot, sdr_deal_id, robot_transferred")
       .eq("status", "em_atendimento")
       .not("assigned_to_robot", "is", null)
       .is("assigned_to", null)
@@ -386,6 +386,7 @@ Deno.serve(async (req) => {
           
           if (isSDR) {
             payload.dealId = conv.sdr_deal_id;
+            payload.isTransfer = !!conv.robot_transferred;
           }
 
           const chatUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/${functionName}`;
