@@ -1,26 +1,32 @@
 
 
-# Melhorar mensagem de erro ao iniciar conversa com contato já ativo
+# Corrigir Arthur (SDR) que nao responde clientes
 
-## Problema
-Quando um atendente tenta iniciar conversa com um numero que ja tem conversa ativa (com outro atendente), o sistema as vezes cai no erro generico do banco de dados (`duplicate key value violates unique constraint "conversations_unique_active_contact"`) em vez de mostrar quem esta com a conversa.
+## Diagnostico
 
-Isso acontece porque a verificacao previa (linhas 318-324) pode falhar em condicoes de corrida — entre o check e o insert, outro webhook pode ter criado a conversa.
+Ha **19 conversas travadas** com o Arthur do Comercial atribuido mas sem atendente humano. O problema tem uma causa raiz clara:
 
-## Solucao
-No bloco `catch` da funcao `createConversation`, detectar o erro de unique constraint e buscar quem esta com a conversa ativa, exibindo uma mensagem amigavel.
+O `sync-robot-schedules` detecta conversas travadas (robo atribuido, sem resposta) e tenta reenviar chamando `robot-chat` (linha 352). Porem, `robot-chat` tem um **SDR Guard** (linha 950) que diz "essa conversa e SDR, ignorando — sdr-robot-chat e responsavel" e retorna sem fazer nada.
 
-## Mudanca
+**Resultado**: ciclo infinito de retries que nunca resolvem — o retry chama `robot-chat`, que ignora, e na proxima rodada tenta novamente.
 
-### `src/components/chat/ConversationList.tsx`
-No `catch` (linha 404-410):
-- Verificar se `error?.code === '23505'` ou `error?.message` contem `conversations_unique_active_contact`
-- Se sim, buscar a conversa ativa do contato com `assigned_to` e o nome do agente via `profiles`
-- Exibir toast amigavel: "Este contato ja esta em atendimento com [Nome]" ou "Este contato ja esta na fila"
-- Se o atendente for o proprio usuario, abrir a conversa diretamente
-- Caso contrario, manter o toast generico atual
+Exemplo concreto: conversa `8bb00196` (Iheb Belarbi) — cliente mandou mensagem em 25/03, nunca recebeu resposta do robo. Os logs mostram o retry acontecendo repetidamente sem efeito.
+
+## Correcao
+
+### `supabase/functions/sync-robot-schedules/index.ts`
+
+Na secao de retry de conversas travadas (linhas 339-361):
+
+1. Antes de montar o payload, verificar se a conversa tem `sdr_deal_id`
+2. Se sim, chamar `sdr-robot-chat` em vez de `robot-chat`, passando `dealId` no payload
+3. Se nao, manter o fluxo atual chamando `robot-chat`
+
+Mudanca localizada — apenas o bloco de retry precisa saber diferenciar SDR de standard.
+
+**Adicionar `sdr_deal_id` no SELECT** da query de conversas travadas (linha 253) para ter essa informacao disponivel.
 
 | # | Arquivo | Mudanca |
 |---|---------|---------|
-| 1 | `src/components/chat/ConversationList.tsx` | Tratar unique constraint no catch com mensagem amigavel mostrando nome do agente |
+| 1 | `supabase/functions/sync-robot-schedules/index.ts` | Incluir `sdr_deal_id` no select + rotear retry para `sdr-robot-chat` quando for SDR |
 
