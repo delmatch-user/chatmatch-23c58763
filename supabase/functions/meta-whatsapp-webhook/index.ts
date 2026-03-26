@@ -389,9 +389,38 @@ serve(async (req) => {
                 .single();
 
               if (convError) {
-                console.error('[Meta Webhook] Erro ao criar conversa:', convError);
-                continue;
-              }
+                // Handle unique constraint violation - conversation already exists for this contact
+                if (convError.code === '23505') {
+                  console.log(`[Meta Webhook] Conversa já existente para contato ${contactId}, buscando conversa ativa...`);
+                  const { data: existingConv } = await supabase
+                    .from('conversations')
+                    .select('id, assigned_to_robot')
+                    .eq('contact_id', contactId)
+                    .in('status', ['em_fila', 'em_atendimento', 'pendente', 'transferida'])
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+
+                  if (!existingConv) {
+                    console.error('[Meta Webhook] Constraint 23505 mas nenhuma conversa ativa encontrada para contato:', contactId);
+                    continue;
+                  }
+                  conversationId = existingConv.id;
+                  assignedRobotId = existingConv.assigned_to_robot || null;
+                  console.log(`[Meta Webhook] Reutilizando conversa existente: ${conversationId}`);
+
+                  // Sync whatsapp_instance_id
+                  if (phoneNumberId) {
+                    await supabase
+                      .from('conversations')
+                      .update({ whatsapp_instance_id: phoneNumberId })
+                      .eq('id', conversationId);
+                  }
+                } else {
+                  console.error('[Meta Webhook] Erro ao criar conversa:', JSON.stringify(convError));
+                  continue;
+                }
+              } else {
               conversationId = newConv.id;
               isNewConversation = true;
               assignedRobotId = filteredRobot?.id || null;
