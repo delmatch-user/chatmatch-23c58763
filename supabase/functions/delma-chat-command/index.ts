@@ -304,11 +304,13 @@ async function handleQuery(supabase: any, action: string, message: string, lovab
     }
 
     if (action === "consultar_metricas") {
+      const SUPORTE_DEPT_ID = "dea51138-49e4-45b0-a491-fb07a5fad479";
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const { data: todayLogs } = await supabase
         .from("conversation_logs")
         .select("started_at, finalized_at, wait_time")
+        .eq("department_id", SUPORTE_DEPT_ID)
         .gte("finalized_at", today.toISOString())
         .limit(500);
 
@@ -319,7 +321,7 @@ async function handleQuery(supabase: any, action: string, message: string, lovab
         return (end - start) / 60000;
       }).filter((t: number) => t > 0 && t < 1440);
       const avgTMA = tmas.length > 0 ? Math.round(tmas.reduce((a: number, b: number) => a + b, 0) / tmas.length) : 0;
-      const avgTME = (todayLogs || []).filter((l: any) => l.wait_time).map((l: any) => l.wait_time);
+      const avgTME = (todayLogs || []).filter((l: any) => l.wait_time).map((l: any) => l.wait_time / 60);
       const avgWait = avgTME.length > 0 ? Math.round(avgTME.reduce((a: number, b: number) => a + b, 0) / avgTME.length) : 0;
 
       return `📊 **Métricas de Hoje**\n\n` +
