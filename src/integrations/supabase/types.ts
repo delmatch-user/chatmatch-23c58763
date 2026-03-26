@@ -551,6 +551,51 @@ export type Database = {
           },
         ]
       }
+      delma_anomalies: {
+        Row: {
+          affected_entity: string | null
+          affected_entity_id: string | null
+          auto_suggestion_id: string | null
+          description: string
+          detected_at: string
+          id: string
+          metric_baseline: number | null
+          metric_current: number | null
+          resolution_notes: string | null
+          resolved_at: string | null
+          severity: string
+          type: string
+        }
+        Insert: {
+          affected_entity?: string | null
+          affected_entity_id?: string | null
+          auto_suggestion_id?: string | null
+          description: string
+          detected_at?: string
+          id?: string
+          metric_baseline?: number | null
+          metric_current?: number | null
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          severity?: string
+          type: string
+        }
+        Update: {
+          affected_entity?: string | null
+          affected_entity_id?: string | null
+          auto_suggestion_id?: string | null
+          description?: string
+          detected_at?: string
+          id?: string
+          metric_baseline?: number | null
+          metric_current?: number | null
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          severity?: string
+          type?: string
+        }
+        Relationships: []
+      }
       delma_chat_logs: {
         Row: {
           action_type: string
