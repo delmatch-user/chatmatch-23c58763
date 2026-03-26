@@ -1092,10 +1092,13 @@ const AdminBrain = () => {
 
             {/* ======================== PAINEL TAB ======================== */}
             <TabsContent value="overview" className="space-y-6">
+              {/* ⚡ Active Anomaly Alerts */}
+              <ActiveAnomalyAlerts onNavigateToSuggestions={() => setActiveTab('delma-suggestions')} />
+
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-                <KPICard title="Total Conversas" value={metrics.totalConversas} icon={MessageSquare} trend={getTrend(metrics.totalConversas, metrics.prevTotalConversas)} />
-                <KPICard title="TMA" value={formatTime(metrics.tma)} icon={Clock} trend={getTrend(metrics.tma, metrics.prevTma, true)} subtitle="Tempo médio de atendimento" />
-                <KPICard title="TME" value={formatTime(metrics.tme)} icon={Clock} trend={getTrend(metrics.tme, metrics.prevTme, true)} subtitle="Tempo médio de espera" />
+                <KPICard title="Total Conversas" value={metrics.totalConversas} icon={MessageSquare} trend={getTrend(metrics.totalConversas, metrics.prevTotalConversas)} dailyTrends={metrics.dailyTrends} trendKey="volume" />
+                <KPICard title="TMA" value={formatTime(metrics.tma)} icon={Clock} trend={getTrend(metrics.tma, metrics.prevTma, true)} subtitle="Tempo médio de atendimento" dailyTrends={metrics.dailyTrends} trendKey="tma" />
+                <KPICard title="TME" value={formatTime(metrics.tme)} icon={Clock} trend={getTrend(metrics.tme, metrics.prevTme, true)} subtitle="Tempo médio de espera" dailyTrends={metrics.dailyTrends} trendKey="tme" />
                 <KPICard
                   title="Resolução IA"
                   value={metrics.aiResolved + metrics.humanResolved > 0 ? `${Math.round((metrics.aiResolved / (metrics.aiResolved + metrics.humanResolved)) * 100)}%` : '0%'}
@@ -1110,6 +1113,9 @@ const AdminBrain = () => {
                 />
                 <KPICard title="CSAT" value="—" icon={Star} subtitle="Sem dados de avaliação" />
               </div>
+
+              {/* 🔮 Predictions */}
+              <PredictionsSection aiAnalysis={aiAnalysis} />
 
               {metrics.dailyTrends && metrics.dailyTrends.length > 1 && (
                 <Card>
