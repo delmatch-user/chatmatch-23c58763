@@ -528,12 +528,12 @@ serve(async (req) => {
     }
 
     // === LOCK IMEDIATO: Setar lock de 3s para evitar race condition ===
-    const immediateLockUntil = new Date(Date.now() + 120000).toISOString();
+    const immediateLockUntil = new Date(Date.now() + 20000).toISOString();
     await supabase.from('conversations').update({ robot_lock_until: immediateLockUntil }).eq('id', conversationId);
-    console.log(`[SDR-Robot-Chat] Lock imediato de 120s setado para evitar duplicação.`);
+    console.log(`[SDR-Robot-Chat] Lock imediato de 20s setado para evitar duplicação.`);
     
-    // Delay de 3s para garantir que chamadas concorrentes vejam o lock
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    // Delay de 2s para garantir que chamadas concorrentes vejam o lock
+    await new Promise(resolve => setTimeout(resolve, 2000));
     
     // Re-verificar se a conversa ainda está atribuída ao robô SDR após o delay
     const { data: convRecheck } = await supabase
@@ -1384,7 +1384,7 @@ serve(async (req) => {
       : [responseText];
 
     // Delay for client message to load
-    await new Promise(r => setTimeout(r, 3000));
+    await new Promise(r => setTimeout(r, 2000));
 
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];

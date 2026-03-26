@@ -966,12 +966,12 @@ async function handleAutomaticMode(body: {
   }
 
   // === LOCK IMEDIATO: Setar lock de 3s para evitar race condition ===
-  const immediateLockUntil = new Date(Date.now() + 120000).toISOString();
+  const immediateLockUntil = new Date(Date.now() + 20000).toISOString();
   await supabase.from('conversations').update({ robot_lock_until: immediateLockUntil }).eq('id', conversationId);
-  console.log(`[Robot-Chat Auto] Lock imediato de 120s setado para evitar duplicação.`);
+  console.log(`[Robot-Chat Auto] Lock imediato de 20s setado para evitar duplicação.`);
   
-  // Delay de 3s para garantir que chamadas concorrentes vejam o lock
-  await new Promise(resolve => setTimeout(resolve, 3000));
+  // Delay de 2s para garantir que chamadas concorrentes vejam o lock
+  await new Promise(resolve => setTimeout(resolve, 2000));
   
   // Re-verificar se a conversa ainda está atribuída a este robô após o delay
   const { data: convRecheck } = await supabase
@@ -1222,7 +1222,7 @@ async function handleAutomaticMode(body: {
 
   // === SET LOCK + GROUP MESSAGES ===
   const groupMessages = robotConfig.tools.groupMessages;
-  const groupMessagesTime = robotConfig.tools.groupMessagesTime || 40;
+  const groupMessagesTime = robotConfig.tools.groupMessagesTime || 20;
   
   // Triagem inteligente: se o cliente já enviou conteúdo substantivo, reduz delay pela metade
   let effectiveDelay: number;
@@ -1235,14 +1235,14 @@ async function handleAutomaticMode(body: {
     const isSubstantiveMessage = lastCustomerMsg.length > 15 || lastCustomerMsg.trim().split(/\s+/).length > 2;
     
     if (isSubstantiveMessage) {
-      effectiveDelay = Math.max(10, Math.floor(groupMessagesTime / 2));
+      effectiveDelay = Math.max(5, Math.floor(groupMessagesTime / 2));
       console.log(`[Robot-Chat Auto] Triagem inteligente: mensagem substantiva detectada ("${lastCustomerMsg.substring(0, 50)}..."), delay reduzido para ${effectiveDelay}s`);
     } else {
       effectiveDelay = groupMessagesTime;
       console.log(`[Robot-Chat Auto] Mensagem curta detectada ("${lastCustomerMsg}"), aguardando ${effectiveDelay}s para mais contexto`);
     }
   } else {
-    effectiveDelay = 5; // Sem agrupamento: 5s (reduzido de 30s)
+    effectiveDelay = 3; // Sem agrupamento: 3s
   }
   
   const lockDuration = effectiveDelay; // seconds
@@ -1904,8 +1904,8 @@ async function handleAutomaticMode(body: {
     ? aiResponse.split('\n').map((p: string) => p.trim()).filter((p: string) => p.length > 0)
     : [aiResponse];
 
-  // Delay de 3s para garantir que a mensagem do cliente carregou na tela dos atendentes
-  await new Promise(resolve => setTimeout(resolve, 3000));
+  // Delay de 2s para garantir que a mensagem do cliente carregou na tela dos atendentes
+  await new Promise(resolve => setTimeout(resolve, 2000));
 
   // Pular salvamento no DB quando houve transfer_to_robot (robô destino responde)
   const hasTransferToolUsed = hasTransferTool && skipSending;
