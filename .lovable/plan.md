@@ -1,67 +1,26 @@
 
-# Restabelecer recebimento da API Oficial (quando “está tudo certo” mas não chega POST)
 
-## Diagnóstico atual (com base no que já medi)
-- A integração interna **processa corretamente** quando recebe POST (teste manual gerou `processed_queue` no `meta_webhook_audit`).
-- A conexão `meta_api` está ativa e com `phone_number_id` preenchido.
-- Nas últimas horas, entrou apenas evento de teste (`wamid.TEST_DIAG_001`), ou seja: o problema é **falta de entrega de eventos reais** antes do processamento da fila.
+# Melhorar mensagem de erro ao iniciar conversa com contato já ativo
 
-## Plano de implementação (focado em causa raiz e auto-recuperação)
+## Problema
+Quando um atendente tenta iniciar conversa com um numero que ja tem conversa ativa (com outro atendente), o sistema as vezes cai no erro generico do banco de dados (`duplicate key value violates unique constraint "conversations_unique_active_contact"`) em vez de mostrar quem esta com a conversa.
 
-1) **Fortalecer telemetria de entrada no webhook (primeiro ponto da cadeia)**
-- Arquivo: `supabase/functions/meta-whatsapp-webhook/index.ts`
-- Registrar auditoria logo no início de cada POST, antes de qualquer filtro, com:
-  - `field` recebido (messages/statuses/outros),
-  - `entry_id` (WABA),
-  - `phone_number_id` do payload,
-  - `signature_valid`,
-  - marcador `is_test` (ex.: `wamid.TEST_`).
-- Resultado: fica impossível “sumir sem rastro”; saberemos se chegou e por que foi ignorado.
+Isso acontece porque a verificacao previa (linhas 318-324) pode falhar em condicoes de corrida — entre o check e o insert, outro webhook pode ter criado a conversa.
 
-2) **Adicionar diagnóstico ativo da assinatura/inscrição no provedor (dentro do backend)**
-- Novo backend function: `supabase/functions/meta-webhook-diagnose/index.ts`
-- A função consulta, usando token salvo da conexão:
-  - validade do token,
-  - vínculo do app com o WABA (`subscribed_apps`),
-  - consistência `phone_number_id`/WABA.
-- Incluir modo `repair=true` para reinscrever app automaticamente quando detectar não inscrição.
-- Resultado: elimina tentativa manual repetitiva e confirma tecnicamente onde está quebrando.
+## Solucao
+No bloco `catch` da funcao `createConversation`, detectar o erro de unique constraint e buscar quem esta com a conversa ativa, exibindo uma mensagem amigavel.
 
-3) **Expor diagnóstico operacional na aba API Oficial**
-- Arquivos:
-  - `src/pages/admin/AdminIntegrations.tsx`
-  - `src/components/admin/MetaWebhookAuditPanel.tsx`
-- Adicionar card “Saúde do Webhook” com:
-  - último POST real recebido (tempo relativo),
-  - último POST de teste,
-  - status de assinatura,
-  - status de inscrição no WABA,
-  - botão “Diagnosticar agora” e “Reparar inscrição”.
-- Resultado: time consegue agir em 1 clique sem abrir painéis externos.
+## Mudanca
 
-4) **Ajustar schema da auditoria para suportar o novo nível de diagnóstico**
-- Nova migration em `supabase/migrations/...`
-- Acrescentar colunas em `meta_webhook_audit` para: `field`, `entry_id`, `signature_valid`, `is_test`.
-- Índices por `received_at`, `is_test`, `field`.
+### `src/components/chat/ConversationList.tsx`
+No `catch` (linha 404-410):
+- Verificar se `error?.code === '23505'` ou `error?.message` contem `conversations_unique_active_contact`
+- Se sim, buscar a conversa ativa do contato com `assigned_to` e o nome do agente via `profiles`
+- Exibir toast amigavel: "Este contato ja esta em atendimento com [Nome]" ou "Este contato ja esta na fila"
+- Se o atendente for o proprio usuario, abrir a conversa diretamente
+- Caso contrario, manter o toast generico atual
 
-5) **Validação fim a fim (obrigatória)**
-- Rodar “Diagnosticar agora” e confirmar:
-  - token válido,
-  - app inscrito no WABA,
-  - `messages` ativo.
-- Enviar mensagem real para API Oficial e validar sequência:
-  - `webhook_received` (entrada crua) →
-  - decisão (`processed_queue`/`processed_robot`/`skipped_*`) →
-  - conversa visível na fila ou motivo explícito no painel.
+| # | Arquivo | Mudanca |
+|---|---------|---------|
+| 1 | `src/components/chat/ConversationList.tsx` | Tratar unique constraint no catch com mensagem amigavel mostrando nome do agente |
 
-## Escopo
-- Alterações restritas ao fluxo da API Oficial:
-  - `meta-whatsapp-webhook`
-  - novo `meta-webhook-diagnose`
-  - painel de integrações (API Oficial)
-  - migration da tabela de auditoria
-- Sem mexer em abas não relacionadas.
-
-## Detalhes técnicos (resumo)
-- Objetivo não é “mascarar” falha externa: é **detectar automaticamente** se o evento não chegou, chegou inválido, ou foi descartado por regra interna.
-- Com isso, qualquer nova falha deixa evidência objetiva em banco e ação de correção guiada na interface.
