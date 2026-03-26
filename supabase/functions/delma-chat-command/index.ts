@@ -227,7 +227,7 @@ async function executeAction(supabase: any, actionId: string, userId: string, su
   });
 }
 
-async function handleQuery(supabase: any, action: string, message: string, anthropicKey: string): Promise<string> {
+async function handleQuery(supabase: any, action: string, message: string, openaiKey: string): Promise<string> {
   try {
     if (action === "status_suporte") {
       const { data: activeConvs } = await supabase
