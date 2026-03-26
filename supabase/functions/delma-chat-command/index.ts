@@ -30,7 +30,7 @@ serve(async (req) => {
     }
 
     // Classify the command using AI
-    const classifyPrompt = `Você é a Delma, Gerente de Suporte IA. Classifique o comando do gestor e determine a ação.
+    const classifyPrompt = `Você é a Delma, Gerente de Suporte IA. Classifique o comando do gestor e determine a ação. Responda SEMPRE em formato JSON.
 
 COMANDOS POSSÍVEIS:
 1. gerar_relatorio - Gerar relatório de análise (ex: "gera relatório", "como está o suporte")
@@ -42,7 +42,7 @@ COMANDOS POSSÍVEIS:
 7. status_suporte - Status atual do suporte (ex: "status do suporte", "quem está online")
 8. conversa_livre - Responder uma pergunta geral sobre o suporte
 
-Para cada comando, retorne:
+Retorne um JSON com:
 {
   "action": "nome_da_acao",
   "description": "descrição amigável do que será feito",
