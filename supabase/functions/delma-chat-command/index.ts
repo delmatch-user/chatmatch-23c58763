@@ -90,7 +90,7 @@ Para cada comando, retorne:
       let response = classification.response || "";
 
       if (action === "consultar_metricas" || action === "status_suporte") {
-        response = await handleQuery(supabase, action, message, OPENAI_API_KEY);
+        response = await handleQuery(supabase, action, message, LOVABLE_API_KEY);
       } else if (action === "listar_sugestoes") {
         response = await handleListSuggestions(supabase);
       }
