@@ -196,10 +196,16 @@ Retorne JSON com array "suggestions". Cada sugestão:
   "reasoning": "justificativa com dados (volume de conversas, padrão observado)",
   "compliance_status": "aligned | review | conflict",
   "compliance_notes": "nota de conformidade (obrigatório se review/conflict)",
-  "examples": ["até 3 trechos anonimizados de conversas humanas que embasam"]
+  "examples": ["até 3 trechos anonimizados de conversas humanas que embasam"],
+  "impact_score": 0-100 calculado como: (volume_afetado × 0.35) + (reducao_tma × 0.25) + (recorrencia × 0.20) + (urgencia × 0.20),
+  "impact_breakdown": { "volume_weight": 0-100, "tma_reduction": 0-100, "recurrence": 0-100, "urgency": 0-100 },
+  "conversation_count": número exato de conversas analisadas que embasam (OBRIGATÓRIO > 0),
+  "estimated_impact": "estimativa em linguagem natural (ex: 'Pode reduzir ~2min no TMA de conversas de cancelamento')",
+  "recurrence_pattern": "pontual | semanal | cronico"
 }
 
-Gere entre 1-3 sugestões de alta qualidade. Priorize melhorias com maior impacto.`;
+Gere entre 1-3 sugestões de alta qualidade. Priorize melhorias com maior impacto.
+Se conversation_count for 0, descarte a sugestão.`;
 
       const userPrompt = `CONVERSAS HUMANAS EFICIENTES (${scopedLogs.length} conversas, TMA abaixo da média do time):
 ${JSON.stringify(conversationSummaries, null, 1)}
@@ -245,9 +251,27 @@ Analise e proponha melhorias nas instruções gerais do robô "${robot.name}".`;
 
         const suggestions = parsed.suggestions || [];
 
+        // Smart suppression check
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+        const { data: recentDecided } = await supabase
+          .from("delma_suggestions")
+          .select("title, status")
+          .eq("category", "melhoria_instrucao")
+          .in("status", ["rejected", "approved", "edited"])
+          .gte("decided_at", thirtyDaysAgo);
+        const rejectedTitles = new Set((recentDecided || []).filter((s: any) => s.status === "rejected").map((s: any) => s.title?.toLowerCase()));
+        const approvedTitles = new Set((recentDecided || []).filter((s: any) => s.status === "approved" || s.status === "edited").map((s: any) => s.title?.toLowerCase()));
+
         for (const s of suggestions) {
           const title = s.title || "Melhoria de instrução";
-          if (existingTitles.has(title.toLowerCase())) continue;
+          const titleLower = title.toLowerCase();
+          if (existingTitles.has(titleLower)) continue;
+          if (rejectedTitles.has(titleLower)) continue;
+          if (approvedTitles.has(titleLower)) continue;
+          if (s.conversation_count !== undefined && s.conversation_count <= 0) continue;
+
+          const dataWindowStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR');
+          const dataWindowEnd = new Date().toLocaleDateString('pt-BR');
 
           const { error: insertErr } = await supabase.from("delma_suggestions").insert({
             category: "melhoria_instrucao",
@@ -262,6 +286,13 @@ Analise e proponha melhorias nas instruções gerais do robô "${robot.name}".`;
               compliance_status: s.compliance_status || "aligned",
               compliance_notes: s.compliance_notes || null,
               examples: (s.examples || []).slice(0, 3),
+              impact_score: s.impact_score || 50,
+              impact_breakdown: s.impact_breakdown || { volume_weight: 50, tma_reduction: 50, recurrence: 50, urgency: 50 },
+              data_window: `${dataWindowStart} a ${dataWindowEnd}`,
+              conversation_count: s.conversation_count || scopedLogs.length,
+              estimated_impact: s.estimated_impact || "",
+              recurrence_pattern: s.recurrence_pattern || "pontual",
+              affected_entity: robot.name,
             },
             confidence_score: 70,
             memories_used: [],
@@ -270,7 +301,7 @@ Analise e proponha melhorias nas instruções gerais do robô "${robot.name}".`;
 
           if (!insertErr) {
             totalSuggestions++;
-            existingTitles.add(title.toLowerCase());
+            existingTitles.add(titleLower);
           }
         }
       } catch (e) {
