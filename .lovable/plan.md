@@ -1,60 +1,52 @@
 
+# Plano — Diagnóstico e Correção para mensagens da API Oficial que não entram na fila
 
-# Conversas da API Oficial Nao Caem na Fila — Diagnostico e Correcao
+## Diagnóstico já confirmado com o exemplo enviado (11930837322 em 26/03 às 15:06)
+- Para esse número, no dia 26/03, existe registro no histórico apenas às **17:34 UTC** (14:34 BRT) com `whatsapp_instance_id = suporte` (canal QR/Baileys), protocolo `20260326-00043`.
+- **Não há registro** desse número no horário informado (15:06 BRT) nem em conversa ativa.
+- No mesmo intervalo, o sistema estava funcionando e recebendo outros eventos (inclusive 1 evento da API Oficial de teste), então não é parada geral.
+- Conclusão prática: para esse caso específico, o evento não foi persistido no fluxo esperado da API Oficial; hoje falta trilha persistente de “motivo de descarte”, então o motivo exato não fica auditável.
 
-## Diagnostico
+## O que vou implementar (100% aditivo)
+1. **Criar auditoria persistente de ingestão da API Oficial**
+   - Nova tabela para registrar cada evento recebido pelo webhook (inclusive os descartados), com:
+     - `received_at`, `from_phone`, `phone_number_id_payload`, `wamid`, `event_kind` (`message`/`status`),
+     - `decision` (`processed_queue`, `processed_robot`, `skipped_duplicate`, `skipped_no_connection`, `skipped_no_department`, `error_contact`, `error_conversation`, `error_message_insert`),
+     - `reason`, `connection_id`, `conversation_id`.
+   - RLS restrita a admin/supervisor.
 
-Apos analise detalhada, identifiquei **dois problemas distintos**:
+2. **Instrumentar `meta-whatsapp-webhook` para gravar decisão em todos os caminhos**
+   - Antes de cada `continue`/erro, gravar o motivo na auditoria.
+   - Ao processar com sucesso, gravar se foi para fila (`em_fila`) ou atendimento automático (`em_atendimento` por robô).
+   - Isso resolve o “precisamos saber o motivo”.
 
-### Problema 1: Webhook Meta nao esta recebendo eventos
+3. **Adicionar fallback de resolução de conexão (sem quebrar regra atual)**
+   - Mantém busca principal por `phone_number_id`.
+   - Se não encontrar, tenta fallback controlado por `waba_id`/metadados compatíveis e registra que houve fallback.
+   - Se ainda falhar, registra `skipped_no_connection` com payload mínimo útil.
 
-**Evidencia:** A ultima mensagem da API oficial (external_id com prefixo `wamid.`) foi em **16 de marco** — 10 dias atras. Os logs da Edge Function `meta-whatsapp-webhook` mostram apenas eventos "shutdown", nenhum "boot" ou processamento. Isso significa que **a Meta nao esta enviando webhooks** para a URL da funcao.
+4. **Expor diagnóstico no painel de integrações (somente leitura)**
+   - Bloco “Diagnóstico API Oficial” em Admin Integrations com últimos eventos da auditoria (ex.: 20/50 últimos), filtros rápidos por número e status.
+   - Permite o gestor ver imediatamente “por que caiu/não caiu”, sem depender de log técnico.
 
-**Causa provavel:** A conexao Meta API tem `status: active` (nao `connected`), e o ultimo update foi em 12 de marco. Possivelmente:
-- O webhook URL configurado no Meta Business Manager expirou ou foi desconfigurado
-- O token de acesso Meta expirou
-- A assinatura do app Meta foi desativada
+5. **Validação end-to-end com o caso real informado**
+   - Testar novo envio para o número 11930837322.
+   - Confirmar no painel:
+     - se entrou em `processed_queue` (caiu na fila),
+     - ou `processed_robot` (foi direto para robô),
+     - ou algum `skipped_*`/`error_*` com motivo explícito.
+   - Confirmar criação de conversa/histórico e rastreabilidade completa.
 
-**Correcao:** Isso e um problema de configuracao **externa** (Meta Business Manager), nao de codigo. Voce precisa:
-1. Acessar o Meta Business Manager > App > Webhooks
-2. Verificar se a URL do webhook esta correta: `https://jfbixwfioehqkussmhov.supabase.co/functions/v1/meta-whatsapp-webhook`
-3. Revalidar a assinatura do webhook
-4. Verificar se o token de acesso ainda e valido
+## Arquivos/artefatos planejados
+1. `supabase/migrations/<timestamp>_create_meta_webhook_audit.sql` (nova tabela + índices + RLS)
+2. `supabase/functions/meta-whatsapp-webhook/index.ts` (instrumentação + fallback + reason codes)
+3. `src/pages/admin/AdminIntegrations.tsx` (seção de diagnóstico em leitura)
 
-### Problema 2: Insert de conversa pode falhar silenciosamente
-
-No codigo (linhas 375-394), quando a criacao de conversa falha (ex: constraint `uq_active_conversation_per_contact` se o contato ja tem conversa ativa via Baileys), o webhook faz `continue` e **perde a mensagem** sem log adequado.
-
-**Correcao no codigo:** Adicionar tratamento para o caso de erro `23505` (unique violation) no insert de conversa — buscar a conversa ativa existente e continuar processando a mensagem nela.
-
-### Problema 3: Log e rastreabilidade
-
-Nao ha como saber retrospectivamente quais mensagens foram perdidas. Precisamos adicionar logs mais detalhados.
-
-## Mudancas no Codigo
-
-### `supabase/functions/meta-whatsapp-webhook/index.ts`
-
-1. **Tratar erro 23505 no insert de conversa** (linhas 391-394):
-   - Se `convError.code === '23505'`, buscar a conversa ativa existente por `contact_id` e continuar
-   - Log explicativo: "Conversa ja existente para contato, reutilizando"
-
-2. **Adicionar logs de diagnostico no inicio**:
-   - Log do `phone_number_id` recebido vs conexoes disponiveis
-   - Log quando nenhuma mensagem e processada em um batch
-
-3. **Atualizar status da conexao Meta** para `connected` quando receber webhook com sucesso (opcional, para monitoramento)
-
-## Acao Imediata do Usuario
-
-O problema principal e **externo ao codigo** — o webhook Meta precisa ser reconfigurado. Apos a correcao de codigo, voce deve:
-1. Verificar no Meta Business Manager se o webhook URL esta ativo
-2. Testar enviando uma mensagem para o numero da API Oficial
-3. Observar os logs da Edge Function para confirmar que eventos estao chegando
-
-## Arquivos a editar
-
-| # | Arquivo | Mudanca |
-|---|---------|---------|
-| 1 | `supabase/functions/meta-whatsapp-webhook/index.ts` | Tratar unique violation no insert + logs de diagnostico |
-
+## Detalhes técnicos (resumo)
+- A correção não altera comportamento existente de roteamento; ela adiciona observabilidade e fallback seguro.
+- O problema “não caiu na fila” será diferenciado entre:
+  - **não recebido**,
+  - **recebido e descartado** (com razão),
+  - **recebido e direcionado ao robô** (não fila por regra),
+  - **recebido e entrou na fila**.
+- Com isso, cada novo caso terá causa objetiva em banco, sem depender de inferência por log volátil.
