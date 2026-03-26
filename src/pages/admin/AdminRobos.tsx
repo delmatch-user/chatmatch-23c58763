@@ -1935,6 +1935,49 @@ export default function AdminRobos() {
           </div>
         )}
       </div>
+
+      {/* Rollback Confirmation Dialog */}
+      <RollbackDialog open={!!rollbackRobotId} onOpenChange={() => setRollbackRobotId(null)}>
+        <RollbackDialogContent>
+          <RollbackDialogHeader>
+            <RollbackDialogTitle>Reverter instrução</RollbackDialogTitle>
+            <RollbackDialogDescription>
+              Isso restaurará a instrução anterior (antes da alteração da Delma) e registrará como sinal negativo no aprendizado.
+            </RollbackDialogDescription>
+          </RollbackDialogHeader>
+          <RollbackDialogFooter>
+            <Button variant="outline" onClick={() => setRollbackRobotId(null)}>Cancelar</Button>
+            <Button variant="destructive" disabled={rollbackLoading} onClick={() => rollbackRobotId && handleRollback(rollbackRobotId)}>
+              {rollbackLoading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+              Reverter
+            </Button>
+          </RollbackDialogFooter>
+        </RollbackDialogContent>
+      </RollbackDialog>
+
+      {/* Diff Dialog */}
+      <RollbackDialog open={!!diffDialogRobotId} onOpenChange={() => setDiffDialogRobotId(null)}>
+        <RollbackDialogContent className="max-w-2xl">
+          <RollbackDialogHeader>
+            <RollbackDialogTitle>Alteração aplicada pela Delma</RollbackDialogTitle>
+            <RollbackDialogDescription>
+              {diffDialogRobotId && delmaChanges[diffDialogRobotId] ? `Seção: ${delmaChanges[diffDialogRobotId].affected_section || 'Geral'}` : ''}
+            </RollbackDialogDescription>
+          </RollbackDialogHeader>
+          {diffDialogRobotId && delmaChanges[diffDialogRobotId] && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg border border-border/50 p-3 bg-secondary/20">
+                <p className="text-[10px] font-semibold text-muted-foreground mb-2">📄 INSTRUÇÃO ANTERIOR</p>
+                <p className="text-xs text-muted-foreground whitespace-pre-wrap max-h-64 overflow-auto">{delmaChanges[diffDialogRobotId].current_instruction || '(vazio)'}</p>
+              </div>
+              <div className="rounded-lg border border-success/30 p-3 bg-success/5">
+                <p className="text-[10px] font-semibold text-success mb-2">✨ INSTRUÇÃO APLICADA</p>
+                <p className="text-xs text-foreground whitespace-pre-wrap max-h-64 overflow-auto">{delmaChanges[diffDialogRobotId].new_instruction || '(vazio)'}</p>
+              </div>
+            </div>
+          )}
+        </RollbackDialogContent>
+      </RollbackDialog>
     </MainLayout>
   );
 }
