@@ -119,14 +119,14 @@ serve(async (req) => {
       });
     }
 
-    // 3. Extract human-client conversation pairs and classify by scope
-    const ESTABELECIMENTO_TAGS = ["erro_sistema", "cancelamento", "financeiro", "operacional", "duvida", "comercial", "b2b", "cadastro", "cardapio", "pagamento", "sistema", "contrato", "estabelecimento", "recarga", "integracao", "pin", "franquia", "ifood", "saipos", "drogavem", "loja", "parceiro", "restaurante", "pedido", "agrupamento"];
-    const MOTOBOY_TAGS = ["motoboy", "entregador", "entrega", "corrida", "rota", "acidente", "urgente", "bloqueio", "agendamento", "repasse", "antecipacao", "antecipação", "saque", "delbeneficios", "delbenefícios", "veiculo", "veículo", "fila", "coleta", "app_entregador", "app"];
+    // 3. Extract human-client conversation pairs and classify by message content
+    const MOTOBOY_KW = ["motoboy", "entregador", "corrida", "agendamento", "repasse", "antecipacao", "antecipação", "saque", "delbeneficios", "delbenefícios", "veiculo", "veículo", "fila", "coleta", "rota", "bloqueio", "app do entregador", "entrega"];
+    const ESTAB_KW = ["loja", "estabelecimento", "restaurante", "recarga", "cardapio", "cardápio", "pedido", "cancelamento", "integracao", "integração", "ifood", "saipos", "drogavem", "pin", "franquia", "parceiro", "agrupamento"];
 
-    function classifyConversation(tags: string[]): "estabelecimento" | "motoboy" | "geral" {
-      const lower = tags.map(t => t.toLowerCase());
-      const isMotoboy = lower.some(t => MOTOBOY_TAGS.some(mt => t.includes(mt)));
-      const isEstab = lower.some(t => ESTABELECIMENTO_TAGS.some(et => t.includes(et)));
+    function classifyByContent(messages: Array<{ from: string; text: string }>): "estabelecimento" | "motoboy" | "geral" {
+      const text = messages.map(m => (m.text || "").toLowerCase()).join(" ");
+      const isMotoboy = MOTOBOY_KW.some(kw => text.includes(kw));
+      const isEstab = ESTAB_KW.some(kw => text.includes(kw));
       if (isMotoboy && !isEstab) return "motoboy";
       if (isEstab && !isMotoboy) return "estabelecimento";
       return "geral";
@@ -161,7 +161,7 @@ serve(async (req) => {
         allConversationExamples.push({
           agent: log.assigned_to_name,
           tags: logTags,
-          scope: classifyConversation(logTags),
+          scope: classifyByContent(exchanges),
           exchanges,
         });
       }
