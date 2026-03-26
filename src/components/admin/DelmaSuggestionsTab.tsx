@@ -489,6 +489,31 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
                                 )}
                               </div>
 
+                              {/* Impact Score Bar */}
+                              {s.content?.impact_score > 0 && (
+                                <div className="mt-2">
+                                  <ImpactBar score={s.content.impact_score} />
+                                  {s.content?.estimated_impact && (
+                                    <p className="text-[10px] text-muted-foreground mt-0.5 italic">{s.content.estimated_impact}</p>
+                                  )}
+                                  <Collapsible>
+                                    <CollapsibleTrigger className="flex items-center gap-1 text-[10px] text-primary/70 hover:text-primary mt-1 transition-colors">
+                                      <Info className="w-2.5 h-2.5" />
+                                      Por que este score?
+                                    </CollapsibleTrigger>
+                                    <CollapsibleContent className="mt-1 p-2 rounded bg-secondary/30 text-[10px] text-muted-foreground space-y-0.5">
+                                      <p>📊 Volume: {s.content?.impact_breakdown?.volume_weight || 0}/100 (peso 35%)</p>
+                                      <p>⏱️ Redução TMA: {s.content?.impact_breakdown?.tma_reduction || 0}/100 (peso 25%)</p>
+                                      <p>🔁 Recorrência: {s.content?.impact_breakdown?.recurrence || 0}/100 (peso 20%)</p>
+                                      <p>🔥 Urgência: {s.content?.impact_breakdown?.urgency || 0}/100 (peso 20%)</p>
+                                      {s.content?.data_window && <p>📅 Janela: {s.content.data_window}</p>}
+                                      {s.content?.conversation_count > 0 && <p>💬 {s.content.conversation_count} conversas analisadas</p>}
+                                      {s.content?.recurrence_pattern && <p>📈 Padrão: {s.content.recurrence_pattern}</p>}
+                                    </CollapsibleContent>
+                                  </Collapsible>
+                                </div>
+                              )}
+
                               {/* Justification */}
                               <p className="text-sm text-muted-foreground mt-2">{s.justification}</p>
                               
