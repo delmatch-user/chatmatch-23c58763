@@ -77,11 +77,10 @@ Deno.serve(async (req) => {
     // 4. Buscar conversas em_fila sem robô e sem atendente
     const { data: queuedConversations, error: convError } = await supabase
       .from("conversations")
-      .select("id, department_id, channel, contact_id, external_id, sdr_deal_id")
+      .select("id, department_id, channel, contact_id, external_id, sdr_deal_id, robot_transferred")
       .eq("status", "em_fila")
       .is("assigned_to", null)
       .is("assigned_to_robot", null)
-      .eq("robot_transferred", false)
       .order("created_at", { ascending: true });
 
     if (convError) throw convError;
@@ -102,6 +101,11 @@ Deno.serve(async (req) => {
     for (const conv of queuedConversations) {
       const channel = conv.channel || "whatsapp";
       const hasSdrDeal = !!conv.sdr_deal_id;
+
+      // Preservar comportamento antigo para filas não-SDR transferidas por robô
+      if (conv.robot_transferred && !hasSdrDeal) {
+        continue;
+      }
 
       // Buscar última mensagem do cliente para verificação de keywords (usado pelo SDR)
       let lastClientMsg = "";
@@ -230,6 +234,7 @@ Deno.serve(async (req) => {
 
         if (isSdrConversation) {
           robotChatPayload.dealId = conv.sdr_deal_id;
+          robotChatPayload.isTransfer = !!conv.robot_transferred;
         }
 
         const robotChatUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/${functionName}`;
