@@ -1058,13 +1058,17 @@ export type Database = {
           contact_id: string | null
           conversation_id: string | null
           decision: string
+          entry_id: string | null
           event_kind: string
+          field: string | null
           from_phone: string | null
           id: string
+          is_test: boolean | null
           phone_number_id_payload: string | null
           raw_snippet: string | null
           reason: string | null
           received_at: string
+          signature_valid: boolean | null
           wamid: string | null
         }
         Insert: {
@@ -1072,13 +1076,17 @@ export type Database = {
           contact_id?: string | null
           conversation_id?: string | null
           decision?: string
+          entry_id?: string | null
           event_kind?: string
+          field?: string | null
           from_phone?: string | null
           id?: string
+          is_test?: boolean | null
           phone_number_id_payload?: string | null
           raw_snippet?: string | null
           reason?: string | null
           received_at?: string
+          signature_valid?: boolean | null
           wamid?: string | null
         }
         Update: {
@@ -1086,13 +1094,17 @@ export type Database = {
           contact_id?: string | null
           conversation_id?: string | null
           decision?: string
+          entry_id?: string | null
           event_kind?: string
+          field?: string | null
           from_phone?: string | null
           id?: string
+          is_test?: boolean | null
           phone_number_id_payload?: string | null
           raw_snippet?: string | null
           reason?: string | null
           received_at?: string
+          signature_valid?: boolean | null
           wamid?: string | null
         }
         Relationships: []
