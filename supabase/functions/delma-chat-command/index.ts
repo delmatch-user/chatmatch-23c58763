@@ -12,8 +12,8 @@ serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not configured");
+    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+    if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY not configured");
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -26,7 +26,7 @@ serve(async (req) => {
 
     // If confirming an action
     if (confirmed && actionId) {
-      return await executeAction(supabase, actionId, userId, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ANTHROPIC_API_KEY);
+      return await executeAction(supabase, actionId, userId, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, OPENAI_API_KEY);
     }
 
     // Classify the command using AI
@@ -52,35 +52,32 @@ Para cada comando, retorne:
   "response": "resposta direta (se consulta sem mutação)"
 }`;
 
-    const classifyResponse = await fetch("https://api.anthropic.com/v1/messages", {
+    const classifyResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-3-5-haiku-latest",
-        max_tokens: 1024,
-        system: classifyPrompt,
+        model: "gpt-4o-mini",
         messages: [
+          { role: "system", content: classifyPrompt },
           ...(sessionHistory || []).slice(-6).map((m: any) => ({ role: m.role, content: m.content })),
-          { role: "user", content: message + "\n\nResponda APENAS com JSON válido." },
+          { role: "user", content: message },
         ],
+        response_format: { type: "json_object" },
       }),
     });
 
     if (!classifyResponse.ok) {
       const errText = await classifyResponse.text();
-      console.error("Claude API error:", classifyResponse.status, errText);
+      console.error("OpenAI API error:", classifyResponse.status, errText);
       throw new Error(`AI classification failed: ${classifyResponse.status}`);
     }
     const classifyData = await classifyResponse.json();
     let classification: any;
     try {
-      const rawContent = classifyData.content?.[0]?.text || "{}";
-      const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
-      classification = JSON.parse(jsonMatch ? jsonMatch[0] : "{}");
+      classification = JSON.parse(classifyData.choices?.[0]?.message?.content || "{}");
     } catch {
       classification = { action: "conversa_livre", requires_confirmation: false, response: "Não entendi o comando. Pode reformular?" };
     }
