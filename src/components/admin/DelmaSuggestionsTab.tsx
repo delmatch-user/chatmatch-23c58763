@@ -196,7 +196,7 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
             const existingQA = Array.isArray(robot.qa_pairs) ? robot.qa_pairs : [];
             // The proposed action describes what to add
             await supabase.from('robots').update({
-              qa_pairs: [...existingQA, { question: suggestion.title, answer: suggestion.content.proposed_action }]
+              qa_pairs: [...existingQA, { id: crypto.randomUUID(), question: suggestion.title, answer: suggestion.content.proposed_action }]
             }).eq('id', suggestion.content.robot_id);
           }
         }

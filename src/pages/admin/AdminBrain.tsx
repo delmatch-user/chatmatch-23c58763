@@ -229,8 +229,9 @@ const AdminBrain = () => {
   const [fetchError, setFetchError] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Phase 2 state
+  // Phase 2 state - persist checklist
   const [completedSteps, setCompletedSteps] = useState<Record<number, string>>({});
+  const [checklistLoaded, setChecklistLoaded] = useState(false);
   const [trainModalOpen, setTrainModalOpen] = useState(false);
   const [trainModalTag, setTrainModalTag] = useState('');
   const [trainNote, setTrainNote] = useState('');
@@ -767,10 +768,45 @@ const AdminBrain = () => {
 
 
 
+  // Fetch immediately on mount and when period changes
+  useEffect(() => {
+    fetchMetrics();
+  }, [fetchMetrics]);
+
   useEffect(() => {
     intervalRef.current = setInterval(() => fetchMetrics(), 30000);
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [fetchMetrics]);
+
+  // Load checklist from app_settings
+  useEffect(() => {
+    const loadChecklist = async () => {
+      try {
+        const { data } = await supabase.from('app_settings').select('value').eq('key', 'brain_checklist_completed').maybeSingle();
+        if (data?.value) {
+          setCompletedSteps(JSON.parse(data.value));
+        }
+      } catch {} finally {
+        setChecklistLoaded(true);
+      }
+    };
+    loadChecklist();
+  }, []);
+
+  // Save checklist to app_settings when it changes
+  useEffect(() => {
+    if (!checklistLoaded) return;
+    const saveChecklist = async () => {
+      const value = JSON.stringify(completedSteps);
+      const { data: existing } = await supabase.from('app_settings').select('id').eq('key', 'brain_checklist_completed').maybeSingle();
+      if (existing) {
+        await supabase.from('app_settings').update({ value, updated_at: new Date().toISOString() }).eq('key', 'brain_checklist_completed');
+      } else {
+        await supabase.from('app_settings').insert({ key: 'brain_checklist_completed', value });
+      }
+    };
+    saveChecklist();
+  }, [completedSteps, checklistLoaded]);
 
   useEffect(() => {
     const channel = supabase
