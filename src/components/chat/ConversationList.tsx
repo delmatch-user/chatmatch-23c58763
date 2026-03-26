@@ -403,10 +403,47 @@ export function ConversationList({
       toast.success('Conversa iniciada!');
     } catch (error: any) {
       console.error('Erro ao criar conversa:', error);
-      console.error('Erro detalhes:', JSON.stringify(error, null, 2));
-      console.error('Erro message:', error?.message);
-      console.error('Erro code:', error?.code);
-      console.error('Erro details:', error?.details);
+      
+      // Tratar unique constraint - contato já tem conversa ativa
+      if (error?.code === '23505' || error?.message?.includes('conversations_unique_active_contact') || error?.message?.includes('duplicate key')) {
+        try {
+          // Buscar quem está com a conversa
+          const { data: activeConv } = await supabase
+            .from('conversations')
+            .select('id, assigned_to, status')
+            .eq('contact_id', contactId || '')
+            .in('status', ['em_fila', 'em_atendimento', 'pendente'])
+            .maybeSingle();
+
+          if (activeConv?.assigned_to) {
+            const { data: agentProfile } = await supabase
+              .from('profiles')
+              .select('name')
+              .eq('id', activeConv.assigned_to)
+              .maybeSingle();
+            
+            const agentName = agentProfile?.name || 'outro atendente';
+            
+            if (activeConv.assigned_to === user?.id) {
+              toast.info('Você já possui uma conversa ativa com este contato');
+              // Abrir a conversa existente
+              await refetchConversations();
+              const fullConv = conversations.find(c => c.id === activeConv.id);
+              if (fullConv) setSelectedConversation(fullConv);
+            } else {
+              toast.warning(`Este contato já está em atendimento com ${agentName}`);
+            }
+          } else if (activeConv) {
+            toast.info('Este contato já está na fila de atendimento');
+          } else {
+            toast.error('Este contato já possui uma conversa ativa');
+          }
+        } catch (lookupErr) {
+          toast.error('Este contato já possui uma conversa ativa');
+        }
+        return;
+      }
+      
       toast.error(`Erro ao iniciar conversa: ${error?.message || error?.code || 'desconhecido'}`);
     } finally {
       setIsCreating(false);
