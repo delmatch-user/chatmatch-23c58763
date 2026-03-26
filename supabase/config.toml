@@ -86,3 +86,6 @@ verify_jwt = false
 
 [functions.delma-chat-command]
 verify_jwt = false
+
+[functions.delma-anomaly-detector]
+verify_jwt = false
