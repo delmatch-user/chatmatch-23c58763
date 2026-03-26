@@ -20,6 +20,7 @@ import { useDepartments } from '@/hooks/useDepartments';
 import { useBaileysInstances } from '@/hooks/useBaileysInstances';
 import { BaileysInstancesManager } from '@/components/admin/BaileysInstancesManager';
 import { supabase } from '@/integrations/supabase/client';
+import MetaWebhookAuditPanel from '@/components/admin/MetaWebhookAuditPanel';
 
 type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
 
