@@ -189,6 +189,20 @@ serve(async (req) => {
           const departmentId = connection.department_id;
           console.log('[Meta Webhook] Conexão encontrada:', connection.name, 'Dept:', departmentId);
 
+          // Atualizar status da conexão para 'connected' ao receber webhook
+          await supabase
+            .from('whatsapp_connections')
+            .update({ status: 'connected', updated_at: new Date().toISOString() })
+            .eq('id', connection.id);
+
+          const messagesCount = (value.messages || []).length;
+          const statusesCount = (value.statuses || []).length;
+          console.log(`[Meta Webhook] Batch: ${messagesCount} mensagens, ${statusesCount} statuses`);
+
+          if (messagesCount === 0 && statusesCount === 0) {
+            console.log('[Meta Webhook] Nenhuma mensagem ou status no batch, ignorando');
+          }
+
           // Processar mensagens recebidas
           for (const message of value.messages || []) {
             console.log('[Meta Webhook] Processando mensagem:', message.id);
