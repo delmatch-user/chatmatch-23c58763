@@ -1052,6 +1052,51 @@ export type Database = {
           },
         ]
       }
+      meta_webhook_audit: {
+        Row: {
+          connection_id: string | null
+          contact_id: string | null
+          conversation_id: string | null
+          decision: string
+          event_kind: string
+          from_phone: string | null
+          id: string
+          phone_number_id_payload: string | null
+          raw_snippet: string | null
+          reason: string | null
+          received_at: string
+          wamid: string | null
+        }
+        Insert: {
+          connection_id?: string | null
+          contact_id?: string | null
+          conversation_id?: string | null
+          decision?: string
+          event_kind?: string
+          from_phone?: string | null
+          id?: string
+          phone_number_id_payload?: string | null
+          raw_snippet?: string | null
+          reason?: string | null
+          received_at?: string
+          wamid?: string | null
+        }
+        Update: {
+          connection_id?: string | null
+          contact_id?: string | null
+          conversation_id?: string | null
+          decision?: string
+          event_kind?: string
+          from_phone?: string | null
+          id?: string
+          phone_number_id_payload?: string | null
+          raw_snippet?: string | null
+          reason?: string | null
+          received_at?: string
+          wamid?: string | null
+        }
+        Relationships: []
+      }
       profile_departments: {
         Row: {
           department_id: string
