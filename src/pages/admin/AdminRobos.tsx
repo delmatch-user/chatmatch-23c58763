@@ -1851,6 +1851,16 @@ export default function AdminRobos() {
                       <div>
                         <CardTitle className="text-base">{robot.name}</CardTitle>
                         {getStatusBadge(robot.status, robot.id)}
+                        {delmaChanges[robot.id] && (
+                          <div className="flex items-center gap-1 mt-1">
+                            <Badge variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-500 gap-1">
+                              <Sparkles className="w-3 h-3" />
+                              Atualizado pela Delma — {new Date(delmaChanges[robot.id].applied_at).toLocaleDateString('pt-BR')}
+                            </Badge>
+                            <Button variant="ghost" size="sm" className="h-5 px-1 text-[10px] text-primary" onClick={(e) => { e.stopPropagation(); setDiffDialogRobotId(robot.id); }}>Ver</Button>
+                            <Button variant="ghost" size="sm" className="h-5 px-1 text-[10px] text-destructive" onClick={(e) => { e.stopPropagation(); setRollbackRobotId(robot.id); }}>Reverter</Button>
+                          </div>
+                        )}
                       </div>
                     </div>
                     <DropdownMenu>
