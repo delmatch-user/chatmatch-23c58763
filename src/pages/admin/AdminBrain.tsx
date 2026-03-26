@@ -2400,12 +2400,17 @@ const AdminBrain = () => {
                                 {/* Group by robot_name */}
                                 {(() => {
                                   const grouped = new Map<string, typeof pendingNonConflict>();
+                                  const unclassified: typeof pendingNonConflict = [];
                                   pendingNonConflict.forEach(s => {
-                                    const arr = grouped.get(s.robot_name) || [];
-                                    arr.push(s);
-                                    grouped.set(s.robot_name, arr);
+                                    if (!s.robot_name || s.robot_name.trim() === '') {
+                                      unclassified.push(s);
+                                    } else {
+                                      const arr = grouped.get(s.robot_name) || [];
+                                      arr.push(s);
+                                      grouped.set(s.robot_name, arr);
+                                    }
                                   });
-                                  return Array.from(grouped.entries()).map(([robotName, suggestions]) => {
+                                  const entries = Array.from(grouped.entries()).map(([robotName, suggestions]) => {
                                     const lowerName = robotName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
                                     const RobotIcon = lowerName.includes("julia") ? Store : lowerName.includes("sebastiao") ? Bike : Bot;
                                     return (

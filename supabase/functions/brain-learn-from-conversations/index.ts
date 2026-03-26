@@ -323,9 +323,46 @@ REGRAS DE QUALIDADE:
       );
     });
 
+    // Keyword-based validation helper
+    const MOTOBOY_KW = ["motoboy", "entregador", "corrida", "agendamento", "repasse", "antecipação", "antecipacao", "saque", "delbeneficios", "delbenefícios", "veículo", "veiculo", "fila", "coleta", "rota", "bloqueio", "entrega", "app_entregador"];
+    const ESTAB_KW = ["loja", "estabelecimento", "restaurante", "parceiro", "recarga", "pedido", "cancelamento", "integracao", "integração", "ifood", "saipos", "drogavem", "pin", "cardápio", "cardapio", "franquia", "cadastro", "financeiro", "contrato", "agrupamento"];
+
+    function validateAndFixRobotId(s: any): any {
+      const text = `${s.title || ""} ${s.content?.pattern || ""} ${s.content?.proposed_action || ""} ${s.justification || ""}`.toLowerCase();
+      const hasMotoboy = MOTOBOY_KW.some(kw => text.includes(kw));
+      const hasEstab = ESTAB_KW.some(kw => text.includes(kw));
+
+      let correctId = s.content?.robot_id;
+      let correctName = s.content?.robot_name;
+
+      // Validate coherence
+      if (hasMotoboy && !hasEstab && robotIdMap.sebastiao) {
+        correctId = robotIdMap.sebastiao.id;
+        correctName = robotIdMap.sebastiao.name;
+      } else if (hasEstab && !hasMotoboy && robotIdMap.julia) {
+        correctId = robotIdMap.julia.id;
+        correctName = robotIdMap.julia.name;
+      } else if (!correctId && robotIdMap.delma) {
+        correctId = robotIdMap.delma.id;
+        correctName = robotIdMap.delma.name;
+      }
+
+      // If AI assigned wrong robot, fix it
+      if (correctId && robotIdMap.sebastiao && correctId === robotIdMap.julia?.id && hasMotoboy && !hasEstab) {
+        correctId = robotIdMap.sebastiao.id;
+        correctName = robotIdMap.sebastiao.name;
+      } else if (correctId && robotIdMap.julia && correctId === robotIdMap.sebastiao?.id && hasEstab && !hasMotoboy) {
+        correctId = robotIdMap.julia.id;
+        correctName = robotIdMap.julia.name;
+      }
+
+      return { ...s, content: { ...s.content, robot_id: correctId || null, robot_name: correctName || null } };
+    }
+
     // Insert suggestions into delma_suggestions
     let insertedCount = 0;
-    for (const s of filtered.slice(0, 8)) {
+    for (const rawS of filtered.slice(0, 8)) {
+      const s = validateAndFixRobotId(rawS);
       // Check if this title has 3+ pending occurrences → mark as awaiting_attention
       const awaitingAttention = (pendingCounts[s.title?.toLowerCase()] || 0) >= 3;
 
