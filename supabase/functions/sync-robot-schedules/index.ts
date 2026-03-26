@@ -107,6 +107,20 @@ Deno.serve(async (req) => {
         continue;
       }
 
+      // Evitar reativar automaticamente leads SDR já perdidos/encerrados por desinteresse
+      if (conv.robot_transferred && hasSdrDeal) {
+        const { data: sdrDealState } = await supabase
+          .from("sdr_deals")
+          .select("lost_at, remarketing_stopped")
+          .eq("id", conv.sdr_deal_id)
+          .maybeSingle();
+
+        if (sdrDealState?.lost_at || sdrDealState?.remarketing_stopped) {
+          console.log(`[sync-robot-schedules] Conversa ${conv.id} com deal SDR encerrado, pulando reativação automática`);
+          continue;
+        }
+      }
+
       // Buscar última mensagem do cliente para verificação de keywords (usado pelo SDR)
       let lastClientMsg = "";
       if (sdrRobotId && sdrKeywords.length > 0 && !hasSdrDeal) {
