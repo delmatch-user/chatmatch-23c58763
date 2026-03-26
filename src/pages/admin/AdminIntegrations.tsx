@@ -922,6 +922,11 @@ export default function AdminIntegrations() {
                   )}
                 </CardContent>
               </Card>
+              
+              {/* Diagnóstico API Oficial */}
+              <div className="mt-4">
+                <MetaWebhookAuditPanel />
+              </div>
             </TabsContent>
 
             {/* Webhook Tab */}
