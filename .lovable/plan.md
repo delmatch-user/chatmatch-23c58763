@@ -1,54 +1,54 @@
 
 
-# Remover Classificacao por Tags — Classificar pela Leitura da Conversa
+# Delma Chat: Execucao Real com Dados e Renderizacao Rica
 
 ## Problema
-Hoje a classificacao de conversas como "estabelecimento" ou "motoboy" depende de listas de tags (`ESTABELECIMENTO_TAGS`, `MOTOBOY_TAGS`). Muitas conversas nao tem tags corretas, caindo em "geral" e sendo ignoradas. O conteudo da conversa quase sempre deixa claro se e sobre motoboy ou estabelecimento.
+A Edge Function so busca dados reais para 3 comandos (`status_suporte`, `consultar_metricas`, `listar_sugestoes`). Todos os outros (analise de atendente, performance de robo, comparativo, anomalias) retornam apenas o texto generico da classificacao IA. O frontend tambem nao renderiza HTML rico — so bold e quebra de linha.
 
 ## Solucao
-Substituir a classificacao por tags por uma classificacao baseada no texto das mensagens da conversa. Usar keywords no conteudo das mensagens (nao nas tags).
 
-## Mudancas
+### 1. Edge Function `delma-chat-command` — Adicionar handlers de dados reais
 
-### 1. `supabase/functions/brain-train-robots/index.ts`
+Expandir a logica pos-classificacao para que TODOS os comandos analiticos busquem dados antes de responder:
 
-- Remover `ESTABELECIMENTO_TAGS` e `MOTOBOY_TAGS` (linhas 123-124)
-- Reescrever `classifyConversation` para receber o array de `exchanges` em vez de `tags`
-- Concatenar todo o texto das mensagens e buscar keywords de motoboy (`motoboy`, `entregador`, `corrida`, `agendamento`, `repasse`, `antecipacao`, `saque`, `delbeneficios`, `veiculo`, `fila`, `coleta`, `rota`, `app do entregador`, `bloqueio`) e estabelecimento (`loja`, `estabelecimento`, `restaurante`, `recarga`, `cardapio`, `pedido`, `cancelamento`, `integracao`, `ifood`, `saipos`, `pin`, `franquia`, `parceiro`) diretamente no conteudo
-- Atualizar a chamada `classifyConversation(logTags)` (linha 164) para `classifyConversation(exchanges)`
+**Novos handlers a adicionar (alem dos 3 existentes):**
 
-### 2. `supabase/functions/brain-learn-instruction-patterns/index.ts`
+- `analisar_atendente` — Buscar N conversas recentes do atendente por nome (join `profiles` + `conversation_logs` + `messages`), calcular TMA/tags, passar dados reais ao prompt IA para formatacao em card HTML
+- `performance_robo` — Buscar conversas do robo (`conversations.assigned_to_robot`), calcular resolucao vs transferencia, gaps, comparar com semana anterior
+- `comparar_atendentes` — Buscar todos atendentes Suporte, calcular Conv/TMA/Resolucao por atendente, formatar tabela
+- `alertas_anomalias` — Buscar `delma_anomalies` nao resolvidas, formatar lista com severidade
+- `conversa_livre` com dados — Quando a classificacao detectar que o usuario pede dados (ex: "pegue as 10 ultimas da Milena"), reclassificar como `analisar_atendente`
 
-- Mesma mudanca: remover `ESTABELECIMENTO_TAGS` e `MOTOBOY_TAGS` (linhas 89-90)
-- Reescrever `classifyConversation` para ler o conteudo das mensagens
-- Na linha 132, em vez de `classifyConversation(l.tags || [])`, extrair o texto das mensagens do log e passar para a funcao
+**Fluxo para cada handler:**
+1. Query ao banco (limite 100 registros)
+2. Montar JSON com dados reais
+3. Enviar ao LLM com prompt: "Formate estes dados reais em HTML estruturado usando os templates de card. NAO invente dados."
+4. Retornar HTML formatado
 
-### Logica da nova `classifyConversation`
+**Classificacao expandida no prompt:**
+Adicionar novas acoes: `analisar_atendente`, `performance_robo`, `comparar_atendentes`, `alertas_anomalias` com exemplos
 
-```typescript
-function classifyByContent(messages: any[]): "estabelecimento" | "motoboy" | "geral" {
-  const text = messages.map(m => (m.content || "").toLowerCase()).join(" ");
-  const MOTOBOY_KW = ["motoboy", "entregador", "corrida", "agendamento", "repasse", 
-    "antecipacao", "antecipação", "saque", "delbeneficios", "delbenefícios", "veiculo", 
-    "veículo", "fila", "coleta", "rota", "bloqueio", "app do entregador", "entrega"];
-  const ESTAB_KW = ["loja", "estabelecimento", "restaurante", "recarga", "cardapio", 
-    "cardápio", "pedido", "cancelamento", "integracao", "integração", "ifood", "saipos", 
-    "drogavem", "pin", "franquia", "parceiro", "agrupamento"];
-  const isMotoboy = MOTOBOY_KW.some(kw => text.includes(kw));
-  const isEstab = ESTAB_KW.some(kw => text.includes(kw));
-  if (isMotoboy && !isEstab) return "motoboy";
-  if (isEstab && !isMotoboy) return "estabelecimento";
-  if (isMotoboy && isEstab) return "geral"; // ambiguo
-  return "geral";
-}
-```
+### 2. Frontend `DelmaChatWidget` — Renderizacao HTML rica
+
+- Substituir `renderMarkdown` por renderizador que suporta HTML real (ja usa `dangerouslySetInnerHTML`)
+- Adicionar CSS inline/classes para cards, tabelas, badges de severidade, barras de progresso
+- Adicionar handler de clique para botoes inline (ex: `data-delma-action="treinar_sebastiao"`) que disparam `sendMessage`
+- Manter o fallback markdown para respostas simples
+
+### 3. Templates de resposta (no prompt do LLM)
+
+Definir templates HTML que o LLM deve usar:
+- Card de metricas (bordas, icones, cores)
+- Tabela comparativa (zebra striping)
+- Lista de alertas (🔴/🟡 badges)
+- Card de atendente/robo com metricas
 
 ## Arquivos a editar
 
 | # | Arquivo | Mudanca |
 |---|---------|---------|
-| 1 | `supabase/functions/brain-train-robots/index.ts` | Remover tag lists, classificar pelo conteudo das mensagens |
-| 2 | `supabase/functions/brain-learn-instruction-patterns/index.ts` | Idem |
+| 1 | `supabase/functions/delma-chat-command/index.ts` | Expandir classificacao + adicionar handlers `analisar_atendente`, `performance_robo`, `comparar_atendentes`, `alertas_anomalias` com queries reais + prompt de formatacao HTML |
+| 2 | `src/components/admin/DelmaChatWidget.tsx` | Melhorar renderizacao para suportar HTML rico (cards, tabelas, botoes de acao), adicionar CSS para cards inline, handler de clique em botoes `data-delma-action` |
 
-Nenhuma outra funcionalidade alterada. Deploy das duas EFs apos edicao.
+Nenhuma outra tabela, Edge Function ou componente sera alterado.
 
