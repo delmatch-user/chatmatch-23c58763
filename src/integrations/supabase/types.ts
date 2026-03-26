@@ -551,6 +551,36 @@ export type Database = {
           },
         ]
       }
+      delma_chat_logs: {
+        Row: {
+          action_type: string
+          command: string
+          created_at: string
+          id: string
+          result: string
+          result_data: Json | null
+          user_id: string
+        }
+        Insert: {
+          action_type: string
+          command: string
+          created_at?: string
+          id?: string
+          result?: string
+          result_data?: Json | null
+          user_id: string
+        }
+        Update: {
+          action_type?: string
+          command?: string
+          created_at?: string
+          id?: string
+          result?: string
+          result_data?: Json | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       delma_memory: {
         Row: {
           content: Json
@@ -1329,6 +1359,48 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      robot_change_schedule: {
+        Row: {
+          affected_section: string | null
+          applied_at: string | null
+          applied_by: string | null
+          created_at: string
+          current_instruction: string
+          id: string
+          new_instruction: string
+          robot_id: string
+          scheduled_for: string
+          status: string
+          suggestion_id: string | null
+        }
+        Insert: {
+          affected_section?: string | null
+          applied_at?: string | null
+          applied_by?: string | null
+          created_at?: string
+          current_instruction: string
+          id?: string
+          new_instruction: string
+          robot_id: string
+          scheduled_for: string
+          status?: string
+          suggestion_id?: string | null
+        }
+        Update: {
+          affected_section?: string | null
+          applied_at?: string | null
+          applied_by?: string | null
+          created_at?: string
+          current_instruction?: string
+          id?: string
+          new_instruction?: string
+          robot_id?: string
+          scheduled_for?: string
+          status?: string
+          suggestion_id?: string | null
+        }
+        Relationships: []
       }
       robot_schedules: {
         Row: {

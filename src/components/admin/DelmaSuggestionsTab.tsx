@@ -37,6 +37,7 @@ const categoryConfig: Record<string, { label: string; icon: any; color: string }
   aprendizado_humano: { label: 'Aprendizado Humano', icon: Users, color: 'bg-blue-500/15 text-blue-500 border-blue-500/20' },
   aprendizado_robo: { label: 'Aprendizado Robô', icon: Bot, color: 'bg-purple-500/15 text-purple-500 border-purple-500/20' },
   melhoria_delma: { label: 'Melhoria Delma', icon: Brain, color: 'bg-amber-500/15 text-amber-500 border-amber-500/20' },
+  melhoria_instrucao: { label: 'Melhoria de Instrução', icon: FileText, color: 'bg-emerald-500/15 text-emerald-500 border-emerald-500/20' },
 };
 
 export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestionsTabProps) {
@@ -44,6 +45,7 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [analyzingConversations, setAnalyzingConversations] = useState(false);
+  const [analyzingInstructions, setAnalyzingInstructions] = useState(false);
   const [applyingId, setApplyingId] = useState<string | null>(null);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectingSuggestion, setRejectingSuggestion] = useState<DelmaSuggestion | null>(null);
@@ -126,6 +128,20 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
     }
   };
 
+  const triggerInstructionAnalysis = async () => {
+    setAnalyzingInstructions(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('brain-learn-instruction-patterns');
+      if (error) throw error;
+      toast.success(data.message || 'Análise de instruções concluída!');
+      loadSuggestions();
+    } catch (e: any) {
+      toast.error('Erro ao analisar instruções: ' + (e.message || 'Erro desconhecido'));
+    } finally {
+      setAnalyzingInstructions(false);
+    }
+  };
+
   const handleApprove = async (suggestion: DelmaSuggestion) => {
     setApplyingId(suggestion.id);
     try {
@@ -184,6 +200,23 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
             }).eq('id', suggestion.content.robot_id);
           }
         }
+      } else if (suggestion.category === 'melhoria_instrucao' && suggestion.content?.robot_id) {
+        // Schedule instruction change for 04:00 UTC (01h BRT)
+        const now = new Date();
+        const scheduledFor = new Date(now);
+        scheduledFor.setUTCHours(4, 0, 0, 0);
+        if (scheduledFor <= now) scheduledFor.setDate(scheduledFor.getDate() + 1);
+
+        await supabase.from('robot_change_schedule' as any).insert({
+          robot_id: suggestion.content.robot_id,
+          suggestion_id: suggestion.id,
+          current_instruction: suggestion.content.current_instruction || '',
+          new_instruction: suggestion.content.proposed_instruction || '',
+          affected_section: suggestion.content.affected_section || 'Geral',
+          scheduled_for: scheduledFor.toISOString(),
+          status: 'pending',
+        });
+        toast.info(`Alteração agendada para ${scheduledFor.toLocaleString('pt-BR')} (fora do pico de atendimento)`);
       }
 
       await supabase.from('delma_suggestions' as any).update({
@@ -310,7 +343,7 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
     return 'text-muted-foreground';
   };
 
-  const isLearningType = (category: string) => ['aprendizado_humano', 'aprendizado_robo', 'melhoria_delma'].includes(category);
+  const isLearningType = (category: string) => ['aprendizado_humano', 'aprendizado_robo', 'melhoria_delma', 'melhoria_instrucao'].includes(category);
 
   return (
     <div className="space-y-6">
@@ -330,6 +363,10 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
               <Button variant="outline" onClick={triggerConversationAnalysis} disabled={analyzingConversations} className="gap-2" size="sm">
                 {analyzingConversations ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
                 {analyzingConversations ? 'Analisando...' : 'Analisar Conversas'}
+              </Button>
+              <Button variant="outline" onClick={triggerInstructionAnalysis} disabled={analyzingInstructions} className="gap-2" size="sm">
+                {analyzingInstructions ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                {analyzingInstructions ? 'Analisando...' : 'Analisar Instruções'}
               </Button>
               <Button onClick={triggerAnalysis} disabled={generating} className="gap-2" size="sm">
                 {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Brain className="w-4 h-4" />}
@@ -378,6 +415,7 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
                 <SelectItem value="aprendizado_humano">Aprendizado Humano</SelectItem>
                 <SelectItem value="aprendizado_robo">Aprendizado Robô</SelectItem>
                 <SelectItem value="melhoria_delma">Melhoria Delma</SelectItem>
+                <SelectItem value="melhoria_instrucao">Melhoria de Instrução</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -433,7 +471,7 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
                               <p className="text-sm text-muted-foreground mt-2">{s.justification}</p>
                               
                               {/* Expanded details for learning types */}
-                              {isLearning && (
+                              {isLearning && s.category !== 'melhoria_instrucao' && (
                                 <Collapsible>
                                   <CollapsibleTrigger className="flex items-center gap-1 text-xs text-primary/70 hover:text-primary mt-2 transition-colors">
                                     <ChevronRight className="w-3 h-3" />
@@ -469,6 +507,51 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
                                 </Collapsible>
                               )}
 
+                              {/* Instruction diff for melhoria_instrucao */}
+                              {s.category === 'melhoria_instrucao' && (
+                                <div className="mt-3 space-y-2">
+                                  {s.content?.affected_section && (
+                                    <Badge variant="outline" className="text-[10px]">📌 Seção: {s.content.affected_section}</Badge>
+                                  )}
+                                  {s.content?.compliance_status && (
+                                    <Badge variant="outline" className={cn("text-[10px] ml-1",
+                                      s.content.compliance_status === 'aligned' ? 'border-success/30 text-success' :
+                                      s.content.compliance_status === 'review' ? 'border-warning/30 text-warning' :
+                                      'border-destructive/30 text-destructive'
+                                    )}>
+                                      {s.content.compliance_status === 'aligned' ? '✅ Alinhado' :
+                                       s.content.compliance_status === 'review' ? '⚠️ Revisar' : '❌ Conflito'}
+                                    </Badge>
+                                  )}
+                                  {s.content?.compliance_notes && (
+                                    <p className="text-xs text-warning italic mt-1">⚠️ {s.content.compliance_notes}</p>
+                                  )}
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                                    <div className="rounded-lg border border-border/50 p-3 bg-secondary/20">
+                                      <p className="text-[10px] font-semibold text-muted-foreground mb-1">📄 INSTRUÇÃO ATUAL</p>
+                                      <p className="text-xs text-muted-foreground whitespace-pre-wrap">{s.content?.current_instruction || '(sem instrução atual)'}</p>
+                                    </div>
+                                    <div className="rounded-lg border border-success/30 p-3 bg-success/5">
+                                      <p className="text-[10px] font-semibold text-success mb-1">✨ INSTRUÇÃO PROPOSTA</p>
+                                      <p className="text-xs text-foreground whitespace-pre-wrap">{s.content?.proposed_instruction || '(sem proposta)'}</p>
+                                    </div>
+                                  </div>
+                                  {s.content?.examples?.length > 0 && (
+                                    <Collapsible>
+                                      <CollapsibleTrigger className="flex items-center gap-1 text-xs text-primary/70 hover:text-primary mt-1 transition-colors">
+                                        <ChevronRight className="w-3 h-3" />
+                                        Ver conversas que embasam
+                                      </CollapsibleTrigger>
+                                      <CollapsibleContent className="mt-1 space-y-1">
+                                        {s.content.examples.slice(0, 3).map((ex: string, i: number) => (
+                                          <p key={i} className="text-xs text-muted-foreground italic bg-secondary/30 p-2 rounded">"{ex}"</p>
+                                        ))}
+                                      </CollapsibleContent>
+                                    </Collapsible>
+                                  )}
+                                </div>
+                              )}
+
                               {/* Memories used */}
                               {s.memories_used && s.memories_used.length > 0 && (
                                 <Collapsible>
@@ -489,43 +572,87 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
                               )}
 
                               <div className="flex items-center gap-2 mt-3">
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleApprove(s)}
-                                  disabled={applyingId === s.id}
-                                  className="gap-1"
-                                >
-                                  {applyingId === s.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsUp className="w-3 h-3" />}
-                                  Aprovar
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => {
-                                    setEditingSuggestion(s);
-                                    setEditedContent(JSON.stringify(s.content, null, 2));
-                                    setEditDialogOpen(true);
-                                  }}
-                                  disabled={applyingId === s.id}
-                                  className="gap-1"
-                                >
-                                  <Edit3 className="w-3 h-3" />
-                                  Editar e Aprovar
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => {
-                                    setRejectingSuggestion(s);
-                                    setRejectReason('');
-                                    setRejectDialogOpen(true);
-                                  }}
-                                  disabled={applyingId === s.id}
-                                  className="gap-1 text-destructive hover:text-destructive"
-                                >
-                                  <ThumbsDown className="w-3 h-3" />
-                                  Rejeitar
-                                </Button>
+                                {s.category === 'melhoria_instrucao' ? (
+                                  <>
+                                    <Button
+                                      size="sm"
+                                      onClick={() => handleApprove(s)}
+                                      disabled={applyingId === s.id}
+                                      className="gap-1"
+                                    >
+                                      {applyingId === s.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CalendarClock className="w-3 h-3" />}
+                                      Aprovar e Agendar
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setEditingSuggestion(s);
+                                        setEditedContent(s.content?.proposed_instruction || '');
+                                        setEditDialogOpen(true);
+                                      }}
+                                      disabled={applyingId === s.id}
+                                      className="gap-1"
+                                    >
+                                      <Edit3 className="w-3 h-3" />
+                                      Editar e Agendar
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setRejectingSuggestion(s);
+                                        setRejectReason('');
+                                        setRejectDialogOpen(true);
+                                      }}
+                                      disabled={applyingId === s.id}
+                                      className="gap-1 text-destructive hover:text-destructive"
+                                    >
+                                      <ThumbsDown className="w-3 h-3" />
+                                      Rejeitar
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Button
+                                      size="sm"
+                                      onClick={() => handleApprove(s)}
+                                      disabled={applyingId === s.id}
+                                      className="gap-1"
+                                    >
+                                      {applyingId === s.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsUp className="w-3 h-3" />}
+                                      Aprovar
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setEditingSuggestion(s);
+                                        setEditedContent(JSON.stringify(s.content, null, 2));
+                                        setEditDialogOpen(true);
+                                      }}
+                                      disabled={applyingId === s.id}
+                                      className="gap-1"
+                                    >
+                                      <Edit3 className="w-3 h-3" />
+                                      Editar e Aprovar
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setRejectingSuggestion(s);
+                                        setRejectReason('');
+                                        setRejectDialogOpen(true);
+                                      }}
+                                      disabled={applyingId === s.id}
+                                      className="gap-1 text-destructive hover:text-destructive"
+                                    >
+                                      <ThumbsDown className="w-3 h-3" />
+                                      Rejeitar
+                                    </Button>
+                                  </>
+                                )}
                               </div>
                             </div>
                           </div>
