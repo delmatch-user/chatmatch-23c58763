@@ -407,13 +407,21 @@ export function ConversationList({
       // Tratar unique constraint - contato já tem conversa ativa
       if (error?.code === '23505' || error?.message?.includes('conversations_unique_active_contact') || error?.message?.includes('duplicate key')) {
         try {
+          // Buscar contato pelo telefone da busca
+          let searchPhone = cleanedSearch;
+          if (!searchPhone.startsWith('55') && searchPhone.length <= 11) {
+            searchPhone = '55' + searchPhone;
+          }
+          const { data: phoneMatches } = await supabase.rpc('find_contact_by_phone', { phone_input: searchPhone });
+          const foundContactId = phoneMatches?.[0]?.id;
+
           // Buscar quem está com a conversa
-          const { data: activeConv } = await supabase
+          const { data: activeConv } = foundContactId ? await supabase
             .from('conversations')
             .select('id, assigned_to, status')
-            .eq('contact_id', contactId || '')
+            .eq('contact_id', foundContactId)
             .in('status', ['em_fila', 'em_atendimento', 'pendente'])
-            .maybeSingle();
+            .maybeSingle() : { data: null };
 
           if (activeConv?.assigned_to) {
             const { data: agentProfile } = await supabase
