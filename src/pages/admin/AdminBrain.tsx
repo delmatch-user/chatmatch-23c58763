@@ -2915,21 +2915,55 @@ function renderMarkdown(md: string): string {
     .replace(/⚠️/g, '⚠️');
 }
 
-// KPI Card Component
-function KPICard({ title, value, icon: Icon, trend, subtitle }: {
+// KPI Card Component with micro-trends
+function KPICard({ title, value, icon: Icon, trend, subtitle, dailyTrends, trendKey }: {
   title: string;
   value: string | number;
   icon: React.ElementType;
   trend?: { diff: number; isPositive: boolean } | null;
   subtitle?: string;
+  dailyTrends?: DailyTrend[];
+  trendKey?: string;
 }) {
+  // Calculate micro-trend from dailyTrends using simple linear regression
+  const microTrend = (() => {
+    if (!dailyTrends || dailyTrends.length < 4 || !trendKey) return null;
+    const values = dailyTrends.map(d => {
+      if (trendKey === 'tma') return d.tma;
+      if (trendKey === 'tme') return d.tme;
+      if (trendKey === 'volume') return d.urgent; // approximate
+      return 0;
+    });
+    const n = values.length;
+    const sumX = (n * (n - 1)) / 2;
+    const sumY = values.reduce((a, b) => a + b, 0);
+    const sumXY = values.reduce((s, y, i) => s + i * y, 0);
+    const sumX2 = values.reduce((s, _, i) => s + i * i, 0);
+    const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+    const avgY = sumY / n;
+    if (avgY === 0) return null;
+    const weeklyPct = Math.round((slope * 7 / avgY) * 100);
+    const direction = Math.abs(weeklyPct) < 3 ? 'stable' : weeklyPct > 0 ? 'up' : 'down';
+    return { direction, weeklyPct };
+  })();
+
+  const trendIcon = microTrend?.direction === 'up' ? '↑' : microTrend?.direction === 'down' ? '↓' : '→';
+  const trendColor = microTrend?.direction === 'up' ? 'text-destructive' : microTrend?.direction === 'down' ? 'text-success' : 'text-muted-foreground';
+
   return (
     <Card>
       <CardContent className="pt-6">
         <div className="flex items-start justify-between">
           <div>
             <p className="text-sm text-muted-foreground">{title}</p>
-            <p className="text-2xl font-bold mt-1">{value}</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-2xl font-bold mt-1">{value}</p>
+              {microTrend && (
+                <span className={cn("text-sm font-bold mt-1", trendColor)} title={`Tendência: ${microTrend.weeklyPct > 0 ? '+' : ''}${microTrend.weeklyPct}%/semana`}>
+                  {trendIcon}
+                </span>
+              )}
+            </div>
             {subtitle && <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>}
           </div>
           <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -2942,6 +2976,143 @@ function KPICard({ title, value, icon: Icon, trend, subtitle }: {
             <span>{trend.diff}% vs período anterior</span>
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Active Anomaly Alerts Component
+function ActiveAnomalyAlerts({ onNavigateToSuggestions }: { onNavigateToSuggestions: () => void }) {
+  const [anomalies, setAnomalies] = useState<any[]>([]);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const [resolveDialogOpen, setResolveDialogOpen] = useState(false);
+  const [resolveNotes, setResolveNotes] = useState('');
+  const [selectedAnomaly, setSelectedAnomaly] = useState<any>(null);
+
+  useEffect(() => {
+    const load = async () => {
+      const { data } = await supabase
+        .from('delma_anomalies' as any)
+        .select('*')
+        .is('resolved_at', null)
+        .order('severity', { ascending: true })
+        .order('detected_at', { ascending: false });
+      setAnomalies((data as any[]) || []);
+    };
+    load();
+    const interval = setInterval(load, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const resolveAnomaly = async () => {
+    if (!selectedAnomaly) return;
+    setResolvingId(selectedAnomaly.id);
+    try {
+      await supabase.from('delma_anomalies' as any)
+        .update({ resolved_at: new Date().toISOString(), resolution_notes: resolveNotes || 'Resolvido manualmente' })
+        .eq('id', selectedAnomaly.id);
+      setAnomalies(prev => prev.filter(a => a.id !== selectedAnomaly.id));
+      setResolveDialogOpen(false);
+      setResolveNotes('');
+      setSelectedAnomaly(null);
+      toast.success('Anomalia resolvida');
+    } catch { toast.error('Erro ao resolver'); }
+    finally { setResolvingId(null); }
+  };
+
+  if (anomalies.length === 0) return null;
+
+  const timeSince = (dt: string) => {
+    const mins = Math.round((Date.now() - new Date(dt).getTime()) / 60000);
+    if (mins < 60) return `${mins}min atrás`;
+    return `${Math.round(mins / 60)}h atrás`;
+  };
+
+  return (
+    <>
+      <div className="space-y-2">
+        {anomalies.map(a => (
+          <div key={a.id} className={cn(
+            "flex items-center justify-between p-3 rounded-lg border",
+            a.severity === 'red' ? 'bg-destructive/10 border-destructive/30' : 'bg-warning/10 border-warning/30'
+          )}>
+            <div className="flex items-center gap-3 min-w-0">
+              <AlertTriangle className={cn("w-5 h-5 shrink-0", a.severity === 'red' ? 'text-destructive' : 'text-warning')} />
+              <div className="min-w-0">
+                <p className="text-sm font-medium truncate">{a.description}</p>
+                <p className="text-xs text-muted-foreground">{a.affected_entity} • {timeSince(a.detected_at)}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {a.auto_suggestion_id && (
+                <Button variant="ghost" size="sm" className="text-xs gap-1" onClick={onNavigateToSuggestions}>
+                  <Sparkles className="w-3 h-3" /> Ver sugestão
+                </Button>
+              )}
+              <Button variant="outline" size="sm" className="text-xs" onClick={() => { setSelectedAnomaly(a); setResolveDialogOpen(true); }}>
+                Resolver
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <Dialog open={resolveDialogOpen} onOpenChange={setResolveDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Resolver Anomalia</DialogTitle>
+            <DialogDescription>{selectedAnomaly?.description}</DialogDescription>
+          </DialogHeader>
+          <Textarea placeholder="Notas de resolução..." value={resolveNotes} onChange={e => setResolveNotes(e.target.value)} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResolveDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={resolveAnomaly} disabled={resolvingId === selectedAnomaly?.id}>
+              {resolvingId ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Confirmar Resolução
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+// Predictions Section
+function PredictionsSection({ aiAnalysis }: { aiAnalysis: string }) {
+  const predictions = (() => {
+    if (!aiAnalysis) return [];
+    const match = aiAnalysis.match(/```predictions\s*([\s\S]*?)```/);
+    if (!match) return [];
+    try { return JSON.parse(match[1]); } catch { return []; }
+  })();
+
+  if (predictions.length === 0) return null;
+
+  const typeIcons: Record<string, string> = { volume: '📈', gap: '⚠️', overload: '🔥', degradation: '🤖' };
+  const horizonLabels: Record<string, string> = { '24h': 'Próximas 24h', '7d': 'Próximos 7 dias', '30d': 'Próximo mês' };
+
+  return (
+    <Card className="border-primary/20 bg-gradient-to-r from-purple-500/5 to-transparent">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <span>🔮</span> Previsões da Delma
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {predictions.map((p: any, i: number) => (
+            <div key={i} className="p-3 rounded-lg bg-secondary/30 border border-border/50">
+              <div className="flex items-center gap-2 mb-1">
+                <span>{typeIcons[p.type] || '📊'}</span>
+                <Badge variant="outline" className="text-[10px]">{horizonLabels[p.horizon] || p.horizon}</Badge>
+                <span className="text-[10px] text-muted-foreground ml-auto">{p.confidence}% confiança</span>
+              </div>
+              <p className="text-sm text-foreground">{p.description}</p>
+              <div className="mt-2 h-1.5 bg-muted rounded-full overflow-hidden">
+                <div className="h-full bg-primary/60 rounded-full" style={{ width: `${p.confidence}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
       </CardContent>
     </Card>
   );
