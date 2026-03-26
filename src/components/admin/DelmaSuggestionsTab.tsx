@@ -75,12 +75,17 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
       const { data, error } = await supabase
         .from('delma_suggestions' as any)
         .select('*')
-        .order('confidence_score', { ascending: false })
         .order('created_at', { ascending: false });
       if (error) throw error;
       const typed = (data as any[]) || [];
+      // Sort by impact_score (from content.impact_score) descending, then confidence_score
+      typed.sort((a, b) => {
+        const aImpact = a.content?.impact_score || 0;
+        const bImpact = b.content?.impact_score || 0;
+        if (bImpact !== aImpact) return bImpact - aImpact;
+        return (b.confidence_score || 0) - (a.confidence_score || 0);
+      });
       setSuggestions(typed);
-      // Count pending excluding report_schedule (those go to AI Report tab)
       onSuggestionsCountChange?.(typed.filter(s => s.status === 'pending' && s.category !== 'report_schedule').length);
     } catch (e) {
       console.error('Error loading suggestions:', e);
@@ -472,7 +477,10 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
                                 <Badge variant="outline" className={cn("text-[10px] border", config.color)}>{config.label}</Badge>
                                 <span className={cn("text-xs font-mono font-bold", getConfidenceColor(s.confidence_score))}>
                                   {s.confidence_score}%
-                                </span>
+                                 </span>
+                                {s.content?.awaiting_attention && (
+                                  <Badge className="text-[10px] bg-orange-500/15 text-orange-500 border-orange-500/20">⏳ Aguardando atenção</Badge>
+                                )}
                                 {isLearning && s.content?.agent_alias && (
                                   <Badge variant="secondary" className="text-[10px]">👤 {s.content.agent_alias}</Badge>
                                 )}
