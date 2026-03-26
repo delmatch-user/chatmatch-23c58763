@@ -38,7 +38,21 @@ const categoryConfig: Record<string, { label: string; icon: any; color: string }
   aprendizado_robo: { label: 'Aprendizado Robô', icon: Bot, color: 'bg-purple-500/15 text-purple-500 border-purple-500/20' },
   melhoria_delma: { label: 'Melhoria Delma', icon: Brain, color: 'bg-amber-500/15 text-amber-500 border-amber-500/20' },
   melhoria_instrucao: { label: 'Melhoria de Instrução', icon: FileText, color: 'bg-emerald-500/15 text-emerald-500 border-emerald-500/20' },
+  anomalia_detectada: { label: 'Anomalia Detectada', icon: AlertCircle, color: 'bg-red-500/15 text-red-500 border-red-500/20' },
 };
+
+function ImpactBar({ score }: { score: number }) {
+  const color = score > 85 ? 'bg-red-500' : score > 70 ? 'bg-orange-500' : score > 40 ? 'bg-yellow-500' : 'bg-green-500';
+  const label = score > 85 ? 'Crítico' : score > 70 ? 'Alto' : score > 40 ? 'Médio' : 'Baixo';
+  return (
+    <div className="flex items-center gap-2">
+      <div className="w-20 h-2 bg-muted rounded-full overflow-hidden">
+        <div className={cn("h-full rounded-full transition-all", color)} style={{ width: `${score}%` }} />
+      </div>
+      <span className="text-[10px] font-medium text-muted-foreground">{label} ({score})</span>
+    </div>
+  );
+}
 
 export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestionsTabProps) {
   const [suggestions, setSuggestions] = useState<DelmaSuggestion[]>([]);
@@ -61,12 +75,17 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
       const { data, error } = await supabase
         .from('delma_suggestions' as any)
         .select('*')
-        .order('confidence_score', { ascending: false })
         .order('created_at', { ascending: false });
       if (error) throw error;
       const typed = (data as any[]) || [];
+      // Sort by impact_score (from content.impact_score) descending, then confidence_score
+      typed.sort((a, b) => {
+        const aImpact = a.content?.impact_score || 0;
+        const bImpact = b.content?.impact_score || 0;
+        if (bImpact !== aImpact) return bImpact - aImpact;
+        return (b.confidence_score || 0) - (a.confidence_score || 0);
+      });
       setSuggestions(typed);
-      // Count pending excluding report_schedule (those go to AI Report tab)
       onSuggestionsCountChange?.(typed.filter(s => s.status === 'pending' && s.category !== 'report_schedule').length);
     } catch (e) {
       console.error('Error loading suggestions:', e);
@@ -458,7 +477,10 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
                                 <Badge variant="outline" className={cn("text-[10px] border", config.color)}>{config.label}</Badge>
                                 <span className={cn("text-xs font-mono font-bold", getConfidenceColor(s.confidence_score))}>
                                   {s.confidence_score}%
-                                </span>
+                                 </span>
+                                {s.content?.awaiting_attention && (
+                                  <Badge className="text-[10px] bg-orange-500/15 text-orange-500 border-orange-500/20">⏳ Aguardando atenção</Badge>
+                                )}
                                 {isLearning && s.content?.agent_alias && (
                                   <Badge variant="secondary" className="text-[10px]">👤 {s.content.agent_alias}</Badge>
                                 )}

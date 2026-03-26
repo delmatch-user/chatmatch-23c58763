@@ -475,29 +475,56 @@ ${msgLines || '    (sem mensagens)'}`;
         "Se o gestor pedir sobre um atendente específico, foque APENAS nesse atendente usando os dados diários detalhados e as mensagens reais. " +
         "Se pedir uma análise específica, faça APENAS essa análise. " +
         "Responda em português brasileiro com markdown."
-      : "Você é a Delma, uma gerente de suporte altamente analítica e proativa. Você tem acesso a todos os dados do período. Gere relatórios claros e acionáveis. NUNCA diga que não tem dados.";
+      : `Você é a Delma, uma gerente de suporte altamente analítica e proativa. Você tem acesso a todos os dados do período. Gere relatórios claros e acionáveis. NUNCA diga que não tem dados.
+
+REGRAS DE PROFUNDIDADE OBRIGATÓRIAS:
+1. NUNCA use linguagem vaga como "houve aumento", "observou-se melhora" sem citar o número exato e a variação percentual
+2. Para cada problema identificado, OBRIGATORIAMENTE responder: QUEM (qual atendente/robô), O QUÊ (o problema), QUANDO (período/dia), QUANTO (valor numérico) e POR QUÊ (causa raiz se possível)
+3. Cada sugestão DEVE ter: ação específica, responsável sugerido (robô ou atendente), prazo recomendado e métrica de sucesso
+4. SEMPRE compare com o período anterior — sem comparativo, não há análise
+5. Identifique a causa raiz, não apenas o sintoma (ex: não apenas "TMA aumentou" mas "TMA aumentou porque [causa específica]")
+6. Seção obrigatória no final: "## Top 3 Ações de Maior Impacto" — ordenadas por impacto estimado com nível de urgência
+7. Cada alerta deve ter nível de urgência: 🔴 CRÍTICO (agir hoje) / 🟡 IMPORTANTE (agir esta semana) / 🔵 MONITORAR (observar)`;
 
     const userMessage = reqUserContext
       ? `## SOLICITAÇÃO DO GESTOR (PRIORIDADE MÁXIMA — SIGA À RISCA):\n\n${reqUserContext}\n\n---\n\nDados disponíveis para embasar sua resposta:\n\n${metricsBlock}${conversationDetailsBlock ? `\n\n**Conversas detalhadas do período (mensagens reais):**\n${conversationDetailsBlock}` : ''}`
       : `Analise as métricas abaixo e gere um relatório executivo em markdown com:
 
 ## Resumo Executivo
-Visão geral do desempenho do período.
+Visão geral do desempenho do período com números concretos.
 
 ## Pontos Positivos
-O que está funcionando bem.
+O que está funcionando bem — com dados comparativos.
 
 ## Problemas Identificados
-Erros recorrentes, gaps de conhecimento dos robôs, gargalos operacionais.
+Erros recorrentes, gaps de conhecimento dos robôs, gargalos operacionais. Para cada problema: QUEM, O QUÊ, QUANDO, QUANTO, POR QUÊ.
 
 ## Sugestões de Melhoria
-Ações concretas e priorizadas para melhorar o desempenho.
+Ações concretas e priorizadas. Cada uma com: ação, responsável, prazo, métrica de sucesso.
 
 ## Comparativo com Período Anterior
-Tendências de melhora ou piora nos KPIs.
+Tendências de melhora ou piora em TODOS os KPIs com percentuais.
 
 ## Alertas
-Situações que precisam de atenção imediata.
+Situações que precisam de atenção imediata com nível de urgência (🔴/🟡/🔵).
+
+## Top 3 Ações de Maior Impacto
+Ordenadas por impacto estimado, não por facilidade.
+
+## Previsões (OBRIGATÓRIO — gerar pelo menos 2)
+Com base nos dados históricos e tendências diárias fornecidos, gere previsões estruturadas.
+Ao final desta seção, inclua um bloco de código JSON com exatamente este formato:
+\`\`\`predictions
+[
+  { "description": "texto da previsão", "horizon": "24h" ou "7d" ou "30d", "confidence": 0-100, "type": "volume" ou "gap" ou "overload" ou "degradation" }
+]
+\`\`\`
+
+Tipos de previsão:
+- volume: Pico de volume previsto (dia/horário + percentual)
+- gap: Risco de gap de conhecimento (tema + tendência + prazo)
+- overload: Risco de sobrecarga (projeção de fila)
+- degradation: Degradação de robô (tendência de transferências)
 
 ---
 
