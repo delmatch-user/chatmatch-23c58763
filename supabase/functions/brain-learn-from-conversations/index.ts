@@ -77,11 +77,20 @@ serve(async (req) => {
       .gte("created_at", cutoff)
       .limit(500);
 
-    // 4. Fetch robots for context
+    // 4. Fetch robots for context — get real IDs for classification
     const { data: robots } = await supabase
       .from("robots")
       .select("id, name, qa_pairs, departments, tone")
       .limit(20);
+
+    // Build robot ID map for mandatory classification
+    const robotIdMap: Record<string, { id: string; name: string }> = {};
+    (robots || []).forEach((r: any) => {
+      const lower = r.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (lower.includes("sebastiao")) robotIdMap.sebastiao = { id: r.id, name: r.name };
+      else if (lower.includes("julia")) robotIdMap.julia = { id: r.id, name: r.name };
+      else if (lower.includes("delma")) robotIdMap.delma = { id: r.id, name: r.name };
+    });
 
     // 5. Check existing suggestions for deduplication
     const { data: existingSuggestions } = await supabase
@@ -183,10 +192,18 @@ Cada sugestão deve ter:
 - content.pattern: descrição do padrão encontrado
 - content.examples: array com até 3 exemplos anonimizados de mensagens
 - content.proposed_action: ação concreta proposta
-- content.robot_name: nome do robô (se aplicável, senão null)
-- content.robot_id: id do robô (se aplicável, senão null)
+- content.robot_name: nome do robô (OBRIGATÓRIO — use a classificação abaixo)
+- content.robot_id: id do robô (OBRIGATÓRIO — use a classificação abaixo)
 - content.agent_alias: "Atendente A" etc (se aplicável, senão null)
 - content.affected_entity: nome do robô ou atendente com maior impacto no problema
+
+CLASSIFICAÇÃO OBRIGATÓRIA DE ROBÔ:
+Antes de gerar cada sugestão, classifique a qual robô ela pertence:
+- Motoboy/entregador/corrida/agendamento/repasse/antecipação/saque/DelBenefícios/veículo/fila/coleta/rota/bloqueio → robot_id = "${robotIdMap.sebastiao?.id || ""}", robot_name = "${robotIdMap.sebastiao?.name || "Sebastião"}"
+- Loja/estabelecimento/restaurante/parceiro/recarga/pedido/cancelamento/integração/iFood/Saipos/DrogaVem/PIN/cardápio/franquia/cadastro/financeiro → robot_id = "${robotIdMap.julia?.id || ""}", robot_name = "${robotIdMap.julia?.name || "Júlia"}"
+- Triagem/classificação geral/transferência incorreta/atendimento não categorizado → robot_id = "${robotIdMap.delma?.id || ""}", robot_name = "${robotIdMap.delma?.name || "Delma"}"
+- Se houver dúvida → Delma
+- NUNCA deixar robot_id ou robot_name como null
 
 REGRAS DE QUALIDADE:
 - Se conversation_count for 0, descarte a sugestão
@@ -323,9 +340,46 @@ REGRAS DE QUALIDADE:
       );
     });
 
+    // Keyword-based validation helper
+    const MOTOBOY_KW = ["motoboy", "entregador", "corrida", "agendamento", "repasse", "antecipação", "antecipacao", "saque", "delbeneficios", "delbenefícios", "veículo", "veiculo", "fila", "coleta", "rota", "bloqueio", "entrega", "app_entregador"];
+    const ESTAB_KW = ["loja", "estabelecimento", "restaurante", "parceiro", "recarga", "pedido", "cancelamento", "integracao", "integração", "ifood", "saipos", "drogavem", "pin", "cardápio", "cardapio", "franquia", "cadastro", "financeiro", "contrato", "agrupamento"];
+
+    function validateAndFixRobotId(s: any): any {
+      const text = `${s.title || ""} ${s.content?.pattern || ""} ${s.content?.proposed_action || ""} ${s.justification || ""}`.toLowerCase();
+      const hasMotoboy = MOTOBOY_KW.some(kw => text.includes(kw));
+      const hasEstab = ESTAB_KW.some(kw => text.includes(kw));
+
+      let correctId = s.content?.robot_id;
+      let correctName = s.content?.robot_name;
+
+      // Validate coherence
+      if (hasMotoboy && !hasEstab && robotIdMap.sebastiao) {
+        correctId = robotIdMap.sebastiao.id;
+        correctName = robotIdMap.sebastiao.name;
+      } else if (hasEstab && !hasMotoboy && robotIdMap.julia) {
+        correctId = robotIdMap.julia.id;
+        correctName = robotIdMap.julia.name;
+      } else if (!correctId && robotIdMap.delma) {
+        correctId = robotIdMap.delma.id;
+        correctName = robotIdMap.delma.name;
+      }
+
+      // If AI assigned wrong robot, fix it
+      if (correctId && robotIdMap.sebastiao && correctId === robotIdMap.julia?.id && hasMotoboy && !hasEstab) {
+        correctId = robotIdMap.sebastiao.id;
+        correctName = robotIdMap.sebastiao.name;
+      } else if (correctId && robotIdMap.julia && correctId === robotIdMap.sebastiao?.id && hasEstab && !hasMotoboy) {
+        correctId = robotIdMap.julia.id;
+        correctName = robotIdMap.julia.name;
+      }
+
+      return { ...s, content: { ...s.content, robot_id: correctId || null, robot_name: correctName || null } };
+    }
+
     // Insert suggestions into delma_suggestions
     let insertedCount = 0;
-    for (const s of filtered.slice(0, 8)) {
+    for (const rawS of filtered.slice(0, 8)) {
+      const s = validateAndFixRobotId(rawS);
       // Check if this title has 3+ pending occurrences → mark as awaiting_attention
       const awaitingAttention = (pendingCounts[s.title?.toLowerCase()] || 0) >= 3;
 

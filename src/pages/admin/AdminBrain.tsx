@@ -2400,12 +2400,17 @@ const AdminBrain = () => {
                                 {/* Group by robot_name */}
                                 {(() => {
                                   const grouped = new Map<string, typeof pendingNonConflict>();
+                                  const unclassified: typeof pendingNonConflict = [];
                                   pendingNonConflict.forEach(s => {
-                                    const arr = grouped.get(s.robot_name) || [];
-                                    arr.push(s);
-                                    grouped.set(s.robot_name, arr);
+                                    if (!s.robot_name || s.robot_name.trim() === '') {
+                                      unclassified.push(s);
+                                    } else {
+                                      const arr = grouped.get(s.robot_name) || [];
+                                      arr.push(s);
+                                      grouped.set(s.robot_name, arr);
+                                    }
                                   });
-                                  return Array.from(grouped.entries()).map(([robotName, suggestions]) => {
+                                  const entries = Array.from(grouped.entries()).map(([robotName, suggestions]) => {
                                     const lowerName = robotName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
                                     const RobotIcon = lowerName.includes("julia") ? Store : lowerName.includes("sebastiao") ? Bike : Bot;
                                     return (
@@ -2475,6 +2480,56 @@ const AdminBrain = () => {
                                       </div>
                                     );
                                   });
+                                  
+                                  // Unclassified section
+                                  if (unclassified.length > 0) {
+                                    entries.push(
+                                      <div key="__unclassified__" className="space-y-3">
+                                        <div className="flex items-center gap-2 px-1">
+                                          <AlertCircle className="w-4 h-4 text-warning" />
+                                          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">⚠️ Não classificadas</span>
+                                          <Badge variant="outline" className="text-[10px]">{unclassified.length}</Badge>
+                                        </div>
+                                        {unclassified.map(s => (
+                                  <Card key={s.id} className="border-warning/30 bg-warning/5">
+                                    <CardContent className="pt-4 pb-4">
+                                      <div className="flex items-start gap-3">
+                                        <div className="w-8 h-8 rounded-lg bg-warning/15 flex items-center justify-center shrink-0 mt-0.5">
+                                          {s.suggestion_type === 'qa' ? <MessageSquare className="w-4 h-4 text-warning" /> : 
+                                           s.suggestion_type === 'tone' ? <Users className="w-4 h-4 text-warning" /> :
+                                           <FileText className="w-4 h-4 text-warning" />}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="text-sm font-medium">{s.title}</span>
+                                            <Badge variant="secondary" className="text-[10px]">
+                                              {s.suggestion_type === 'qa' ? 'Q&A' : s.suggestion_type === 'tone' ? 'Tom' : 'Instrução'}
+                                            </Badge>
+                                          </div>
+                                          <p className="text-sm text-muted-foreground mt-2 whitespace-pre-wrap">{s.content}</p>
+                                          {s.reasoning && (
+                                            <p className="text-xs text-muted-foreground/70 mt-2 italic">💡 {s.reasoning}</p>
+                                          )}
+                                          <div className="flex items-center gap-2 mt-3">
+                                            <Button size="sm" onClick={() => handleSuggestionAction(s.id, 'approved')} disabled={applyingId === s.id} className="gap-1">
+                                              {applyingId === s.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsUp className="w-3 h-3" />}
+                                              Aprovar e Aplicar
+                                            </Button>
+                                            <Button size="sm" variant="outline" onClick={() => handleSuggestionAction(s.id, 'rejected')} disabled={applyingId === s.id} className="gap-1">
+                                              <ThumbsDown className="w-3 h-3" />
+                                              Rejeitar
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </CardContent>
+                                  </Card>
+                                        ))}
+                                      </div>
+                                    );
+                                  }
+                                  
+                                  return entries;
                                 })()}
                               </div>
                             )}

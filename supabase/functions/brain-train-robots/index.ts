@@ -120,8 +120,8 @@ serve(async (req) => {
     }
 
     // 3. Extract human-client conversation pairs and classify by scope
-    const ESTABELECIMENTO_TAGS = ["erro_sistema", "cancelamento", "financeiro", "operacional", "duvida", "comercial", "b2b", "cadastro", "cardapio", "pagamento", "sistema", "contrato", "estabelecimento"];
-    const MOTOBOY_TAGS = ["motoboy", "entregador", "entrega", "corrida", "rota", "acidente", "urgente", "bloqueio"];
+    const ESTABELECIMENTO_TAGS = ["erro_sistema", "cancelamento", "financeiro", "operacional", "duvida", "comercial", "b2b", "cadastro", "cardapio", "pagamento", "sistema", "contrato", "estabelecimento", "recarga", "integracao", "pin", "franquia", "ifood", "saipos", "drogavem", "loja", "parceiro", "restaurante", "pedido", "agrupamento"];
+    const MOTOBOY_TAGS = ["motoboy", "entregador", "entrega", "corrida", "rota", "acidente", "urgente", "bloqueio", "agendamento", "repasse", "antecipacao", "antecipação", "saque", "delbeneficios", "delbenefícios", "veiculo", "veículo", "fila", "coleta", "app_entregador", "app"];
 
     function classifyConversation(tags: string[]): "estabelecimento" | "motoboy" | "geral" {
       const lower = tags.map(t => t.toLowerCase());
