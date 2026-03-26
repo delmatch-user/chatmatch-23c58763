@@ -1654,6 +1654,49 @@ const AdminBrain = () => {
                 })}
               </div>
 
+              {/* 🔴 Negative Impact Ranking */}
+              {metrics.agentStats.length > 2 && (() => {
+                const avgTma = metrics.agentStats.reduce((s, a) => s + a.avgTime, 0) / metrics.agentStats.length;
+                const ranked = metrics.agentStats
+                  .filter(a => a.count >= 3)
+                  .map(a => {
+                    const tmaRatio = avgTma > 0 ? a.avgTime / avgTma : 1;
+                    const resImpact = a.resolutionRate != null ? (100 - a.resolutionRate) / 100 : 0;
+                    const score = (tmaRatio * 0.5 + resImpact * 0.5) * 100;
+                    const reason = tmaRatio > 1.5 ? `TMA ${tmaRatio.toFixed(1)}x acima da média` : resImpact > 0.5 ? `Resolução ${a.resolutionRate}%` : `Score ${Math.round(score)}`;
+                    return { ...a, impactScore: Math.round(score), reason };
+                  })
+                  .sort((a, b) => b.impactScore - a.impactScore)
+                  .slice(0, 3);
+
+                return ranked.length > 0 && ranked[0].impactScore > 80 ? (
+                  <Card className="border-destructive/20">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <span>🔴</span> Maior Impacto Negativo
+                      </CardTitle>
+                      <CardDescription>Atendentes que mais impactam as métricas do suporte</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        {ranked.map((a, i) => (
+                          <div key={a.name} className="flex items-center justify-between p-3 rounded-lg bg-destructive/5 border border-destructive/10">
+                            <div className="flex items-center gap-3">
+                              <span className="text-lg font-bold text-destructive">{i + 1}</span>
+                              <div>
+                                <p className="text-sm font-medium">{a.name}</p>
+                                <p className="text-xs text-muted-foreground">{a.count} conversas • TMA: {formatTime(a.avgTime)}</p>
+                              </div>
+                            </div>
+                            <Badge className="bg-destructive/15 text-destructive text-xs">{a.reason}</Badge>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : null;
+              })()}
+
               {metrics.agentStats.length === 0 && (
                 <Card>
                   <CardContent className="py-12 text-center">
