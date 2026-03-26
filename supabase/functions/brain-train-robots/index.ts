@@ -168,12 +168,13 @@ serve(async (req) => {
     }
 
     // Helper to determine robot scope by name
-    function getRobotScope(name: string): "estabelecimento" | "motoboy" | "all" {
-      const lower = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      if (lower.includes("julia")) return "estabelecimento";
-      if (lower.includes("sebastiao")) return "motoboy";
-      return "all";
-    }
+  function getRobotScope(name: string): "estabelecimento" | "motoboy" | "skip" {
+    const lower = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (lower.includes("delma")) return "skip";
+    if (lower.includes("julia")) return "estabelecimento";
+    if (lower.includes("sebastiao")) return "motoboy";
+    return "skip";
+  }
 
     // 4. Fetch existing pending suggestions to avoid duplicates
     const { data: existingSuggestions } = await supabase
@@ -204,13 +205,15 @@ serve(async (req) => {
 
       // Determine robot scope and filter conversations
       const robotScope = getRobotScope(robot.name);
-      const scopeLabel = robotScope === "estabelecimento" ? "ESTABELECIMENTOS (lojistas, restaurantes, parceiros)"
-        : robotScope === "motoboy" ? "MOTOBOYS (entregadores)"
-        : "todos os públicos";
+      if (robotScope === "skip") {
+        console.log(`Skipping robot ${robot.name} (triager/unknown scope)`);
+        continue;
+      }
 
-      const conversationExamples = robotScope === "all"
-        ? allConversationExamples
-        : allConversationExamples.filter(c => c.scope === robotScope);
+      const scopeLabel = robotScope === "estabelecimento" ? "ESTABELECIMENTOS (lojistas, restaurantes, parceiros)"
+        : "MOTOBOYS (entregadores)";
+
+      const conversationExamples = allConversationExamples.filter(c => c.scope === robotScope);
 
       if (conversationExamples.length === 0) {
         console.log(`No relevant conversations for robot ${robot.name} (scope: ${robotScope})`);
