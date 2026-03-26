@@ -12,8 +12,8 @@ serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-    if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY not configured");
+     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -26,7 +26,7 @@ serve(async (req) => {
 
     // If confirming an action
     if (confirmed && actionId) {
-      return await executeAction(supabase, actionId, userId, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, OPENAI_API_KEY);
+      return await executeAction(supabase, actionId, userId, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, LOVABLE_API_KEY);
     }
 
     // Classify the command using AI
@@ -52,14 +52,14 @@ Para cada comando, retorne:
   "response": "resposta direta (se consulta sem mutação)"
 }`;
 
-    const classifyResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+    const classifyResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: "openai/gpt-5",
         messages: [
           { role: "system", content: classifyPrompt },
           ...(sessionHistory || []).slice(-6).map((m: any) => ({ role: m.role, content: m.content })),
@@ -90,7 +90,7 @@ Para cada comando, retorne:
       let response = classification.response || "";
 
       if (action === "consultar_metricas" || action === "status_suporte") {
-        response = await handleQuery(supabase, action, message, OPENAI_API_KEY);
+        response = await handleQuery(supabase, action, message, LOVABLE_API_KEY);
       } else if (action === "listar_sugestoes") {
         response = await handleListSuggestions(supabase);
       }
@@ -149,7 +149,7 @@ Para cada comando, retorne:
   }
 });
 
-async function executeAction(supabase: any, actionId: string, userId: string, supabaseUrl: string, serviceKey: string, openaiKey: string) {
+async function executeAction(supabase: any, actionId: string, userId: string, supabaseUrl: string, serviceKey: string, lovableKey: string) {
   // Find the pending action
   const { data: logs } = await supabase
     .from("delma_chat_logs")
@@ -227,7 +227,7 @@ async function executeAction(supabase: any, actionId: string, userId: string, su
   });
 }
 
-async function handleQuery(supabase: any, action: string, message: string, openaiKey: string): Promise<string> {
+async function handleQuery(supabase: any, action: string, message: string, lovableKey: string): Promise<string> {
   try {
     if (action === "status_suporte") {
       const { data: activeConvs } = await supabase
