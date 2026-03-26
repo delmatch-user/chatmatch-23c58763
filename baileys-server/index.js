@@ -739,8 +739,7 @@ async function startWhatsApp(instanceId) {
       const protocolMsg = message.message?.protocolMessage;
       if (protocolMsg) {
         const isRevoke = protocolMsg.type === 0 || 
-                         protocolMsg.type === 'REVOKE' || 
-                         protocolMsg.type === 5;
+                         protocolMsg.type === 'REVOKE';
         
         if (isRevoke && protocolMsg.key) {
           const revokedKey = protocolMsg.key;
@@ -761,7 +760,7 @@ async function startWhatsApp(instanceId) {
 
       // Detectar deleção via messageStubType
       const stubType = message.messageStubType;
-      if (stubType === 1 || stubType === 2) {
+      if (stubType === 2) {
         const messageId = message.key?.id;
         const senderJid = message.key?.remoteJid;
         const senderPhone = senderJid?.split('@')[0];
@@ -1139,8 +1138,7 @@ async function startWhatsApp(instanceId) {
         }, 'DEBUG messages.update: Update recebido');
 
         const stubType = update.update?.messageStubType;
-        const isRevoke = stubType === 1 || 
-                         stubType === 2;
+        const isRevoke = stubType === 2;
         // REMOVED: heuristic `message === null && !status` caused false positives (normal updates treated as deletions)
         
         if (isRevoke) {
