@@ -1,52 +1,67 @@
 
-# Plano — Diagnóstico e Correção para mensagens da API Oficial que não entram na fila
+# Restabelecer recebimento da API Oficial (quando “está tudo certo” mas não chega POST)
 
-## Diagnóstico já confirmado com o exemplo enviado (11930837322 em 26/03 às 15:06)
-- Para esse número, no dia 26/03, existe registro no histórico apenas às **17:34 UTC** (14:34 BRT) com `whatsapp_instance_id = suporte` (canal QR/Baileys), protocolo `20260326-00043`.
-- **Não há registro** desse número no horário informado (15:06 BRT) nem em conversa ativa.
-- No mesmo intervalo, o sistema estava funcionando e recebendo outros eventos (inclusive 1 evento da API Oficial de teste), então não é parada geral.
-- Conclusão prática: para esse caso específico, o evento não foi persistido no fluxo esperado da API Oficial; hoje falta trilha persistente de “motivo de descarte”, então o motivo exato não fica auditável.
+## Diagnóstico atual (com base no que já medi)
+- A integração interna **processa corretamente** quando recebe POST (teste manual gerou `processed_queue` no `meta_webhook_audit`).
+- A conexão `meta_api` está ativa e com `phone_number_id` preenchido.
+- Nas últimas horas, entrou apenas evento de teste (`wamid.TEST_DIAG_001`), ou seja: o problema é **falta de entrega de eventos reais** antes do processamento da fila.
 
-## O que vou implementar (100% aditivo)
-1. **Criar auditoria persistente de ingestão da API Oficial**
-   - Nova tabela para registrar cada evento recebido pelo webhook (inclusive os descartados), com:
-     - `received_at`, `from_phone`, `phone_number_id_payload`, `wamid`, `event_kind` (`message`/`status`),
-     - `decision` (`processed_queue`, `processed_robot`, `skipped_duplicate`, `skipped_no_connection`, `skipped_no_department`, `error_contact`, `error_conversation`, `error_message_insert`),
-     - `reason`, `connection_id`, `conversation_id`.
-   - RLS restrita a admin/supervisor.
+## Plano de implementação (focado em causa raiz e auto-recuperação)
 
-2. **Instrumentar `meta-whatsapp-webhook` para gravar decisão em todos os caminhos**
-   - Antes de cada `continue`/erro, gravar o motivo na auditoria.
-   - Ao processar com sucesso, gravar se foi para fila (`em_fila`) ou atendimento automático (`em_atendimento` por robô).
-   - Isso resolve o “precisamos saber o motivo”.
+1) **Fortalecer telemetria de entrada no webhook (primeiro ponto da cadeia)**
+- Arquivo: `supabase/functions/meta-whatsapp-webhook/index.ts`
+- Registrar auditoria logo no início de cada POST, antes de qualquer filtro, com:
+  - `field` recebido (messages/statuses/outros),
+  - `entry_id` (WABA),
+  - `phone_number_id` do payload,
+  - `signature_valid`,
+  - marcador `is_test` (ex.: `wamid.TEST_`).
+- Resultado: fica impossível “sumir sem rastro”; saberemos se chegou e por que foi ignorado.
 
-3. **Adicionar fallback de resolução de conexão (sem quebrar regra atual)**
-   - Mantém busca principal por `phone_number_id`.
-   - Se não encontrar, tenta fallback controlado por `waba_id`/metadados compatíveis e registra que houve fallback.
-   - Se ainda falhar, registra `skipped_no_connection` com payload mínimo útil.
+2) **Adicionar diagnóstico ativo da assinatura/inscrição no provedor (dentro do backend)**
+- Novo backend function: `supabase/functions/meta-webhook-diagnose/index.ts`
+- A função consulta, usando token salvo da conexão:
+  - validade do token,
+  - vínculo do app com o WABA (`subscribed_apps`),
+  - consistência `phone_number_id`/WABA.
+- Incluir modo `repair=true` para reinscrever app automaticamente quando detectar não inscrição.
+- Resultado: elimina tentativa manual repetitiva e confirma tecnicamente onde está quebrando.
 
-4. **Expor diagnóstico no painel de integrações (somente leitura)**
-   - Bloco “Diagnóstico API Oficial” em Admin Integrations com últimos eventos da auditoria (ex.: 20/50 últimos), filtros rápidos por número e status.
-   - Permite o gestor ver imediatamente “por que caiu/não caiu”, sem depender de log técnico.
+3) **Expor diagnóstico operacional na aba API Oficial**
+- Arquivos:
+  - `src/pages/admin/AdminIntegrations.tsx`
+  - `src/components/admin/MetaWebhookAuditPanel.tsx`
+- Adicionar card “Saúde do Webhook” com:
+  - último POST real recebido (tempo relativo),
+  - último POST de teste,
+  - status de assinatura,
+  - status de inscrição no WABA,
+  - botão “Diagnosticar agora” e “Reparar inscrição”.
+- Resultado: time consegue agir em 1 clique sem abrir painéis externos.
 
-5. **Validação end-to-end com o caso real informado**
-   - Testar novo envio para o número 11930837322.
-   - Confirmar no painel:
-     - se entrou em `processed_queue` (caiu na fila),
-     - ou `processed_robot` (foi direto para robô),
-     - ou algum `skipped_*`/`error_*` com motivo explícito.
-   - Confirmar criação de conversa/histórico e rastreabilidade completa.
+4) **Ajustar schema da auditoria para suportar o novo nível de diagnóstico**
+- Nova migration em `supabase/migrations/...`
+- Acrescentar colunas em `meta_webhook_audit` para: `field`, `entry_id`, `signature_valid`, `is_test`.
+- Índices por `received_at`, `is_test`, `field`.
 
-## Arquivos/artefatos planejados
-1. `supabase/migrations/<timestamp>_create_meta_webhook_audit.sql` (nova tabela + índices + RLS)
-2. `supabase/functions/meta-whatsapp-webhook/index.ts` (instrumentação + fallback + reason codes)
-3. `src/pages/admin/AdminIntegrations.tsx` (seção de diagnóstico em leitura)
+5) **Validação fim a fim (obrigatória)**
+- Rodar “Diagnosticar agora” e confirmar:
+  - token válido,
+  - app inscrito no WABA,
+  - `messages` ativo.
+- Enviar mensagem real para API Oficial e validar sequência:
+  - `webhook_received` (entrada crua) →
+  - decisão (`processed_queue`/`processed_robot`/`skipped_*`) →
+  - conversa visível na fila ou motivo explícito no painel.
+
+## Escopo
+- Alterações restritas ao fluxo da API Oficial:
+  - `meta-whatsapp-webhook`
+  - novo `meta-webhook-diagnose`
+  - painel de integrações (API Oficial)
+  - migration da tabela de auditoria
+- Sem mexer em abas não relacionadas.
 
 ## Detalhes técnicos (resumo)
-- A correção não altera comportamento existente de roteamento; ela adiciona observabilidade e fallback seguro.
-- O problema “não caiu na fila” será diferenciado entre:
-  - **não recebido**,
-  - **recebido e descartado** (com razão),
-  - **recebido e direcionado ao robô** (não fila por regra),
-  - **recebido e entrou na fila**.
-- Com isso, cada novo caso terá causa objetiva em banco, sem depender de inferência por log volátil.
+- Objetivo não é “mascarar” falha externa: é **detectar automaticamente** se o evento não chegou, chegou inválido, ou foi descartado por regra interna.
+- Com isso, qualquer nova falha deixa evidência objetiva em banco e ação de correção guiada na interface.
