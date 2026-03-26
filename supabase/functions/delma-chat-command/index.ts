@@ -230,24 +230,77 @@ async function executeAction(supabase: any, actionId: string, userId: string, su
 async function handleQuery(supabase: any, action: string, message: string, lovableKey: string): Promise<string> {
   try {
     if (action === "status_suporte") {
-      const { data: activeConvs } = await supabase
-        .from("conversations")
-        .select("id", { count: "exact" })
-        .in("status", ["em_atendimento", "em_fila", "pendente"]);
+      // 1. Buscar department_id do Suporte
+      const SUPORTE_DEPT_ID = "dea51138-49e4-45b0-a491-fb07a5fad479";
 
-      const { data: onlineProfiles } = await supabase
+      // 2. Buscar atendentes do Suporte (profile_departments + user_roles com role=atendente)
+      const { data: deptMembers } = await supabase
+        .from("profile_departments")
+        .select("profile_id")
+        .eq("department_id", SUPORTE_DEPT_ID);
+      const memberIds = (deptMembers || []).map((m: any) => m.profile_id);
+
+      if (memberIds.length === 0) {
+        return `📊 **Status do Suporte**\n\nNenhum atendente vinculado ao departamento Suporte.`;
+      }
+
+      // Filtrar apenas role=atendente
+      const { data: atendentes } = await supabase
+        .from("user_roles")
+        .select("user_id")
+        .eq("role", "atendente")
+        .in("user_id", memberIds);
+      const atendenteIds = (atendentes || []).map((a: any) => a.user_id);
+
+      if (atendenteIds.length === 0) {
+        return `📊 **Status do Suporte**\n\nNenhum atendente encontrado no departamento Suporte.`;
+      }
+
+      // Buscar profiles desses atendentes
+      const { data: profiles } = await supabase
         .from("profiles")
         .select("name, status")
-        .in("status", ["online", "busy"]);
+        .in("id", atendenteIds);
 
-      const activeCount = activeConvs?.length || 0;
-      const online = (onlineProfiles || []).filter((p: any) => p.status === "online");
-      const busy = (onlineProfiles || []).filter((p: any) => p.status === "busy");
+      const online = (profiles || []).filter((p: any) => p.status === "online");
+      const busy = (profiles || []).filter((p: any) => p.status === "busy");
+
+      // 3. Conversas ativas filtradas por dept Suporte
+      const { data: activeConvs } = await supabase
+        .from("conversations")
+        .select("id, status")
+        .eq("department_id", SUPORTE_DEPT_ID)
+        .in("status", ["em_atendimento", "em_fila"]);
+
+      const emAtendimento = (activeConvs || []).filter((c: any) => c.status === "em_atendimento");
+      const emFila = (activeConvs || []).filter((c: any) => c.status === "em_fila");
+
+      // 4. TMA e TME do dia filtrados por dept Suporte
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const { data: todayLogs } = await supabase
+        .from("conversation_logs")
+        .select("started_at, finalized_at, wait_time")
+        .eq("department_id", SUPORTE_DEPT_ID)
+        .gte("finalized_at", today.toISOString())
+        .limit(500);
+
+      const tmas = (todayLogs || []).map((l: any) => {
+        const start = new Date(l.started_at).getTime();
+        const end = new Date(l.finalized_at).getTime();
+        return (end - start) / 60000;
+      }).filter((t: number) => t > 0 && t < 1440);
+      const avgTMA = tmas.length > 0 ? Math.round(tmas.reduce((a: number, b: number) => a + b, 0) / tmas.length) : 0;
+      const avgTME = (todayLogs || []).filter((l: any) => l.wait_time != null).map((l: any) => l.wait_time);
+      const avgWait = avgTME.length > 0 ? Math.round(avgTME.reduce((a: number, b: number) => a + b, 0) / avgTME.length) : 0;
 
       return `📊 **Status do Suporte**\n\n` +
-        `• **${activeCount}** conversas ativas\n` +
-        `• **${online.length}** atendentes online: ${online.map((p: any) => p.name).join(", ") || "nenhum"}\n` +
-        `• **${busy.length}** ocupados: ${busy.map((p: any) => p.name).join(", ") || "nenhum"}`;
+        `• **${emAtendimento.length + emFila.length}** conversas ativas no suporte\n` +
+        `• **${online.length}** atendentes do suporte online: ${online.map((p: any) => p.name).join(", ") || "nenhum"}\n` +
+        `• **${busy.length}** atendentes ocupados: ${busy.map((p: any) => p.name).join(", ") || "nenhum"}\n` +
+        `• **${emFila.length}** conversas na fila aguardando atendimento\n` +
+        `• **TMA atual**: ${avgTMA} min\n` +
+        `• **TME atual**: ${avgWait} min`;
     }
 
     if (action === "consultar_metricas") {
