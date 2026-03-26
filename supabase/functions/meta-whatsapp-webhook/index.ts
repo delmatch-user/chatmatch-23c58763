@@ -189,6 +189,20 @@ serve(async (req) => {
           const departmentId = connection.department_id;
           console.log('[Meta Webhook] Conexão encontrada:', connection.name, 'Dept:', departmentId);
 
+          // Atualizar status da conexão para 'connected' ao receber webhook
+          await supabase
+            .from('whatsapp_connections')
+            .update({ status: 'connected', updated_at: new Date().toISOString() })
+            .eq('id', connection.id);
+
+          const messagesCount = (value.messages || []).length;
+          const statusesCount = (value.statuses || []).length;
+          console.log(`[Meta Webhook] Batch: ${messagesCount} mensagens, ${statusesCount} statuses`);
+
+          if (messagesCount === 0 && statusesCount === 0) {
+            console.log('[Meta Webhook] Nenhuma mensagem ou status no batch, ignorando');
+          }
+
           // Processar mensagens recebidas
           for (const message of value.messages || []) {
             console.log('[Meta Webhook] Processando mensagem:', message.id);
@@ -389,15 +403,45 @@ serve(async (req) => {
                 .single();
 
               if (convError) {
-                console.error('[Meta Webhook] Erro ao criar conversa:', convError);
-                continue;
-              }
-              conversationId = newConv.id;
-              isNewConversation = true;
-              assignedRobotId = filteredRobot?.id || null;
+                // Handle unique constraint violation - conversation already exists for this contact
+                if (convError.code === '23505') {
+                  console.log(`[Meta Webhook] Conversa já existente para contato ${contactId}, buscando conversa ativa...`);
+                  const { data: existingConv } = await supabase
+                    .from('conversations')
+                    .select('id, assigned_to_robot')
+                    .eq('contact_id', contactId)
+                    .in('status', ['em_fila', 'em_atendimento', 'pendente', 'transferida'])
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
 
-              if (filteredRobot) {
-                console.log(`[Meta Webhook] Nova conversa atribuída ao robô: ${filteredRobot.name}`);
+                  if (!existingConv) {
+                    console.error('[Meta Webhook] Constraint 23505 mas nenhuma conversa ativa encontrada para contato:', contactId);
+                    continue;
+                  }
+                  conversationId = existingConv.id;
+                  assignedRobotId = existingConv.assigned_to_robot || null;
+                  console.log(`[Meta Webhook] Reutilizando conversa existente: ${conversationId}`);
+
+                  // Sync whatsapp_instance_id
+                  if (phoneNumberId) {
+                    await supabase
+                      .from('conversations')
+                      .update({ whatsapp_instance_id: phoneNumberId })
+                      .eq('id', conversationId);
+                  }
+                } else {
+                  console.error('[Meta Webhook] Erro ao criar conversa:', JSON.stringify(convError));
+                  continue;
+                }
+              } else {
+                conversationId = newConv.id;
+                isNewConversation = true;
+                assignedRobotId = filteredRobot?.id || null;
+
+                if (filteredRobot) {
+                  console.log(`[Meta Webhook] Nova conversa atribuída ao robô: ${filteredRobot.name}`);
+                }
               }
             }
 
