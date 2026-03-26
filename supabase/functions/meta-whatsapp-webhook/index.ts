@@ -421,12 +421,13 @@ serve(async (req) => {
                   continue;
                 }
               } else {
-              conversationId = newConv.id;
-              isNewConversation = true;
-              assignedRobotId = filteredRobot?.id || null;
+                conversationId = newConv.id;
+                isNewConversation = true;
+                assignedRobotId = filteredRobot?.id || null;
 
-              if (filteredRobot) {
-                console.log(`[Meta Webhook] Nova conversa atribuída ao robô: ${filteredRobot.name}`);
+                if (filteredRobot) {
+                  console.log(`[Meta Webhook] Nova conversa atribuída ao robô: ${filteredRobot.name}`);
+                }
               }
             }
 
