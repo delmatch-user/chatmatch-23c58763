@@ -250,7 +250,7 @@ Deno.serve(async (req) => {
 
     const { data: stuckConversations, error: stuckError } = await supabase
       .from("conversations")
-      .select("id, department_id, channel, contact_id, external_id, assigned_to_robot")
+      .select("id, department_id, channel, contact_id, external_id, assigned_to_robot, sdr_deal_id")
       .eq("status", "em_atendimento")
       .not("assigned_to_robot", "is", null)
       .is("assigned_to", null)
@@ -349,8 +349,16 @@ Deno.serve(async (req) => {
             payload.phoneNumberId = pnId;
           }
 
-          const robotChatUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/robot-chat`;
-          const resp = await fetch(robotChatUrl, {
+          // Rotear para sdr-robot-chat se for conversa SDR
+          const isSDR = !!conv.sdr_deal_id;
+          const functionName = isSDR ? "sdr-robot-chat" : "robot-chat";
+          
+          if (isSDR) {
+            payload.dealId = conv.sdr_deal_id;
+          }
+
+          const chatUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/${functionName}`;
+          const resp = await fetch(chatUrl, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -361,9 +369,9 @@ Deno.serve(async (req) => {
 
           if (!resp.ok) {
             const errText = await resp.text();
-            console.error(`[sync-robot-schedules] Retry falhou para ${conv.id}:`, errText);
+            console.error(`[sync-robot-schedules] Retry ${functionName} falhou para ${conv.id}:`, errText);
           } else {
-            console.log(`[sync-robot-schedules] Retry robot-chat OK para ${conv.id}`);
+            console.log(`[sync-robot-schedules] Retry ${functionName} OK para ${conv.id}`);
             retriedCount++;
           }
         } catch (retryErr) {
