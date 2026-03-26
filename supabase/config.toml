@@ -77,3 +77,12 @@ verify_jwt = false
 
 [functions.brain-learn-from-conversations]
 verify_jwt = false
+
+[functions.brain-learn-instruction-patterns]
+verify_jwt = false
+
+[functions.brain-apply-robot-changes]
+verify_jwt = false
+
+[functions.delma-chat-command]
+verify_jwt = false
