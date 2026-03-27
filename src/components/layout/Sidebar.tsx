@@ -191,7 +191,10 @@ export function Sidebar({ className, variant = 'desktop', onNavigate }: SidebarP
   const activeConversationsCount = conversations.filter(c => 
     c.status !== 'finalizada' && c.status !== 'em_fila'
   ).length;
-  const navItems = isAdmin ? adminNavItems : getNavItems(queueCount, activeConversationsCount, unreadCount.internalChat, userBelongsToSuport, userBelongsToComercial, unreadAlerts);
+  const isSupervisorRole = user?.role === 'supervisor';
+  const navItems = isAdmin 
+    ? (isSupervisorRole ? supervisorAdminNavItems : adminNavItems) 
+    : getNavItems(queueCount, activeConversationsCount, unreadCount.internalChat, userBelongsToSuport, userBelongsToComercial, unreadAlerts);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
