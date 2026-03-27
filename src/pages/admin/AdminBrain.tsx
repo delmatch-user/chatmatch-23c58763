@@ -2790,7 +2790,11 @@ interface KnowledgeData {
   nextSteps: NextStep[];
 }
 
-function computeKnowledgeData(m: BrainMetrics): KnowledgeData {
+function computeKnowledgeData(
+  m: BrainMetrics,
+  cumulative: { approvedSuggestions: number; activeMemories: number; totalQAs: number } = { approvedSuggestions: 0, activeMemories: 0, totalQAs: 0 },
+  historyMax: number = 0
+): KnowledgeData {
   const total = m.aiResolved + m.humanResolved;
   const aiPct = total > 0 ? (m.aiResolved / total) * 100 : 0;
 
@@ -2812,9 +2816,24 @@ function computeKnowledgeData(m: BrainMetrics): KnowledgeData {
   const errorCount = m.totalErrorCount || m.errorLogs.length;
   const errorPct = m.totalConversas > 0 ? (errorCount / m.totalConversas) * 100 : 0;
   const tmaBonusPct = Math.max(0, Math.min(100, improvementPct > 0 ? improvementPct * 2 : 0));
-  const maturityScore = Math.round(
-    Math.min(100, Math.max(0, (aiPct * 0.4) + (tmaBonusPct * 0.3) + (Math.max(0, 100 - errorPct * 5) * 0.3)))
+
+  // New 4-component formula
+  const automationScore = aiPct; // 0-100
+  const topTagCount = Math.max(m.topTags.length, 1);
+  const knowledgeScore = Math.min(100, (cumulative.totalQAs / 50) * 50 + (masteredCount / topTagCount) * 50);
+  const learningScore = Math.min(100, (cumulative.approvedSuggestions * 5) + (cumulative.activeMemories * 2));
+  const efficiencyScore = (tmaBonusPct * 0.5) + (Math.max(0, 100 - errorPct * 5) * 0.5);
+
+  let maturityScore = Math.round(
+    Math.min(100, Math.max(0,
+      (automationScore * 0.25) + (knowledgeScore * 0.25) + (learningScore * 0.25) + (efficiencyScore * 0.25)
+    ))
   );
+
+  // Ratchet effect: never drop below 95% of historical max
+  if (historyMax > 0) {
+    maturityScore = Math.max(maturityScore, Math.round(historyMax * 0.95));
+  }
 
   const improvements: Improvement[] = [];
   if (m.prevTma > 0) {
