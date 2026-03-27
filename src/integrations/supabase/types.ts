@@ -77,6 +77,7 @@ export type Database = {
           metrics: Json
           period_days: number
           sent_by: string
+          week_start: string
         }
         Insert: {
           agent_id: string
@@ -87,6 +88,7 @@ export type Database = {
           metrics?: Json
           period_days?: number
           sent_by: string
+          week_start?: string
         }
         Update: {
           agent_id?: string
@@ -97,6 +99,7 @@ export type Database = {
           metrics?: Json
           period_days?: number
           sent_by?: string
+          week_start?: string
         }
         Relationships: []
       }

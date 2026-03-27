@@ -270,8 +270,10 @@ const AdminBrain = () => {
   const [notifyAgent, setNotifyAgent] = useState<AgentStat | null>(null);
   const [notifyMessage, setNotifyMessage] = useState('');
   const [notifyGenerating, setNotifyGenerating] = useState(false);
-  const [notifySending, setNotifySending] = useState(false);
-  const [agentNotifications, setAgentNotifications] = useState<Record<string, boolean>>({});
+   const [notifySending, setNotifySending] = useState(false);
+   const [agentNotifications, setAgentNotifications] = useState<Record<string, boolean>>({});
+   const [bulkSending, setBulkSending] = useState(false);
+   const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 });
 
   // Delma autonomous state
   const [delmaSuggestionsCount, setDelmaSuggestionsCount] = useState(0);
@@ -553,21 +555,29 @@ const AdminBrain = () => {
     }
   };
 
-  // Load which agents have been notified in current period
-  const loadAgentNotifications = useCallback(async () => {
-    try {
-      const effectivePeriod = getEffectivePeriod();
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - effectivePeriod);
-      const { data } = await supabase
-        .from('agent_notifications' as any)
-        .select('agent_id, created_at')
-        .gte('created_at', cutoff.toISOString());
-      const notifiedMap: Record<string, boolean> = {};
-      (data || []).forEach((n: any) => { notifiedMap[n.agent_id] = true; });
-      setAgentNotifications(notifiedMap);
-    } catch {}
-  }, [getEffectivePeriod]);
+   // Get current week_start (Monday-based, Sao Paulo timezone)
+   const getCurrentWeekStart = () => {
+     const now = new Date();
+     const spDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+     const day = spDate.getDay();
+     const diff = day === 0 ? 6 : day - 1; // Monday = 0
+     spDate.setDate(spDate.getDate() - diff);
+     return format(spDate, 'yyyy-MM-dd');
+   };
+
+   // Load which agents have been notified this week
+   const loadAgentNotifications = useCallback(async () => {
+     try {
+       const weekStart = getCurrentWeekStart();
+       const { data } = await supabase
+         .from('agent_notifications' as any)
+         .select('agent_id')
+         .eq('week_start', weekStart);
+       const notifiedMap: Record<string, boolean> = {};
+       (data || []).forEach((n: any) => { notifiedMap[n.agent_id] = true; });
+       setAgentNotifications(notifiedMap);
+     } catch {}
+   }, []);
 
   // Generate feedback via edge function
   const generateFeedback = async () => {
@@ -596,47 +606,129 @@ const AdminBrain = () => {
     }
   };
 
-  // Send notification
-  const sendNotification = async () => {
-    if (!notifyAgent || !notifyMessage.trim() || !metrics) return;
-    setNotifySending(true);
-    try {
-      // Find agent_id by name from profiles
-      const { data: profileData } = await supabase.from('profiles').select('id').ilike('name', notifyAgent.name).maybeSingle();
-      if (!profileData) throw new Error('Perfil do atendente não encontrado');
-      const { data: authData } = await supabase.auth.getUser();
-      if (!authData?.user) throw new Error('Usuário não autenticado');
+   // Send notification
+   const sendNotification = async () => {
+     if (!notifyAgent || !notifyMessage.trim() || !metrics) return;
+     setNotifySending(true);
+     try {
+       const { data: profileData } = await supabase.from('profiles').select('id').ilike('name', notifyAgent.name).maybeSingle();
+       if (!profileData) throw new Error('Perfil do atendente não encontrado');
+       const { data: authData } = await supabase.auth.getUser();
+       if (!authData?.user) throw new Error('Usuário não autenticado');
 
-      const teamAvgTma = metrics.agentStats.reduce((s, a) => s + a.avgTime, 0) / metrics.agentStats.length;
-      const teamAvgTme = metrics.agentStats.reduce((s, a) => s + a.avgWaitTime, 0) / metrics.agentStats.length;
+       const teamAvgTma = metrics.agentStats.reduce((s, a) => s + a.avgTime, 0) / metrics.agentStats.length;
+       const teamAvgTme = metrics.agentStats.reduce((s, a) => s + a.avgWaitTime, 0) / metrics.agentStats.length;
 
-      const { error } = await supabase.from('agent_notifications' as any).insert({
-        agent_id: profileData.id,
-        sent_by: authData.user.id,
-        period_days: getEffectivePeriod(),
-        metrics: {
-          count: notifyAgent.count,
-          avgTime: notifyAgent.avgTime,
-          avgWaitTime: notifyAgent.avgWaitTime,
-          topTags: notifyAgent.topTags.slice(0, 3),
-          resolutionRate: notifyAgent.resolutionRate,
-          teamAvgTma,
-          teamAvgTme,
-        },
-        message: notifyMessage,
-      });
-      if (error) throw error;
-      toast.success(`Notificação enviada para ${notifyAgent.name}!`);
-      setNotifyModalOpen(false);
-      setNotifyMessage('');
-      setNotifyAgent(null);
-      loadAgentNotifications();
-    } catch (e: any) {
-      toast.error('Erro ao enviar: ' + (e.message || 'Erro desconhecido'));
-    } finally {
-      setNotifySending(false);
-    }
-  };
+       const { error } = await supabase.from('agent_notifications' as any).insert({
+         agent_id: profileData.id,
+         sent_by: authData.user.id,
+         period_days: 7,
+         week_start: getCurrentWeekStart(),
+         metrics: {
+           count: notifyAgent.count,
+           avgTime: notifyAgent.avgTime,
+           avgWaitTime: notifyAgent.avgWaitTime,
+           topTags: notifyAgent.topTags.slice(0, 3),
+           resolutionRate: notifyAgent.resolutionRate,
+           teamAvgTma,
+           teamAvgTme,
+         },
+         message: notifyMessage,
+       });
+       if (error) throw error;
+       toast.success(`Notificação enviada para ${notifyAgent.name}!`);
+       setNotifyModalOpen(false);
+       setNotifyMessage('');
+       setNotifyAgent(null);
+       loadAgentNotifications();
+     } catch (e: any) {
+       toast.error('Erro ao enviar: ' + (e.message || 'Erro desconhecido'));
+     } finally {
+       setNotifySending(false);
+     }
+   };
+
+   // Send notifications to ALL agents at once
+   const sendAllNotifications = async () => {
+     if (!metrics || metrics.agentStats.length === 0) return;
+     setBulkSending(true);
+     const teamAvgTma = metrics.agentStats.reduce((s, a) => s + a.avgTime, 0) / metrics.agentStats.length;
+     const teamAvgTme = metrics.agentStats.reduce((s, a) => s + a.avgWaitTime, 0) / metrics.agentStats.length;
+     const weekStart = getCurrentWeekStart();
+
+     // Resolve all agent profile IDs first
+     const agentsToNotify: { agent: AgentStat; profileId: string }[] = [];
+     for (const agent of metrics.agentStats) {
+       const profileId = agentLiveStatus[agent.name]?.profileId;
+       if (profileId && !agentNotifications[profileId]) {
+         agentsToNotify.push({ agent, profileId });
+       }
+     }
+
+     if (agentsToNotify.length === 0) {
+       toast.info('Todos os atendentes já foram notificados esta semana.');
+       setBulkSending(false);
+       return;
+     }
+
+     setBulkProgress({ current: 0, total: agentsToNotify.length });
+     const { data: authData } = await supabase.auth.getUser();
+     if (!authData?.user) { toast.error('Usuário não autenticado'); setBulkSending(false); return; }
+     let successCount = 0;
+
+     for (let i = 0; i < agentsToNotify.length; i++) {
+       const { agent, profileId } = agentsToNotify[i];
+       setBulkProgress({ current: i + 1, total: agentsToNotify.length });
+       try {
+         // Generate feedback via AI
+         const { data: feedbackData, error: feedbackError } = await supabase.functions.invoke('brain-agent-feedback', {
+           body: {
+             agentName: agent.name,
+             agentStats: agent,
+             teamAvgTma,
+             teamAvgTme,
+             periodLabel: 'últimos 7 dias',
+           },
+         });
+         if (feedbackError || feedbackData?.error) {
+           console.warn(`Falha ao gerar feedback para ${agent.name}:`, feedbackError || feedbackData?.error);
+           continue;
+         }
+         const message = feedbackData?.message;
+         if (!message) continue;
+
+         // Insert notification
+         const { error: insertError } = await supabase.from('agent_notifications' as any).insert({
+           agent_id: profileId,
+           sent_by: authData.user.id,
+           period_days: 7,
+           week_start: weekStart,
+           metrics: {
+             count: agent.count,
+             avgTime: agent.avgTime,
+             avgWaitTime: agent.avgWaitTime,
+             topTags: agent.topTags.slice(0, 3),
+             resolutionRate: agent.resolutionRate,
+             teamAvgTma,
+             teamAvgTme,
+           },
+           message,
+         });
+         if (insertError) {
+           console.warn(`Falha ao inserir notificação para ${agent.name}:`, insertError);
+           continue;
+         }
+         successCount++;
+       } catch (e) {
+         console.warn(`Erro ao notificar ${agent.name}:`, e);
+       }
+     }
+
+     toast.success(`${successCount}/${agentsToNotify.length} atendentes notificados com sucesso!`);
+     loadAgentNotifications();
+     setBulkSending(false);
+     setBulkProgress({ current: 0, total: 0 });
+   };
 
   // Training suggestions functions
   const loadTrainingSuggestions = async () => {
@@ -1584,7 +1676,43 @@ const AdminBrain = () => {
                 </Card>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+               {/* Notificar Todos button + status */}
+               <div className="flex items-center justify-between">
+                 <div className="flex items-center gap-2">
+                   <span className="text-sm text-muted-foreground">
+                     {(() => {
+                       const total = metrics.agentStats.length;
+                       const notified = metrics.agentStats.filter(a => {
+                         const pid = agentLiveStatus[a.name]?.profileId;
+                         return pid && agentNotifications[pid];
+                       }).length;
+                       return notified === total
+                         ? <Badge className="bg-success/20 text-success">Todos Notificados ({total})</Badge>
+                         : <Badge variant="outline">{notified}/{total} notificados esta semana</Badge>;
+                     })()}
+                   </span>
+                 </div>
+                 <Button
+                   onClick={sendAllNotifications}
+                   disabled={bulkSending}
+                   className="gap-2"
+                   size="sm"
+                 >
+                   {bulkSending ? (
+                     <>
+                       <Loader2 className="w-4 h-4 animate-spin" />
+                       Enviando {bulkProgress.current}/{bulkProgress.total}...
+                     </>
+                   ) : (
+                     <>
+                       <Bell className="w-4 h-4" />
+                       Notificar Todos (7 dias)
+                     </>
+                   )}
+                 </Button>
+               </div>
+
+               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {metrics.agentStats.map((agent) => {
                   const avgAll = metrics.agentStats.reduce((s, a) => s + a.avgTime, 0) / metrics.agentStats.length;
                   const status = agent.avgTime <= avgAll * 0.8 ? 'green' : agent.avgTime <= avgAll * 1.2 ? 'yellow' : 'red';
