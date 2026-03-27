@@ -2,13 +2,16 @@ import { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 
+// Routes that supervisors can access inside the admin panel
+const SUPERVISOR_ALLOWED_ADMIN_ROUTES = ['/admin/robos'];
+
 interface ProtectedRouteProps {
   children: ReactNode;
   requireAdmin?: boolean;
 }
 
 export function ProtectedRoute({ children, requireAdmin = false }: ProtectedRouteProps) {
-  const { user, isLoading, isAdmin, isFranqueado } = useAuth();
+  const { user, isLoading, isAdmin, isSupervisor, isFranqueado } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
@@ -32,7 +35,13 @@ export function ProtectedRoute({ children, requireAdmin = false }: ProtectedRout
   }
 
   if (requireAdmin && !isAdmin) {
-    return <Navigate to="/fila" replace />;
+    // Allow supervisors on specific admin routes
+    const isSupervisorAllowed = isSupervisor && SUPERVISOR_ALLOWED_ADMIN_ROUTES.some(
+      route => location.pathname.startsWith(route)
+    );
+    if (!isSupervisorAllowed) {
+      return <Navigate to="/fila" replace />;
+    }
   }
 
   return <>{children}</>;

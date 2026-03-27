@@ -411,8 +411,8 @@ export function Sidebar({ className, variant = 'desktop', onNavigate }: SidebarP
           })}
         </nav>
 
-        {/* Mode Switch - Only show admin option for admins */}
-        {(user?.role === 'admin' || isAdmin) && (
+        {/* Mode Switch - Show for admins and supervisors */}
+        {(user?.role === 'admin' || user?.role === 'supervisor' || isAdmin) && (
           <div className="px-3 py-2 border-t border-sidebar-border">
             <NavLink
               to={isAdmin ? '/fila' : '/admin'}
