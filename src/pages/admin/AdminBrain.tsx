@@ -883,7 +883,7 @@ const AdminBrain = () => {
       const knowledgeData = computeKnowledgeData(metrics, cumulativeKnowledge, histMax);
       saveMaturityScore(knowledgeData.maturityScore);
     }
-  }, [metrics, saveMaturityScore]);
+  }, [metrics, saveMaturityScore, cumulativeKnowledge, maturityHistory]);
 
   // Auto-trigger training generation on first visit if empty
   useEffect(() => {
