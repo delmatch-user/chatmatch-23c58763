@@ -801,6 +801,24 @@ const AdminBrain = () => {
     loadChecklist();
   }, []);
 
+  // Load trained tags from app_settings
+  useEffect(() => {
+    const loadTrainedTags = async () => {
+      try {
+        const { data } = await supabase.from('app_settings').select('value').eq('key', 'brain_training_log').maybeSingle();
+        if (data?.value) {
+          const log = JSON.parse(data.value) as { tag: string; date: string }[];
+          const sevenDaysAgo = subDays(new Date(), 7).getTime();
+          const recentTags = new Set(
+            log.filter(e => new Date(e.date).getTime() > sevenDaysAgo).map(e => e.tag.toLowerCase())
+          );
+          setTrainedTags(recentTags);
+        }
+      } catch {}
+    };
+    loadTrainedTags();
+  }, []);
+
   // Save checklist to app_settings when it changes
   useEffect(() => {
     if (!checklistLoaded) return;
