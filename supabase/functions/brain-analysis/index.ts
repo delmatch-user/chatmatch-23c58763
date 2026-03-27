@@ -386,7 +386,11 @@ serve(async (req) => {
           prevAvgTime: prevS ? Math.round((prevS.totalTime / prevS.count) * 10) / 10 : 0,
         };
       }).sort((a, b) => b.count - a.count),
-      errorLogs: errorLogs.map(mapErrorLog),
+      errorLogs: errorLogs.slice(0, 200).map(mapErrorLog),
+      totalErrorCount,
+      totalEstabelecimento: estabLogs.length,
+      totalMotoboy: motoboyLogs.length,
+      totalOutros: outrosLogs.length,
       errorsByType,
     };
 
