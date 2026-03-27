@@ -126,6 +126,12 @@ const adminNavItems: NavItem[] = [
   { icon: Settings, label: 'Configurações', path: '#settings', isSettings: true },
 ];
 
+// Filtered admin nav for supervisors - only Robôs
+const supervisorAdminNavItems: NavItem[] = [
+  { icon: Bot, label: 'Robôs', path: '/admin/robos' },
+  { icon: Settings, label: 'Configurações', path: '#settings', isSettings: true },
+];
+
 interface SidebarProps {
   className?: string;
   variant?: 'desktop' | 'mobile';
