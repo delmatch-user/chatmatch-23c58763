@@ -1,33 +1,50 @@
 
 
-# Corrigir mensagem de transferencia aparecendo como se fosse do cliente
+# Atualizar Logs IA para mostrar conversas finalizadas por robôs de qualquer departamento
 
-## Problema
-Quando a Delma envia "Vou te transferir para o Sebastiao...", a mensagem aparece no lado do cliente no chat. Causa raiz:
+## Problema atual
+A página Logs IA (`src/pages/AILogs.tsx`) está hardcoded para buscar apenas do `SUPORTE_DEPARTMENT_ID`. Precisa mostrar conversas finalizadas por robôs filtradas pelo departamento do usuário logado.
 
-1. No `robot-chat/index.ts` (linha 1662-1669), a mensagem de transferencia e salva com `sender_id: null` e `sender_name: robot.name` (ex: "Delma")
-2. No `AppContext.tsx` (linha 354-358), a logica de mapeamento faz: `senderId = sender_id || (isRobotMessage ? 'robot' : 'contact')`
-3. `isRobotMessage` so e `true` se `sender_name` contem `[ROBOT]` ou `(IA)`
-4. Como "Delma" nao contem nenhum desses marcadores, `senderId` vira `'contact'` e a mensagem renderiza no lado esquerdo (cliente)
+## Mudanças
 
-## Correcao
+### 1. `src/pages/AILogs.tsx` — Remover filtro hardcoded e usar departamentos do usuário
 
-| # | Arquivo | Mudanca |
-|---|---------|---------|
-| 1 | `supabase/functions/robot-chat/index.ts` | Adicionar marcador `[ROBOT]` no `sender_name` da mensagem de transferencia |
+**Query (linhas 185-189):**
+- Remover `.eq('department_id', SUPORTE_DEPARTMENT_ID)`
+- Filtrar por departamentos do usuário: `.in('department_id', user.departments)` (para atendentes/supervisores)
+- Admin vê todos os departamentos
+- Manter filtro de `finalized_by is null` (robô finalizou)
 
-### Detalhe
+**Adicionar filtro de departamento na UI:**
+- Adicionar um select de departamento nos filtros existentes (ao lado de canal/período)
+- Se o usuário tem apenas 1 departamento, pré-selecionar automaticamente
 
-Linha 1665, trocar:
+### 2. `supabase/functions/ai-logs-report/index.ts` — Aceitar departmentId dinâmico
+
+- Aceitar `departmentId` no body em vez de usar `SUPORTE_DEPARTMENT_ID` hardcoded
+- Fallback para Suporte se não informado (compatibilidade)
+
+### Detalhes técnicos
+
+**AILogs.tsx fetchLogs:**
 ```typescript
-sender_name: robot.name,
-```
-por:
-```typescript
-sender_name: `${robot.name} [ROBOT]`,
+// Admin vê tudo, outros veem só seus departamentos
+let query = supabase
+  .from('conversation_logs')
+  .select('*')
+  .order('finalized_at', { ascending: false });
+
+if (!isAdmin) {
+  query = query.in('department_id', user.departments || []);
+}
+
+// + filtro departamento selecionado na UI
+if (selectedDept !== 'all') {
+  query = query.eq('department_id', selectedDept);
+}
 ```
 
-O marcador `[ROBOT]` ja e removido na exibicao pelo `cleanSenderName` (linha 1453 do ChatPanel). Isso garante que a mensagem aparece no lado direito (atendente/robo) sem mostrar o marcador ao usuario.
+**Filtro robô mantido:** `!log.finalized_by || !log.finalized_by_name` (identifica conversas finalizadas por robô).
 
-Mesma correcao deve ser aplicada em qualquer outro insert de mensagem do robo que use `sender_id: null` sem o marcador.
+**Report:** Passar `departmentId` selecionado para a edge function.
 
