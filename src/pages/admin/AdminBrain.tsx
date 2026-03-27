@@ -858,6 +858,22 @@ const AdminBrain = () => {
     loadAgentNotifications();
     loadTrainingSuggestions();
     loadObservationMode();
+    // Fetch cumulative knowledge data for maturity score
+    (async () => {
+      try {
+        const [sugRes, memRes, robotsRes] = await Promise.all([
+          supabase.from('delma_suggestions').select('id', { count: 'exact', head: true }).in('status', ['approved', 'edited']),
+          supabase.from('delma_memory').select('id', { count: 'exact', head: true }).gte('expires_at', new Date().toISOString()),
+          supabase.from('robots').select('qa_pairs'),
+        ]);
+        const totalQAs = (robotsRes.data || []).reduce((sum, r) => sum + (Array.isArray(r.qa_pairs) ? r.qa_pairs.length : 0), 0);
+        setCumulativeKnowledge({
+          approvedSuggestions: sugRes.count || 0,
+          activeMemories: memRes.count || 0,
+          totalQAs,
+        });
+      } catch {}
+    })();
   }, [getEffectivePeriod, loadAgentLiveStatus, loadAgentNotifications]);
 
   // Save maturity score when metrics update
