@@ -987,6 +987,7 @@ const AdminBrain = () => {
         await supabase.from('app_settings').insert({ key: 'brain_training_log', value: JSON.stringify(log) });
       }
       toast.success(`Treinamento registrado para "${trainModalTag}"`);
+      setTrainedTags(prev => new Set([...prev, trainModalTag.toLowerCase()]));
       setTrainModalOpen(false);
       setTrainNote('');
     } catch {
@@ -2055,11 +2056,17 @@ const AdminBrain = () => {
                         <CardDescription>Gaps com volume e ação de treinamento</CardDescription>
                       </CardHeader>
                       <CardContent>
-                        {knowledgeData.gaps.length === 0 ? (
+                        {(() => {
+                          const filteredGaps = knowledgeData.gaps.filter(gap => {
+                            const tagMatch = gap.title.match(/"([^"]+)"/);
+                            const tag = tagMatch ? tagMatch[1].toLowerCase() : gap.title.toLowerCase();
+                            return !trainedTags.has(tag);
+                          });
+                          return filteredGaps.length === 0 ? (
                           <p className="text-sm text-muted-foreground text-center py-6">Nenhum gap significativo. 🎉</p>
                         ) : (
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            {knowledgeData.gaps.map((gap, i) => {
+                            {filteredGaps.map((gap, i) => {
                               const Icon = gap.icon;
                               const priorityStyle = gap.priority === 'high'
                                 ? 'bg-destructive/10 text-destructive border-destructive/20'
