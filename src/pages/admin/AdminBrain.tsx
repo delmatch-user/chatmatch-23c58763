@@ -90,6 +90,10 @@ interface BrainMetrics {
     motoboy: ErrorTypeGroup;
     outros: ErrorTypeGroup;
   };
+  totalErrorCount?: number;
+  totalEstabelecimento?: number;
+  totalMotoboy?: number;
+  totalOutros?: number;
 }
 
 const normalizeTopTags = (tags: [string, number][]): [string, number][] => {
@@ -1279,10 +1283,10 @@ const AdminBrain = () => {
             <TabsContent value="errors" className="space-y-6">
               <div className="flex items-center gap-2 flex-wrap">
                 {[
-                  { key: 'todos', label: 'Todos', icon: AlertTriangle, count: metrics.errorLogs.length },
-                  { key: 'estabelecimento', label: 'Estabelecimento', icon: Store, count: metrics.errorsByType?.estabelecimento.total || 0 },
-                  { key: 'motoboy', label: 'Motoboy', icon: Bike, count: metrics.errorsByType?.motoboy.total || 0 },
-                  { key: 'outros', label: 'Outros', icon: AlertCircle, count: metrics.errorsByType?.outros.total || 0 },
+                  { key: 'todos', label: 'Todos', icon: AlertTriangle, count: metrics.totalErrorCount || metrics.errorLogs.length },
+                  { key: 'estabelecimento', label: 'Estabelecimento', icon: Store, count: metrics.totalEstabelecimento ?? metrics.errorsByType?.estabelecimento.total ?? 0 },
+                  { key: 'motoboy', label: 'Motoboy', icon: Bike, count: metrics.totalMotoboy ?? metrics.errorsByType?.motoboy.total ?? 0 },
+                  { key: 'outros', label: 'Outros', icon: AlertCircle, count: metrics.totalOutros ?? metrics.errorsByType?.outros.total ?? 0 },
                 ].map(tab => (
                   <Button key={tab.key} variant={errorsSubTab === tab.key ? 'default' : 'outline'} size="sm" onClick={() => setErrorsSubTab(tab.key)} className="gap-2">
                     <tab.icon className="w-4 h-4" />
@@ -2786,7 +2790,8 @@ function computeKnowledgeData(m: BrainMetrics): KnowledgeData {
   const gapTags = Object.entries(errorTagCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
   const gapCount = gapTags.length;
 
-  const errorPct = m.totalConversas > 0 ? (m.errorLogs.length / m.totalConversas) * 100 : 0;
+  const errorCount = m.totalErrorCount || m.errorLogs.length;
+  const errorPct = m.totalConversas > 0 ? (errorCount / m.totalConversas) * 100 : 0;
   const tmaBonusPct = Math.max(0, Math.min(100, improvementPct > 0 ? improvementPct * 2 : 0));
   const maturityScore = Math.round(
     Math.min(100, Math.max(0, (aiPct * 0.4) + (tmaBonusPct * 0.3) + (Math.max(0, 100 - errorPct * 5) * 0.3)))
@@ -2987,8 +2992,9 @@ function computeLearnings(m: BrainMetrics): string[] {
     }
   }
 
-  if (m.errorLogs.length > 5) {
-    insights.push(`🔴 ${m.errorLogs.length} conversas problemáticas detectadas no período — confira a aba "Erros & Gaps".`);
+  const totalErrors = m.totalErrorCount || m.errorLogs.length;
+  if (totalErrors > 5) {
+    insights.push(`🔴 ${totalErrors} conversas problemáticas detectadas no período — confira a aba "Erros & Gaps".`);
   }
 
   if (m.abandonRate != null && m.abandonRate > 5) {
