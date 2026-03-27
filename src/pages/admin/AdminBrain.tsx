@@ -555,21 +555,29 @@ const AdminBrain = () => {
     }
   };
 
-  // Load which agents have been notified in current period
-  const loadAgentNotifications = useCallback(async () => {
-    try {
-      const effectivePeriod = getEffectivePeriod();
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - effectivePeriod);
-      const { data } = await supabase
-        .from('agent_notifications' as any)
-        .select('agent_id, created_at')
-        .gte('created_at', cutoff.toISOString());
-      const notifiedMap: Record<string, boolean> = {};
-      (data || []).forEach((n: any) => { notifiedMap[n.agent_id] = true; });
-      setAgentNotifications(notifiedMap);
-    } catch {}
-  }, [getEffectivePeriod]);
+   // Get current week_start (Monday-based, Sao Paulo timezone)
+   const getCurrentWeekStart = () => {
+     const now = new Date();
+     const spDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+     const day = spDate.getDay();
+     const diff = day === 0 ? 6 : day - 1; // Monday = 0
+     spDate.setDate(spDate.getDate() - diff);
+     return format(spDate, 'yyyy-MM-dd');
+   };
+
+   // Load which agents have been notified this week
+   const loadAgentNotifications = useCallback(async () => {
+     try {
+       const weekStart = getCurrentWeekStart();
+       const { data } = await supabase
+         .from('agent_notifications' as any)
+         .select('agent_id')
+         .eq('week_start', weekStart);
+       const notifiedMap: Record<string, boolean> = {};
+       (data || []).forEach((n: any) => { notifiedMap[n.agent_id] = true; });
+       setAgentNotifications(notifiedMap);
+     } catch {}
+   }, []);
 
   // Generate feedback via edge function
   const generateFeedback = async () => {
