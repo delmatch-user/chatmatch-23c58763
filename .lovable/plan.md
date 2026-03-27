@@ -1,40 +1,33 @@
 
 
-# Reduzir delay de resposta após transferência entre robôs
+# Corrigir mensagem de transferencia aparecendo como se fosse do cliente
 
 ## Problema
-Quando a Delma transfere para Sebastião ou Julia, o robô destino demora ~27 segundos para responder:
-- 5s lock da transferência (anti-duplicata)
-- 2s delay anti-race (linha 974)
-- 20s agrupamento de mensagens (linha 1230: `Math.max(15, 20)`)
+Quando a Delma envia "Vou te transferir para o Sebastiao...", a mensagem aparece no lado do cliente no chat. Causa raiz:
 
-O agrupamento de mensagens faz sentido para mensagens novas do cliente (esperar ele terminar de digitar), mas numa transferência o contexto já está completo — não há motivo para esperar 20s.
+1. No `robot-chat/index.ts` (linha 1662-1669), a mensagem de transferencia e salva com `sender_id: null` e `sender_name: robot.name` (ex: "Delma")
+2. No `AppContext.tsx` (linha 354-358), a logica de mapeamento faz: `senderId = sender_id || (isRobotMessage ? 'robot' : 'contact')`
+3. `isRobotMessage` so e `true` se `sender_name` contem `[ROBOT]` ou `(IA)`
+4. Como "Delma" nao contem nenhum desses marcadores, `senderId` vira `'contact'` e a mensagem renderiza no lado esquerdo (cliente)
 
-## Correção
+## Correcao
 
-| # | Arquivo | Mudança |
+| # | Arquivo | Mudanca |
 |---|---------|---------|
-| 1 | `supabase/functions/robot-chat/index.ts` | Reduzir delay de transferência para 3s e pular delay anti-race quando `isTransfer` |
+| 1 | `supabase/functions/robot-chat/index.ts` | Adicionar marcador `[ROBOT]` no `sender_name` da mensagem de transferencia |
 
-### Detalhes técnicos
+### Detalhe
 
-**Linha 1221**: Reduzir `transferDelay` de 15 para 3:
+Linha 1665, trocar:
 ```typescript
-const transferDelay = 3; // 3s para transferências (contexto já completo)
+sender_name: robot.name,
+```
+por:
+```typescript
+sender_name: `${robot.name} [ROBOT]`,
 ```
 
-**Linha 1229-1230**: Usar `transferDelay` direto sem `Math.max` com `groupMessagesTime`:
-```typescript
-if (isFromTransfer) {
-  effectiveDelay = transferDelay; // Não aplicar groupMessagesTime em transferências
-```
+O marcador `[ROBOT]` ja e removido na exibicao pelo `cleanSenderName` (linha 1453 do ChatPanel). Isso garante que a mensagem aparece no lado direito (atendente/robo) sem mostrar o marcador ao usuario.
 
-**Linha 973-974**: Pular o delay anti-race de 2s quando é transferência (o lock de 5s da origem já cumpre esse papel):
-```typescript
-if (!isFromTransfer) {
-  await new Promise(resolve => setTimeout(resolve, 2000));
-}
-```
-
-**Resultado**: Tempo total reduzido de ~27s para ~8s (5s lock + 3s delay).
+Mesma correcao deve ser aplicada em qualquer outro insert de mensagem do robo que use `sender_id: null` sem o marcador.
 
