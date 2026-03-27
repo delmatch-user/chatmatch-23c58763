@@ -54,8 +54,11 @@ serve(async (req) => {
     // ========== MODULE 3: Training Enrichment ==========
     const trainingSuggestions = await enrichTrainingSuggestions(supabase, activeMemories);
 
-    // Store data signals as memories (observation mode still generates memories)
-    await storeDataSignals(supabase);
+  // Store data signals as memories (observation mode still generates memories)
+  await storeDataSignals(supabase);
+
+  // Store analyzed themes for incremental learning
+  await storeAnalyzedThemes(supabase);
 
     return new Response(JSON.stringify({
       message: isObservationMode
@@ -648,5 +651,56 @@ async function storeDataSignals(supabase: any) {
       weight: 0.5,
       expires_at: expiresAt,
     });
+  }
+}
+
+// Store analyzed themes for incremental learning
+async function storeAnalyzedThemes(supabase: any) {
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString();
+
+  // Fetch recent suggestions to extract themes
+  const { data: recentSuggestions } = await supabase
+    .from("delma_suggestions")
+    .select("title, category, content, created_at")
+    .in("category", ["aprendizado_humano", "aprendizado_robo", "melhoria_instrucao", "melhoria_delma"])
+    .gte("created_at", new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString())
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (!recentSuggestions || recentSuggestions.length === 0) return;
+
+  // Check which themes were already registered
+  const { data: existingThemes } = await supabase
+    .from("delma_memory")
+    .select("content")
+    .eq("type", "tema_analisado")
+    .gte("created_at", new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString());
+
+  const existingThemeSet = new Set(
+    (existingThemes || []).map((m: any) => m.content?.theme_key || "")
+  );
+
+  // Register new themes
+  for (const s of recentSuggestions) {
+    const themeKey = `${s.category}:${s.title}`.toLowerCase();
+    if (existingThemeSet.has(themeKey)) continue;
+
+    await supabase.from("delma_memory").insert({
+      type: "tema_analisado",
+      source: s.category,
+      content: {
+        theme_key: themeKey,
+        title: s.title,
+        category: s.category,
+        robot_name: s.content?.robot_name || null,
+        analyzed_at: now.toISOString(),
+      },
+      weight: 0.5,
+      expires_at: expiresAt,
+      related_suggestion_id: null,
+    });
+
+    existingThemeSet.add(themeKey);
   }
 }
