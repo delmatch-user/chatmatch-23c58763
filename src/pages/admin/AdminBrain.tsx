@@ -270,8 +270,10 @@ const AdminBrain = () => {
   const [notifyAgent, setNotifyAgent] = useState<AgentStat | null>(null);
   const [notifyMessage, setNotifyMessage] = useState('');
   const [notifyGenerating, setNotifyGenerating] = useState(false);
-  const [notifySending, setNotifySending] = useState(false);
-  const [agentNotifications, setAgentNotifications] = useState<Record<string, boolean>>({});
+   const [notifySending, setNotifySending] = useState(false);
+   const [agentNotifications, setAgentNotifications] = useState<Record<string, boolean>>({});
+   const [bulkSending, setBulkSending] = useState(false);
+   const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 });
 
   // Delma autonomous state
   const [delmaSuggestionsCount, setDelmaSuggestionsCount] = useState(0);
