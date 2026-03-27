@@ -971,7 +971,7 @@ async function handleAutomaticMode(body: {
   console.log(`[Robot-Chat Auto] Lock imediato de 20s setado para evitar duplicação.`);
   
   // Delay de 2s para garantir que chamadas concorrentes vejam o lock (pular em transferências - lock da origem já protege)
-  if (!isFromTransfer) {
+  if (!isTransfer) {
     await new Promise(resolve => setTimeout(resolve, 2000));
   } else {
     console.log(`[Robot-Chat Auto] Transferência detectada — pulando delay anti-race de 2s (lock da origem protege).`);
