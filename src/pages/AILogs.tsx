@@ -129,7 +129,7 @@ export default function AILogs() {
     setReportResult('');
     try {
       const { data, error } = await supabase.functions.invoke('ai-logs-report', {
-        body: { period: parseInt(reportPeriod), agentName: reportAgent },
+        body: { period: parseInt(reportPeriod), agentName: reportAgent, departmentId: selectedDepartment !== 'all' ? selectedDepartment : undefined },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
