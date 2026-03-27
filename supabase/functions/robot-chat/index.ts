@@ -1662,7 +1662,7 @@ async function handleAutomaticMode(body: {
           await supabase.from('messages').insert({
             conversation_id: conversationId,
             content: transferMsg,
-            sender_name: robot.name,
+            sender_name: `${robot.name} [ROBOT]`,
             sender_id: null,
             message_type: 'text',
             status: 'sent',
