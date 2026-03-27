@@ -10,10 +10,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
-import { Search, MessageSquare, Clock, Bot, Instagram, CalendarIcon, Bike, AlertTriangle, FileText, Loader2, Copy, Download, Check } from 'lucide-react';
+import { Search, MessageSquare, Clock, Bot, Instagram, CalendarIcon, Bike, AlertTriangle, FileText, Loader2, Copy, Download, Check, Building2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/hooks/useAuth';
+import { useDepartments } from '@/hooks/useDepartments';
 import { format, startOfDay, endOfDay, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { getTagColorClasses, getTagDotColor, normalizeTag, SUPORTE_TAXONOMY_TAGS } from '@/lib/tagColors';
@@ -89,14 +90,13 @@ interface ConversationLog {
   protocol?: string | null;
 }
 
-const SUPORTE_DEPARTMENT_ID = 'dea51138-49e4-45b0-a491-fb07a5fad479';
-
 type PeriodFilter = 'all' | 'today' | 'yesterday' | 'custom';
 type ChannelFilter = 'all' | 'whatsapp' | 'instagram' | 'machine';
 
 export default function AILogs() {
   const { isAdmin, isSupervisor } = useAuth();
   const { user } = useApp();
+  const { departments } = useDepartments();
   const [logs, setLogs] = useState<ConversationLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -106,6 +106,13 @@ export default function AILogs() {
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('all');
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>('all');
   const [tagFilter, setTagFilter] = useState<string>('all');
+  const [selectedDepartment, setSelectedDepartment] = useState<string>('all');
+
+  // Get user's departments for filtering
+  const userDepartmentIds = (user as any)?.departments?.map((d: any) => typeof d === 'string' ? d : d.id) || [];
+  const accessibleDepartments = isAdmin
+    ? departments
+    : departments.filter(d => userDepartmentIds.includes(d.id));
   const [customDateRange, setCustomDateRange] = useState<{ from?: Date; to?: Date }>({});
 
   // Report state
@@ -122,7 +129,7 @@ export default function AILogs() {
     setReportResult('');
     try {
       const { data, error } = await supabase.functions.invoke('ai-logs-report', {
-        body: { period: parseInt(reportPeriod), agentName: reportAgent },
+        body: { period: parseInt(reportPeriod), agentName: reportAgent, departmentId: selectedDepartment !== 'all' ? selectedDepartment : undefined },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
@@ -181,18 +188,26 @@ export default function AILogs() {
       if (!user) return;
       setLoading(true);
       try {
-        // Fetch logs from Suporte department where finalized_by is null (robot) or assigned_to_name matches robot names
-        const { data, error } = await supabase
+        let query = supabase
           .from('conversation_logs')
           .select('*')
-          .eq('department_id', SUPORTE_DEPARTMENT_ID)
           .order('finalized_at', { ascending: false });
 
+        // Department-based filtering
+        if (selectedDepartment !== 'all') {
+          query = query.eq('department_id', selectedDepartment);
+        } else if (!isAdmin) {
+          // Non-admins see only their departments
+          if (userDepartmentIds.length > 0) {
+            query = query.in('department_id', userDepartmentIds);
+          }
+        }
+
+        const { data, error } = await query;
         if (error) throw error;
         
         // Filter to only robot-handled conversations (finalized_by is null = robot finalized)
         const robotLogs = (data || []).filter(log => {
-          // Robot-finalized: finalized_by is null, or assigned_to_name suggests a robot
           return !log.finalized_by || !log.finalized_by_name;
         });
 
@@ -210,7 +225,7 @@ export default function AILogs() {
     };
 
     fetchLogs();
-  }, [user]);
+  }, [user, selectedDepartment, isAdmin]);
 
   const filteredLogs = logs.filter(log => {
     const matchesSearch =
@@ -308,6 +323,24 @@ export default function AILogs() {
 
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-2">
+          <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
+            <SelectTrigger className="w-[180px] h-9 text-sm">
+              <Building2 className="w-3.5 h-3.5 mr-1.5 text-muted-foreground" />
+              <SelectValue placeholder="Departamento" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos departamentos</SelectItem>
+              {accessibleDepartments.map(dept => (
+                <SelectItem key={dept.id} value={dept.id}>
+                  <span className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: dept.color }} />
+                    {dept.name}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           <Select value={periodFilter} onValueChange={(v) => setPeriodFilter(v as PeriodFilter)}>
             <SelectTrigger className="w-[150px] h-9 text-sm">
               <SelectValue placeholder="Período" />

@@ -6,13 +6,14 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const SUPORTE_DEPARTMENT_ID = "dea51138-49e4-45b0-a491-fb07a5fad479";
+const SUPORTE_DEPARTMENT_ID_FALLBACK = "dea51138-49e4-45b0-a491-fb07a5fad479";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { period, agentName } = await req.json();
+    const { period, agentName, departmentId } = await req.json();
+    const effectiveDepartmentId = departmentId || SUPORTE_DEPARTMENT_ID_FALLBACK;
     
     if (![7, 15, 30].includes(period)) {
       return new Response(JSON.stringify({ error: "Período inválido" }), {
@@ -31,7 +32,7 @@ serve(async (req) => {
     let query = supabase
       .from("conversation_logs")
       .select("contact_name, contact_notes, assigned_to_name, tags, messages, finalized_at, total_messages, channel")
-      .eq("department_id", SUPORTE_DEPARTMENT_ID)
+      .eq("department_id", effectiveDepartmentId)
       .is("finalized_by", null)
       .gte("finalized_at", sinceDate.toISOString())
       .order("finalized_at", { ascending: false })
