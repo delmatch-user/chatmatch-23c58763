@@ -879,7 +879,8 @@ const AdminBrain = () => {
   // Save maturity score when metrics update
   useEffect(() => {
     if (metrics) {
-      const knowledgeData = computeKnowledgeData(metrics);
+      const histMax = maturityHistory.length > 0 ? Math.max(...maturityHistory.map(h => h.score)) : 0;
+      const knowledgeData = computeKnowledgeData(metrics, cumulativeKnowledge, histMax);
       saveMaturityScore(knowledgeData.maturityScore);
     }
   }, [metrics, saveMaturityScore]);
@@ -1876,7 +1877,8 @@ const AdminBrain = () => {
             {/* ======================== KNOWLEDGE TAB ======================== */}
             <TabsContent value="knowledge" className="space-y-6">
               {(() => {
-                const knowledgeData = computeKnowledgeData(metrics);
+                const histMax = maturityHistory.length > 0 ? Math.max(...maturityHistory.map(h => h.score)) : 0;
+                const knowledgeData = computeKnowledgeData(metrics, cumulativeKnowledge, histMax);
                 return (
                   <>
                     {/* Maturity Gauge + KPIs */}
