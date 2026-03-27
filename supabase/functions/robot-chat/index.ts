@@ -1632,8 +1632,40 @@ async function handleAutomaticMode(body: {
         );
         
         if (targetRobot) {
-          // Atualizar conversa para o robô destino
+          // 1. Enviar aviso ao cliente antes de transferir
+          const transferMsg = args.message_to_client || `Vou transferir você para ${targetRobot.name}, nosso especialista. Um momento! 😊`;
+          
+          try {
+            if (conversationChannel === 'machine') {
+              const senderName = robotConfig.tools?.sendAgentName ? robot.name : 'Atendente';
+              await sendViaMachine(conversationId, transferMsg, senderName);
+            } else if (contactPhone) {
+              const formattedTransferMsg = robotConfig.tools?.sendAgentName
+                ? `*${robot.name}:*\n${transferMsg}`
+                : transferMsg;
+              if (connectionType === 'meta_api' && phoneNumberId) {
+                await sendViaMetaApi(phoneNumberId, contactPhone, formattedTransferMsg);
+              } else {
+                await sendViaBaileys(contactPhone, contactJid, formattedTransferMsg, phoneNumberId);
+              }
+            }
+          } catch (sendErr: any) {
+            console.error('[Robot-Chat Auto] Erro ao enviar aviso de transferência:', sendErr.message);
+          }
+          
+          // Salvar aviso no DB
+          await supabase.from('messages').insert({
+            conversation_id: conversationId,
+            content: transferMsg,
+            sender_name: robot.name,
+            sender_id: null,
+            message_type: 'text',
+            status: 'sent',
+          });
+          
+          // 2. Atualizar conversa para o robô destino com lock de 5s para evitar duplicatas
           const handoffSummaryRobot = args.handoff_summary || args.reason || '';
+          const lockUntil = new Date(Date.now() + 5000).toISOString();
           await supabase
             .from('conversations')
             .update({
@@ -1641,7 +1673,7 @@ async function handleAutomaticMode(body: {
               assigned_to: null,
               status: 'em_atendimento',
               robot_transferred: false,
-              robot_lock_until: null,
+              robot_lock_until: lockUntil,
               handoff_summary: handoffSummaryRobot || null,
               updated_at: new Date().toISOString()
             })
@@ -1670,6 +1702,7 @@ async function handleAutomaticMode(body: {
           
           aiResponse = ''; // Robô destino responde, não a Delma
           skipSending = true; // O robô destino vai responder
+          skipPostProcessing = true; // Não limpar lock do destino
           actionTaken = true;
           
           // Chamar robot-chat para o robô destino
