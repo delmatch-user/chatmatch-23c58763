@@ -269,10 +269,12 @@ serve(async (req) => {
     });
 
     // Errors / forced transfers (high priority or urgent without resolution)
-    const errorLogs = logs.filter(l =>
+    const errorLogsAll = logs.filter(l =>
       l.priority === 'urgent' || l.priority === 'high' ||
       (l.tags || []).some((t: string) => t.toLowerCase().includes('erro') || t.toLowerCase().includes('reclamação') || t.toLowerCase().includes('insatisf'))
-    ).slice(0, 50);
+    );
+    const totalErrorCount = errorLogsAll.length;
+    const errorLogs = errorLogsAll;
 
     const taxonomyTags = ['Acidente - Urgente', 'Operacional - Geral', 'Financeiro - Normal', 'Duvida - Geral', 'Comercial - B2B'];
 
