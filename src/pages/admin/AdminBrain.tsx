@@ -254,6 +254,9 @@ const AdminBrain = () => {
   // Maturity score history
   const [maturityHistory, setMaturityHistory] = useState<Array<{ date: string; score: number }>>([]);
 
+  // Cumulative knowledge data for maturity score
+  const [cumulativeKnowledge, setCumulativeKnowledge] = useState<{ approvedSuggestions: number; activeMemories: number; totalQAs: number }>({ approvedSuggestions: 0, activeMemories: 0, totalQAs: 0 });
+
   // Agent live status
   const [agentLiveStatus, setAgentLiveStatus] = useState<Record<string, { status: string; openConversations: number; profileId: string }>>({});
 
