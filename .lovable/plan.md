@@ -1,21 +1,36 @@
 
 
-# Fazer gap card sumir após treinamento
+# Avisar o cliente sobre transferencia e evitar mensagens duplicadas
 
-## Problema
-Quando você clica em "Treinar" e salva a nota, o `saveTrainNote` apenas grava um log em `app_settings` (`brain_training_log`). Os cards de gap são recalculados toda vez por `computeKnowledgeData` a partir das métricas — nunca consultam esse log, então o card treinado reaparece.
+## Problema 1: Transferencia silenciosa
+Quando a Delma transfere para Sebastiao ou Julia via `transfer_to_robot`, o codigo limpa `aiResponse = ''` e seta `skipSending = true` (linhas 1671-1672). O campo `message_to_client` dos argumentos da tool e completamente ignorado. O cliente nao recebe nenhum aviso de que esta sendo transferido.
 
-## Correção
+## Problema 2: Mensagens duplicadas do robo destino
+Apos a transferencia, o `robot-chat` do destino e chamado via fire-and-forget `fetch` (linha 1676). Porem, se uma nova mensagem do cliente chega durante o processo, o webhook tambem aciona `robot-chat` para o mesmo robo/conversa, gerando resposta duplicada. O lock (`robot_lock_until`) e resetado para `null` na transferencia (linha 1644), deixando a porta aberta.
 
-| # | Arquivo | Mudança |
+## Correcoes
+
+| # | Arquivo | Mudanca |
 |---|---------|---------|
-| 1 | `src/pages/admin/AdminBrain.tsx` | Carregar `brain_training_log` no state, filtrar gaps treinados na última semana, e após `saveTrainNote` atualizar o state local para remoção imediata do card |
+| 1 | `supabase/functions/robot-chat/index.ts` | Enviar `message_to_client` ao cliente antes de transferir para outro robo + setar lock no destino para evitar duplicatas |
 
-### Detalhes
+### Detalhes tecnicos
 
-1. **Novo state** `trainedTags`: `Set<string>` com tags treinadas nos últimos 7 dias, carregado de `app_settings` key `brain_training_log` no `useEffect` inicial.
+**Bloco `transfer_to_robot` (linhas 1628-1698):**
 
-2. **Filtrar gaps**: Na renderização dos `knowledgeData.gaps`, filtrar com `.filter(gap => !trainedTags.has(extractTag(gap.title)))` — onde `extractTag` extrai o texto entre aspas do título.
+1. **Enviar aviso ao cliente**: Antes de chamar o robo destino, enviar `args.message_to_client` (ex: "Vou te transferir para o Sebastiao, nosso especialista") via WhatsApp/Machine e salvar no DB. Isso informa o cliente sobre a transferencia.
 
-3. **Atualizar imediatamente**: No `saveTrainNote`, após salvar, adicionar `trainModalTag` ao `trainedTags` no state local para que o card suma instantaneamente sem precisar recarregar.
+2. **Setar lock no destino**: Em vez de `robot_lock_until: null`, setar um lock de 5 segundos (`new Date(Date.now() + 5000).toISOString()`) na conversa ao transferir. Isso garante que o webhook nao acione o robo destino em paralelo enquanto o `fetch` interno ainda esta processando.
+
+3. **Manter `skipSending = true` para a resposta da IA**: O `aiResponse` continua vazio — apenas o `message_to_client` e enviado explicitamente. O robo destino responde normalmente apos o lock.
+
+Logica simplificada:
+```
+// Antes de transferir:
+const transferMsg = args.message_to_client || `Vou transferir voce para ${targetRobot.name}`;
+// Enviar via WhatsApp/Machine
+// Salvar no DB como mensagem do robo atual
+// Setar robot_lock_until = now + 5s (evita duplicata)
+// Chamar robot-chat do destino com isTransfer: true
+```
 
