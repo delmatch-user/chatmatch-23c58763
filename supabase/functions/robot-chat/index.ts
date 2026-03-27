@@ -1936,11 +1936,8 @@ async function handleAutomaticMode(body: {
   
   console.log(`[Robot-Chat Auto] Resposta gerada (${aiResponse.length} chars)`);
 
-  // splitByLineBreak: dividir resposta em múltiplas mensagens por quebra de linha
-  const shouldSplit = robotConfig.tools.splitByLineBreak && aiResponse.includes('\n');
-  const messageParts = shouldSplit 
-    ? aiResponse.split('\n').map((p: string) => p.trim()).filter((p: string) => p.length > 0)
-    : [aiResponse];
+  // Anti-flood: SEMPRE enviar como mensagem única — nunca dividir em múltiplas mensagens
+  const messageParts = [aiResponse];
 
   // Delay de 2s para garantir que a mensagem do cliente carregou na tela dos atendentes
   await new Promise(resolve => setTimeout(resolve, 2000));
