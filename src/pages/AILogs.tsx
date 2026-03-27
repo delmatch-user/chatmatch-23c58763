@@ -188,18 +188,26 @@ export default function AILogs() {
       if (!user) return;
       setLoading(true);
       try {
-        // Fetch logs from Suporte department where finalized_by is null (robot) or assigned_to_name matches robot names
-        const { data, error } = await supabase
+        let query = supabase
           .from('conversation_logs')
           .select('*')
-          .eq('department_id', SUPORTE_DEPARTMENT_ID)
           .order('finalized_at', { ascending: false });
 
+        // Department-based filtering
+        if (selectedDepartment !== 'all') {
+          query = query.eq('department_id', selectedDepartment);
+        } else if (!isAdmin) {
+          // Non-admins see only their departments
+          if (userDepartmentIds.length > 0) {
+            query = query.in('department_id', userDepartmentIds);
+          }
+        }
+
+        const { data, error } = await query;
         if (error) throw error;
         
         // Filter to only robot-handled conversations (finalized_by is null = robot finalized)
         const robotLogs = (data || []).filter(log => {
-          // Robot-finalized: finalized_by is null, or assigned_to_name suggests a robot
           return !log.finalized_by || !log.finalized_by_name;
         });
 
@@ -217,7 +225,7 @@ export default function AILogs() {
     };
 
     fetchLogs();
-  }, [user]);
+  }, [user, selectedDepartment, isAdmin]);
 
   const filteredLogs = logs.filter(log => {
     const matchesSearch =
