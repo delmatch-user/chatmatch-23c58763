@@ -2099,7 +2099,8 @@ const AdminBrain = () => {
                               );
                             })}
                           </div>
-                        )}
+                        );
+                        })()}
                       </CardContent>
                     </Card>
 
