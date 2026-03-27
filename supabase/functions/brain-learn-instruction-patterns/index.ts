@@ -17,6 +17,7 @@ function anonymize(text: string): string {
 function getRobotScope(name: string): "estabelecimento" | "motoboy" | "skip" {
   const lower = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   if (lower.includes("delma")) return "skip";
+  if (lower.includes("sdr") || lower.includes("arthur")) return "skip";
   if (lower.includes("julia")) return "estabelecimento";
   if (lower.includes("sebastiao")) return "motoboy";
   return "skip";
@@ -33,6 +34,9 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+    // ========== DIAGNOSTICS ==========
+    const diagnostics: any = {};
+
     // 1. Get Suporte department
     const { data: suporteDept } = await supabase
       .from("departments").select("id").ilike("name", "%suporte%").maybeSingle();
@@ -46,46 +50,53 @@ serve(async (req) => {
       suporteMemberIds = (memberLinks || []).map((m: any) => m.profile_id);
     }
 
-    // 3. Fetch human conversations from last 7 days
+    // 3. Fetch conversations from last 7 days — ALL from Suporte, no TMA filter
     const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const { data: humanLogs } = await supabase
+
+    // Count totals for diagnostics
+    const { count: totalFinalizadas } = await supabase
       .from("conversation_logs")
-      .select("contact_name, assigned_to, assigned_to_name, tags, messages, started_at, finalized_at, wait_time, total_messages")
-      .not("assigned_to", "is", null)
-      .not("finalized_by", "is", null)
+      .select("*", { count: "exact", head: true })
+      .gte("finalized_at", cutoff);
+    diagnostics.total_finalizadas_7d = totalFinalizadas || 0;
+
+    const { data: allLogs } = await supabase
+      .from("conversation_logs")
+      .select("contact_name, assigned_to, assigned_to_name, tags, messages, started_at, finalized_at, wait_time, total_messages, department_name")
+      .ilike("department_name", "%suporte%")
       .gte("finalized_at", cutoff)
       .order("finalized_at", { ascending: false })
       .limit(500);
 
-    // Filter to Suporte members only
+    diagnostics.suporte_logs = (allLogs || []).length;
+
+    // Filter to Suporte members if we have them
     const suporteLogs = suporteMemberIds.length > 0
-      ? (humanLogs || []).filter((l: any) => suporteMemberIds.includes(l.assigned_to))
-      : (humanLogs || []);
+      ? (allLogs || []).filter((l: any) => l.assigned_to && suporteMemberIds.includes(l.assigned_to))
+      : (allLogs || []);
 
-    if (suporteLogs.length === 0) {
-      return new Response(JSON.stringify({ message: "Sem conversas humanas do Suporte para analisar", suggestions: 0 }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    diagnostics.suporte_member_logs = suporteLogs.length;
 
-    // 4. Calculate average TMA and filter quality conversations
-    const tmas = suporteLogs.map((l: any) => {
-      const start = new Date(l.started_at).getTime();
-      const end = new Date(l.finalized_at).getTime();
-      return (end - start) / 60000;
+    // Filter conversations with at least 2 messages (relaxed from previous)
+    const processableLogs = suporteLogs.filter((l: any) => {
+      const msgs = Array.isArray(l.messages) ? l.messages : [];
+      return msgs.length >= 2;
     });
-    const avgTMA = tmas.reduce((a, b) => a + b, 0) / tmas.length;
+    diagnostics.processable = processableLogs.length;
 
-    // Quality filter: TMA below average = efficient conversations
-    const qualityLogs = suporteLogs.filter((l: any, i: number) => tmas[i] <= avgTMA && tmas[i] > 0);
+    console.log(`[DELMA DIAGNÓSTICO instruction-patterns] total=${diagnostics.total_finalizadas_7d}, suporte=${diagnostics.suporte_logs}, members=${diagnostics.suporte_member_logs}, processable=${diagnostics.processable}`);
 
-    if (qualityLogs.length === 0) {
-      return new Response(JSON.stringify({ message: "Sem conversas de qualidade para analisar", suggestions: 0 }), {
+    if (processableLogs.length === 0) {
+      return new Response(JSON.stringify({
+        message: "Sem conversas do Suporte para analisar",
+        suggestions: 0,
+        diagnostics,
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // 5. Classify conversations by message content
+    // 4. Classify conversations by message content
     const MOTOBOY_KW = ["motoboy", "entregador", "corrida", "agendamento", "repasse", "antecipacao", "antecipação", "saque", "delbeneficios", "delbenefícios", "veiculo", "veículo", "fila", "coleta", "rota", "bloqueio", "app do entregador", "entrega"];
     const ESTAB_KW = ["loja", "estabelecimento", "restaurante", "recarga", "cardapio", "cardápio", "pedido", "cancelamento", "integracao", "integração", "ifood", "saipos", "drogavem", "pin", "franquia", "parceiro", "agrupamento"];
 
@@ -98,7 +109,7 @@ serve(async (req) => {
       return "geral";
     }
 
-    // 6. Fetch robots (Julia & Sebastiao only)
+    // 5. Fetch robots (Julia & Sebastiao only)
     const { data: allRobots } = await supabase
       .from("robots")
       .select("id, name, instructions, qa_pairs, tone, reference_links, updated_at")
@@ -107,12 +118,12 @@ serve(async (req) => {
     const robots = (allRobots || []).filter((r: any) => getRobotScope(r.name) !== "skip");
 
     if (robots.length === 0) {
-      return new Response(JSON.stringify({ message: "Nenhum robô especialista encontrado", suggestions: 0 }), {
+      return new Response(JSON.stringify({ message: "Nenhum robô especialista encontrado", suggestions: 0, diagnostics }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // 7. Deduplication check
+    // 6. Deduplication check
     const deduplicationCutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
     const { data: existingSuggestions } = await supabase
       .from("delma_suggestions")
@@ -127,19 +138,22 @@ serve(async (req) => {
       const robotScope = getRobotScope(robot.name);
       if (robotScope === "skip") continue;
 
-      // Filter conversations for this robot's scope
-      const scopedLogs = qualityLogs.filter((l: any) => {
+      // Filter conversations for this robot's scope — include "geral" too, assign to closest match
+      const scopedLogs = processableLogs.filter((l: any) => {
         const msgs = Array.isArray(l.messages) ? l.messages : [];
         const scope = classifyByContent(msgs);
-        return scope === robotScope;
+        return scope === robotScope || scope === "geral";
       });
 
-      if (scopedLogs.length < 3) {
-        console.log(`Not enough quality conversations for ${robot.name} (${scopedLogs.length})`);
+      // Reduced minimum from 3 to 2
+      if (scopedLogs.length < 2) {
+        console.log(`Not enough conversations for ${robot.name} (${scopedLogs.length})`);
         continue;
       }
 
-      // Build conversation summaries
+      diagnostics[`${robot.name}_scoped`] = scopedLogs.length;
+
+      // Build conversation summaries — use ALL, no TMA quality filter
       const conversationSummaries = scopedLogs.slice(0, 20).map((log: any, i: number) => {
         const msgs = Array.isArray(log.messages) ? log.messages : [];
         const agentMsgs = msgs
@@ -151,6 +165,7 @@ serve(async (req) => {
           tags: (log.tags || []).slice(0, 5),
           agent_messages: agentMsgs,
           tma_minutes: Math.round((new Date(log.finalized_at).getTime() - new Date(log.started_at).getTime()) / 60000),
+          message_count: msgs.length,
         };
       });
 
@@ -168,7 +183,7 @@ serve(async (req) => {
         ? "ESTABELECIMENTOS (lojistas, restaurantes, parceiros)"
         : "MOTOBOYS (entregadores)";
 
-      const systemPrompt = `Você é a Delma, Gerente de Suporte IA. Analise padrões de ATENDENTES HUMANOS eficientes para propor melhorias nas INSTRUÇÕES GERAIS do robô "${robot.name}".
+      const systemPrompt = `Você é a Delma, Gerente de Suporte IA. Analise padrões de ATENDENTES HUMANOS para propor melhorias nas INSTRUÇÕES GERAIS do robô "${robot.name}".
 
 ESCOPO DO ROBÔ: ${scopeLabel}
 
@@ -181,34 +196,36 @@ ${qaStr || "(sem Q&As)"}
 TOM DEFINIDO: ${robot.tone || "não definido"}
 
 REGRAS:
-1. Analise como os atendentes humanos eficientes (TMA abaixo da média) se comportam
-2. Identifique padrões de INSTRUÇÃO (não Q&A) que poderiam melhorar o robô: tom de abertura, sequência de perguntas diagnósticas, tratamento de urgências, linguagem
+1. Analise como os atendentes humanos se comportam — TODOS, não apenas os eficientes
+2. Identifique padrões de INSTRUÇÃO que poderiam melhorar o robô: tom de abertura, sequência de perguntas, tratamento de urgências, linguagem
 3. Compare com as instruções atuais e proponha melhorias CONCRETAS
 4. Cada sugestão deve ter um trecho da instrução atual afetada e a versão proposta
 5. NÃO proponha Q&As (isso é feito pelo treinamento regular)
 6. Valide contra a base de conhecimento: não contradizer regras existentes
+7. Conversas curtas também são válidas — revelam padrões de saudação e encerramento
+8. SEMPRE gere pelo menos 1 sugestão por robô analisado
 
 Retorne JSON com array "suggestions". Cada sugestão:
 {
   "title": "título curto",
-  "affected_section": "qual seção das instruções é alterada (ex: Tom geral, Fluxo de coleta, Saudação)",
-  "current_instruction": "trecho exato das instruções atuais que será modificado (ou 'NOVA SEÇÃO' se não existe)",
+  "affected_section": "qual seção das instruções é alterada",
+  "current_instruction": "trecho exato das instruções atuais (ou 'NOVA SEÇÃO')",
   "proposed_instruction": "versão proposta melhorada",
-  "reasoning": "justificativa com dados (volume de conversas, padrão observado)",
+  "reasoning": "justificativa com dados",
   "compliance_status": "aligned | review | conflict",
-  "compliance_notes": "nota de conformidade (obrigatório se review/conflict)",
-  "examples": ["até 3 trechos anonimizados de conversas humanas que embasam"],
-  "impact_score": 0-100 calculado como: (volume_afetado × 0.35) + (reducao_tma × 0.25) + (recorrencia × 0.20) + (urgencia × 0.20),
+  "compliance_notes": "nota de conformidade",
+  "examples": ["até 3 trechos anonimizados"],
+  "impact_score": 0-100,
   "impact_breakdown": { "volume_weight": 0-100, "tma_reduction": 0-100, "recurrence": 0-100, "urgency": 0-100 },
-  "conversation_count": número exato de conversas analisadas que embasam (OBRIGATÓRIO > 0),
-  "estimated_impact": "estimativa em linguagem natural (ex: 'Pode reduzir ~2min no TMA de conversas de cancelamento')",
+  "conversation_count": número de conversas que embasam (OBRIGATÓRIO > 0),
+  "estimated_impact": "estimativa em linguagem natural",
   "recurrence_pattern": "pontual | semanal | cronico"
 }
 
-Gere entre 1-3 sugestões de alta qualidade. Priorize melhorias com maior impacto.
-Se conversation_count for 0, descarte a sugestão.`;
+Gere entre 1-3 sugestões. Se não encontrar melhorias de alta qualidade, gere de qualidade média.
+NUNCA retorne suggestions: [] — sempre há algo a melhorar.`;
 
-      const userPrompt = `CONVERSAS HUMANAS EFICIENTES (${scopedLogs.length} conversas, TMA abaixo da média do time):
+      const userPrompt = `CONVERSAS DO SUPORTE (${scopedLogs.length} conversas, últimos 7 dias):
 ${JSON.stringify(conversationSummaries, null, 1)}
 
 Analise e proponha melhorias nas instruções gerais do robô "${robot.name}".`;
@@ -269,7 +286,6 @@ Analise e proponha melhorias nas instruções gerais do robô "${robot.name}".`;
           if (existingTitles.has(titleLower)) continue;
           if (rejectedTitles.has(titleLower)) continue;
           if (approvedTitles.has(titleLower)) continue;
-          if (s.conversation_count !== undefined && s.conversation_count <= 0) continue;
 
           const dataWindowStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR');
           const dataWindowEnd = new Date().toLocaleDateString('pt-BR');
@@ -310,11 +326,35 @@ Analise e proponha melhorias nas instruções gerais do robô "${robot.name}".`;
       }
     }
 
+    // Guaranteed fallback if 0 suggestions
+    if (totalSuggestions === 0 && processableLogs.length > 0) {
+      await supabase.from("delma_suggestions").insert({
+        category: "melhoria_delma",
+        title: "Diagnóstico: análise de instruções sem resultados",
+        justification: `Análise de ${processableLogs.length} conversas do Suporte não gerou sugestões de melhoria de instrução. As instruções atuais podem já cobrir os temas recorrentes.`,
+        content: {
+          diagnostics,
+          robot_name: "Delma",
+          pattern: "Pipeline de instruções sem resultados",
+          examples: [],
+          proposed_action: "Verificar se as instruções de Júlia e Sebastião estão atualizadas e cobrindo os temas recentes.",
+          impact_score: 25,
+          conversation_count: processableLogs.length,
+          estimated_impact: "Identificar se o pipeline de instruções está funcionando corretamente",
+          recurrence_pattern: "pontual",
+        },
+        confidence_score: 100,
+        memories_used: [],
+        status: "pending",
+      });
+      totalSuggestions = 1;
+    }
+
     return new Response(JSON.stringify({
       message: `Análise de instruções concluída! ${totalSuggestions} sugestões geradas.`,
       suggestions: totalSuggestions,
-      quality_conversations: qualityLogs.length,
-      avg_tma_minutes: Math.round(avgTMA),
+      conversations_analyzed: processableLogs.length,
+      diagnostics,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

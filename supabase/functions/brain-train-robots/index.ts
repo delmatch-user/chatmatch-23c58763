@@ -9,14 +9,9 @@ const corsHeaders = {
 // Build knowledge context for a robot, truncated to ~8000 chars
 function buildKnowledgeContext(robot: any): string {
   const parts: string[] = [];
-  
-  // Instructions (up to 4000 chars)
   const instructions = (robot.instructions || "").substring(0, 4000);
-  if (instructions) {
-    parts.push(`INSTRUÇÕES GERAIS:\n${instructions}`);
-  }
-  
-  // Q&As (up to 3500 chars)
+  if (instructions) parts.push(`INSTRUÇÕES GERAIS:\n${instructions}`);
+
   const qaPairs = Array.isArray(robot.qa_pairs) ? robot.qa_pairs : [];
   if (qaPairs.length > 0) {
     let qaStr = "Q&As CADASTRADOS:\n";
@@ -27,21 +22,15 @@ function buildKnowledgeContext(robot: any): string {
     }
     parts.push(qaStr);
   }
-  
-  // Tone + links (up to 500 chars)
+
   const meta: string[] = [];
   if (robot.tone) meta.push(`TOM DEFINIDO: ${robot.tone}`);
   if (Array.isArray(robot.reference_links) && robot.reference_links.length > 0) {
-    const links = robot.reference_links
-      .slice(0, 5)
-      .map((l: any) => `- ${l.title || l.url}`)
-      .join("\n");
+    const links = robot.reference_links.slice(0, 5).map((l: any) => `- ${l.title || l.url}`).join("\n");
     meta.push(`LINKS DE REFERÊNCIA:\n${links}`);
   }
-  if (meta.length > 0) {
-    parts.push(meta.join("\n").substring(0, 500));
-  }
-  
+  if (meta.length > 0) parts.push(meta.join("\n").substring(0, 500));
+
   return parts.join("\n\n");
 }
 
@@ -56,6 +45,9 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+    // ========== DIAGNOSTICS ==========
+    const diagnostics: any = {};
+
     // 1. Fetch Suporte department and filter robots
     const { data: suporteDept } = await supabase
       .from("departments").select("id").ilike("name", "%suporte%").maybeSingle();
@@ -68,16 +60,21 @@ serve(async (req) => {
     if (robotsErr) throw robotsErr;
 
     const robots = (allRobots || []).filter((r: any) => {
+      const lower = r.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (lower.includes("sdr") || lower.includes("arthur")) return false; // Exclude SDR
       const deps: string[] = r.departments || [];
       return deps.length === 0 || (suporteDeptId && deps.includes(suporteDeptId));
     });
+
+    diagnostics.robots_found = robots.length;
+
     if (!robots || robots.length === 0) {
-      return new Response(JSON.stringify({ message: "Nenhum robô encontrado", suggestions: 0 }), {
+      return new Response(JSON.stringify({ message: "Nenhum robô encontrado", suggestions: 0, diagnostics }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // 2. Fetch conversations handled by HUMAN agents in the last 14 days
+    // 2. Fetch conversations from Suporte department — last 14 days
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 14);
 
@@ -100,26 +97,42 @@ serve(async (req) => {
       }
     }
 
+    // Fetch from Suporte department explicitly
     const { data: humanLogs } = await supabase
       .from("conversation_logs")
-      .select("contact_name, tags, messages, assigned_to_name, finalized_at, channel, total_messages")
-      .gte("finalized_at", cutoff.toISOString())
+      .select("contact_name, tags, messages, assigned_to_name, finalized_at, channel, total_messages, department_name")
+      .ilike("department_name", "%suporte%")
       .not("assigned_to_name", "is", null)
+      .gte("finalized_at", cutoff.toISOString())
       .order("finalized_at", { ascending: false })
       .limit(500);
 
-    // Filter to only Suporte members if we have them
+    diagnostics.total_suporte_logs = (humanLogs || []).length;
+
+    // Filter to Suporte members if available
     const filteredLogs = suporteMemberNames.size > 0
       ? (humanLogs || []).filter((log: any) => suporteMemberNames.has(log.assigned_to_name))
       : (humanLogs || []);
 
-    if (filteredLogs.length === 0) {
-      return new Response(JSON.stringify({ message: "Sem conversas humanas recentes para analisar", suggestions: 0 }), {
+    diagnostics.member_filtered_logs = filteredLogs.length;
+
+    // Relaxed: minimum 2 messages instead of implicit higher requirements
+    const processableLogs = filteredLogs.filter((log: any) => {
+      const msgs = Array.isArray(log.messages) ? log.messages : [];
+      return msgs.length >= 2;
+    });
+
+    diagnostics.processable = processableLogs.length;
+
+    console.log(`[DELMA DIAGNÓSTICO train-robots] suporte_logs=${diagnostics.total_suporte_logs}, member_filtered=${diagnostics.member_filtered_logs}, processable=${diagnostics.processable}`);
+
+    if (processableLogs.length === 0) {
+      return new Response(JSON.stringify({ message: "Sem conversas humanas recentes do Suporte para analisar", suggestions: 0, diagnostics }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // 3. Extract human-client conversation pairs and classify by message content
+    // 3. Extract conversation pairs and classify
     const MOTOBOY_KW = ["motoboy", "entregador", "corrida", "agendamento", "repasse", "antecipacao", "antecipação", "saque", "delbeneficios", "delbenefícios", "veiculo", "veículo", "fila", "coleta", "rota", "bloqueio", "app do entregador", "entrega"];
     const ESTAB_KW = ["loja", "estabelecimento", "restaurante", "recarga", "cardapio", "cardápio", "pedido", "cancelamento", "integracao", "integração", "ifood", "saipos", "drogavem", "pin", "franquia", "parceiro", "agrupamento"];
 
@@ -139,10 +152,9 @@ serve(async (req) => {
       exchanges: Array<{ from: string; text: string }>;
     }> = [];
 
-    for (const log of filteredLogs) {
+    for (const log of processableLogs) {
       if (allConversationExamples.length >= 50) break;
       const msgs = Array.isArray(log.messages) ? log.messages : [];
-      if (msgs.length < 2) continue;
 
       const exchanges: Array<{ from: string; text: string }> = [];
       for (let i = 0; i < Math.min(msgs.length, 10); i++) {
@@ -157,24 +169,25 @@ serve(async (req) => {
       }
 
       if (exchanges.length >= 2) {
-        const logTags = log.tags || [];
         allConversationExamples.push({
           agent: log.assigned_to_name,
-          tags: logTags,
+          tags: log.tags || [],
           scope: classifyByContent(exchanges),
           exchanges,
         });
       }
     }
 
-    // Helper to determine robot scope by name
-  function getRobotScope(name: string): "estabelecimento" | "motoboy" | "skip" {
-    const lower = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    if (lower.includes("delma")) return "skip";
-    if (lower.includes("julia")) return "estabelecimento";
-    if (lower.includes("sebastiao")) return "motoboy";
-    return "skip";
-  }
+    diagnostics.conversation_examples = allConversationExamples.length;
+
+    function getRobotScope(name: string): "estabelecimento" | "motoboy" | "skip" {
+      const lower = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (lower.includes("delma")) return "skip";
+      if (lower.includes("sdr") || lower.includes("arthur")) return "skip";
+      if (lower.includes("julia")) return "estabelecimento";
+      if (lower.includes("sebastiao")) return "motoboy";
+      return "skip";
+    }
 
     // 4. Fetch existing pending suggestions to avoid duplicates
     const { data: existingSuggestions } = await supabase
@@ -186,15 +199,14 @@ serve(async (req) => {
       (existingSuggestions || []).map((s: any) => `${s.robot_id}:${s.title}`)
     );
 
-    // 5. For each robot, generate suggestions based on human responses + knowledge base
+    // 5. For each robot, generate suggestions
     let totalSuggestions = 0;
     const robotsAnalyzed: Array<{ name: string; qa_count: number; tone: string; updated_at: string; instructions_excerpt: string }> = [];
 
     for (const robot of robots) {
       const existingQA = Array.isArray(robot.qa_pairs) ? robot.qa_pairs : [];
       const knowledgeContext = buildKnowledgeContext(robot);
-      
-      // Build snapshot for this robot
+
       const snapshot = {
         qa_count: existingQA.length,
         instructions_excerpt: (robot.instructions || "").substring(0, 200),
@@ -203,68 +215,65 @@ serve(async (req) => {
       };
       robotsAnalyzed.push({ name: robot.name, ...snapshot });
 
-      // Determine robot scope and filter conversations
       const robotScope = getRobotScope(robot.name);
       if (robotScope === "skip") {
-        console.log(`Skipping robot ${robot.name} (triager/unknown scope)`);
+        console.log(`Skipping robot ${robot.name} (triager/SDR/unknown scope)`);
         continue;
       }
 
       const scopeLabel = robotScope === "estabelecimento" ? "ESTABELECIMENTOS (lojistas, restaurantes, parceiros)"
         : "MOTOBOYS (entregadores)";
 
-      const conversationExamples = allConversationExamples.filter(c => c.scope === robotScope);
+      // Include "geral" conversations too — assign to closest robot
+      const conversationExamples = allConversationExamples.filter(c => c.scope === robotScope || c.scope === "geral");
+
+      diagnostics[`${robot.name}_examples`] = conversationExamples.length;
 
       if (conversationExamples.length === 0) {
-        console.log(`No relevant conversations for robot ${robot.name} (scope: ${robotScope})`);
+        console.log(`No relevant conversations for robot ${robot.name}`);
         continue;
       }
 
       const systemPrompt = `Você é a Delma, Treinadora de IA. Sua missão é analisar como os ATENDENTES HUMANOS reais respondem aos clientes e usar isso para melhorar o robô "${robot.name}".
 
-ESCOPO DO ROBÔ: Este robô atende exclusivamente ${scopeLabel}. Gere sugestões APENAS para esse público. NÃO sugira nada relacionado a ${robotScope === "estabelecimento" ? "motoboys ou entregadores" : robotScope === "motoboy" ? "estabelecimentos ou lojistas" : "outros públicos"}.
+ESCOPO DO ROBÔ: Este robô atende exclusivamente ${scopeLabel}. Gere sugestões APENAS para esse público.
+NUNCA gere sugestões sobre o robô SDR, Arthur ou temas comerciais/vendas.
 
 CONTEXTO OBRIGATÓRIO — BASE DE CONHECIMENTO DO ROBÔ "${robot.name}":
 ${knowledgeContext}
 
 REGRAS DE GERAÇÃO:
-1. Analise os padrões de linguagem dos atendentes humanos: saudações, empatia, encerramento
+1. Analise TODOS os padrões — conversas rápidas e longas
 2. Identifique respostas humanas recorrentes que o robô NÃO tem no Q&A
-3. Sugira Q&A baseados em COMO os humanos realmente respondem (tom, palavras, estrutura)
-4. Compare as respostas humanas com o Q&A existente do robô — sugira melhorias onde o robô é genérico demais
-5. Foque em tornar o robô mais HUMANO e empático, não apenas informativo
+3. Sugira Q&A baseados em COMO os humanos realmente respondem
+4. Compare as respostas humanas com o Q&A existente do robô
+5. Foque em tornar o robô mais HUMANO e empático
 6. NÃO sugira Q&A que já existam na base do robô
+7. SEMPRE gere pelo menos 1 sugestão por robô analisado
 
-REGRAS DE VALIDAÇÃO (aplicar a TODAS as sugestões antes de incluir na resposta):
-1. Tom e linguagem: a sugestão DEVE estar alinhada ao tom definido acima ("${robot.tone}"). Se o robô é empático, não sugerir respostas secas. Se é direto, não sugerir respostas longas.
-2. Consistência com Q&As existentes: NUNCA sugerir um Q&A que contradiga ou repita um já cadastrado. Se o tema já existe, sugerir apenas refinamento.
-3. Fluxo correto: verificar se a sugestão respeita o fluxo de atendimento definido nas instruções. Não sugerir atalhos que pulem etapas obrigatórias.
-4. Ancoragem em dados reais: TODA sugestão deve citar o volume de conversas que a embasam. Nenhuma sugestão genérica sem evidência nas conversas analisadas.
-5. Se uma sugestão violar qualquer um dos pontos acima, descartá-la silenciosamente e NÃO incluir na resposta.
+REGRAS DE VALIDAÇÃO:
+1. Tom e linguagem: alinhada ao tom "${robot.tone}"
+2. Consistência com Q&As existentes: NUNCA contradizer
+3. Fluxo correto: respeitar instruções
+4. Ancoragem em dados reais: citar volume de conversas
+5. Se violar qualquer ponto, descartar silenciosamente
 
-Retorne um JSON com array "suggestions". Formato de cada sugestão:
+Retorne um JSON com array "suggestions". Formato:
 {
   "type": "qa" | "tone" | "instruction",
   "title": "título curto descritivo",
   "content": "conteúdo (para Q&A: formato 'Pergunta: ... | Resposta: ...')",
-  "reasoning": "baseado em qual padrão humano observado + quantidade de conversas que embasam",
+  "reasoning": "baseado em qual padrão humano observado + quantidade de conversas",
   "compliance_status": "aligned" | "review" | "conflict",
-  "compliance_notes": "nota sobre conformidade (obrigatório se status for 'review' ou 'conflict')"
+  "compliance_notes": "nota sobre conformidade"
 }
 
-Para compliance_status:
-- "aligned": a sugestão está 100% alinhada ao tom, Q&As e instruções do robô
-- "review": possível sobreposição com Q&A existente (detalhar qual na compliance_notes)
-- "conflict": contradiz uma regra/instrução da base (detalhar o trecho conflitante na compliance_notes)
-
-Gere entre 2-5 sugestões relevantes. Priorize Q&A que capturem o jeito humano de responder.`;
+Gere entre 2-5 sugestões relevantes.`;
 
       const conversationsSample = conversationExamples
         .slice(0, 15)
         .map((c) => {
-          const dialog = c.exchanges
-            .map((e) => `[${e.from}]: ${e.text}`)
-            .join("\n");
+          const dialog = c.exchanges.map((e) => `[${e.from}]: ${e.text}`).join("\n");
           return `--- Atendente: ${c.agent} | Tags: ${c.tags.join(", ")} ---\n${dialog}`;
         })
         .join("\n\n");
@@ -304,7 +313,6 @@ Analise como os atendentes humanos respondem e gere sugestões validadas contra 
           aiResponse = await callAI("google/gemini-3-flash-preview");
         }
 
-        // Parse suggestions
         let parsed: any;
         try {
           parsed = JSON.parse(aiResponse);
@@ -320,9 +328,6 @@ Analise como os atendentes humanos respondem e gere sugestões validadas contra 
           const key = `${robot.id}:${title}`;
           if (existingSet.has(key)) continue;
 
-          const complianceStatus = s.compliance_status || "aligned";
-          const complianceNotes = s.compliance_notes || s.compliance_note || null;
-
           const { error: insertErr } = await supabase
             .from("robot_training_suggestions")
             .insert({
@@ -333,8 +338,8 @@ Analise como os atendentes humanos respondem e gere sugestões validadas contra 
               content: s.content || s.conteudo || "",
               reasoning: s.reasoning || s.motivo || null,
               status: "pending",
-              compliance_status: complianceStatus,
-              compliance_notes: complianceNotes,
+              compliance_status: s.compliance_status || "aligned",
+              compliance_notes: s.compliance_notes || null,
               knowledge_base_snapshot: snapshot,
               knowledge_base_updated_at: robot.updated_at,
             });
@@ -349,12 +354,38 @@ Analise como os atendentes humanos respondem e gere sugestões validadas contra 
       }
     }
 
+    // Guaranteed fallback
+    if (totalSuggestions === 0 && processableLogs.length > 0) {
+      // Insert a diagnostic delma_suggestion instead
+      await supabase.from("delma_suggestions").insert({
+        category: "melhoria_delma",
+        title: "Diagnóstico: treinamento de robôs sem resultados",
+        justification: `Análise de ${allConversationExamples.length} conversas do Suporte não gerou sugestões de treinamento. Possíveis causas: base de Q&A já cobre os temas ou conversas sem padrão novo identificável.`,
+        content: {
+          diagnostics,
+          robot_name: "Delma",
+          pattern: "Pipeline de treinamento sem resultados",
+          examples: [],
+          proposed_action: "Verificar se os Q&As de Júlia e Sebastião cobrem os temas mais frequentes das últimas semanas.",
+          impact_score: 25,
+          conversation_count: allConversationExamples.length,
+          estimated_impact: "Identificar gargalos no pipeline de treinamento",
+          recurrence_pattern: "pontual",
+        },
+        confidence_score: 100,
+        memories_used: [],
+        status: "pending",
+      });
+      totalSuggestions = 1;
+    }
+
     return new Response(JSON.stringify({
       message: `Treinamento concluído! ${totalSuggestions} sugestões geradas baseadas em ${allConversationExamples.length} conversas humanas.`,
       suggestions: totalSuggestions,
       robots: robots.length,
       conversationsAnalyzed: allConversationExamples.length,
       robotsAnalyzed,
+      diagnostics,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
