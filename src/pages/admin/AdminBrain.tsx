@@ -254,6 +254,9 @@ const AdminBrain = () => {
   // Maturity score history
   const [maturityHistory, setMaturityHistory] = useState<Array<{ date: string; score: number }>>([]);
 
+  // Cumulative knowledge data for maturity score
+  const [cumulativeKnowledge, setCumulativeKnowledge] = useState<{ approvedSuggestions: number; activeMemories: number; totalQAs: number }>({ approvedSuggestions: 0, activeMemories: 0, totalQAs: 0 });
+
   // Agent live status
   const [agentLiveStatus, setAgentLiveStatus] = useState<Record<string, { status: string; openConversations: number; profileId: string }>>({});
 
@@ -855,15 +858,32 @@ const AdminBrain = () => {
     loadAgentNotifications();
     loadTrainingSuggestions();
     loadObservationMode();
+    // Fetch cumulative knowledge data for maturity score
+    (async () => {
+      try {
+        const [sugRes, memRes, robotsRes] = await Promise.all([
+          supabase.from('delma_suggestions').select('id', { count: 'exact', head: true }).in('status', ['approved', 'edited']),
+          supabase.from('delma_memory').select('id', { count: 'exact', head: true }).gte('expires_at', new Date().toISOString()),
+          supabase.from('robots').select('qa_pairs'),
+        ]);
+        const totalQAs = (robotsRes.data || []).reduce((sum, r) => sum + (Array.isArray(r.qa_pairs) ? r.qa_pairs.length : 0), 0);
+        setCumulativeKnowledge({
+          approvedSuggestions: sugRes.count || 0,
+          activeMemories: memRes.count || 0,
+          totalQAs,
+        });
+      } catch {}
+    })();
   }, [getEffectivePeriod, loadAgentLiveStatus, loadAgentNotifications]);
 
   // Save maturity score when metrics update
   useEffect(() => {
     if (metrics) {
-      const knowledgeData = computeKnowledgeData(metrics);
+      const histMax = maturityHistory.length > 0 ? Math.max(...maturityHistory.map(h => h.score)) : 0;
+      const knowledgeData = computeKnowledgeData(metrics, cumulativeKnowledge, histMax);
       saveMaturityScore(knowledgeData.maturityScore);
     }
-  }, [metrics, saveMaturityScore]);
+  }, [metrics, saveMaturityScore, cumulativeKnowledge, maturityHistory]);
 
   // Auto-trigger training generation on first visit if empty
   useEffect(() => {
@@ -1857,7 +1877,8 @@ const AdminBrain = () => {
             {/* ======================== KNOWLEDGE TAB ======================== */}
             <TabsContent value="knowledge" className="space-y-6">
               {(() => {
-                const knowledgeData = computeKnowledgeData(metrics);
+                const histMax = maturityHistory.length > 0 ? Math.max(...maturityHistory.map(h => h.score)) : 0;
+                const knowledgeData = computeKnowledgeData(metrics, cumulativeKnowledge, histMax);
                 return (
                   <>
                     {/* Maturity Gauge + KPIs */}
@@ -2771,7 +2792,11 @@ interface KnowledgeData {
   nextSteps: NextStep[];
 }
 
-function computeKnowledgeData(m: BrainMetrics): KnowledgeData {
+function computeKnowledgeData(
+  m: BrainMetrics,
+  cumulative: { approvedSuggestions: number; activeMemories: number; totalQAs: number } = { approvedSuggestions: 0, activeMemories: 0, totalQAs: 0 },
+  historyMax: number = 0
+): KnowledgeData {
   const total = m.aiResolved + m.humanResolved;
   const aiPct = total > 0 ? (m.aiResolved / total) * 100 : 0;
 
@@ -2793,9 +2818,24 @@ function computeKnowledgeData(m: BrainMetrics): KnowledgeData {
   const errorCount = m.totalErrorCount || m.errorLogs.length;
   const errorPct = m.totalConversas > 0 ? (errorCount / m.totalConversas) * 100 : 0;
   const tmaBonusPct = Math.max(0, Math.min(100, improvementPct > 0 ? improvementPct * 2 : 0));
-  const maturityScore = Math.round(
-    Math.min(100, Math.max(0, (aiPct * 0.4) + (tmaBonusPct * 0.3) + (Math.max(0, 100 - errorPct * 5) * 0.3)))
+
+  // New 4-component formula
+  const automationScore = aiPct; // 0-100
+  const topTagCount = Math.max(m.topTags.length, 1);
+  const knowledgeScore = Math.min(100, (cumulative.totalQAs / 50) * 50 + (masteredCount / topTagCount) * 50);
+  const learningScore = Math.min(100, (cumulative.approvedSuggestions * 5) + (cumulative.activeMemories * 2));
+  const efficiencyScore = (tmaBonusPct * 0.5) + (Math.max(0, 100 - errorPct * 5) * 0.5);
+
+  let maturityScore = Math.round(
+    Math.min(100, Math.max(0,
+      (automationScore * 0.25) + (knowledgeScore * 0.25) + (learningScore * 0.25) + (efficiencyScore * 0.25)
+    ))
   );
+
+  // Ratchet effect: never drop below 95% of historical max
+  if (historyMax > 0) {
+    maturityScore = Math.max(maturityScore, Math.round(historyMax * 0.95));
+  }
 
   const improvements: Improvement[] = [];
   if (m.prevTma > 0) {
