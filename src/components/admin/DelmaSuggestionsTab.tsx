@@ -411,6 +411,45 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
           </div>
         </CardHeader>
         <CardContent>
+          {/* Flow Health Indicator + Diagnostics */}
+          {lastRunAt && (
+            <div className={cn("mb-4 p-3 rounded-lg border text-sm", 
+              flowHealth === 'green' ? 'bg-success/5 border-success/20' :
+              flowHealth === 'yellow' ? 'bg-warning/5 border-warning/20' :
+              'bg-destructive/5 border-destructive/20'
+            )}>
+              <div className="flex items-center gap-2 mb-1">
+                <Activity className={cn("w-4 h-4", 
+                  flowHealth === 'green' ? 'text-success' : flowHealth === 'yellow' ? 'text-warning' : 'text-destructive'
+                )} />
+                <span className="font-medium">
+                  {flowHealth === 'green' ? '🟢 Fluxo saudável' : flowHealth === 'yellow' ? '🟡 Fluxo em alerta' : '🔴 Fluxo com erro'}
+                </span>
+                <span className="text-xs text-muted-foreground ml-auto">
+                  Última execução: {new Date(lastRunAt).toLocaleString('pt-BR')}
+                </span>
+              </div>
+              {lastDiagnostics && (
+                <Collapsible>
+                  <CollapsibleTrigger className="flex items-center gap-1 text-xs text-primary/70 hover:text-primary transition-colors">
+                    <ChevronRight className="w-3 h-3" /> Ver diagnóstico detalhado
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="mt-2 p-2 rounded bg-secondary/30 text-xs text-muted-foreground space-y-0.5 font-mono">
+                    {lastDiagnostics.total_finalizadas_7d !== undefined && <p>📋 Conversas finalizadas (7 dias): {lastDiagnostics.total_finalizadas_7d}</p>}
+                    {lastDiagnostics.do_suporte !== undefined && <p>✅ Conversas do Suporte: {lastDiagnostics.do_suporte}</p>}
+                    {lastDiagnostics.excluidas_comercial !== undefined && <p>🔒 Excluídas (Comercial/SDR): {lastDiagnostics.excluidas_comercial}</p>}
+                    {lastDiagnostics.human_logs_found !== undefined && <p>👤 Logs humanos: {lastDiagnostics.human_logs_found}</p>}
+                    {lastDiagnostics.robot_logs_found !== undefined && <p>🤖 Logs robôs: {lastDiagnostics.robot_logs_found}</p>}
+                    {lastDiagnostics.total_processable !== undefined && <p>⚙️ Processáveis (≥2 msgs): {lastDiagnostics.total_processable}</p>}
+                    {lastDiagnostics.attempts_used !== undefined && <p>🔄 Tentativas usadas: {lastDiagnostics.attempts_used}</p>}
+                    {lastDiagnostics.raw_suggestions !== undefined && <p>💡 Sugestões brutas: {lastDiagnostics.raw_suggestions}</p>}
+                    {lastDiagnostics.filtered !== undefined && <p>✂️ Após deduplicação: {lastDiagnostics.filtered}</p>}
+                    {lastDiagnostics.inserted !== undefined && <p>✅ Inseridas: {lastDiagnostics.inserted}</p>}
+                  </CollapsibleContent>
+                </Collapsible>
+              )}
+            </div>
+          )}
           {/* Mini-cards: learning origin indicators */}
           <div className="grid grid-cols-3 gap-3 mb-4">
             <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-500/5 border border-blue-500/15">
