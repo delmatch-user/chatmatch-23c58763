@@ -1,50 +1,52 @@
+# Feedback semanal automático para todos os atendentes + limpeza
 
+## Problema
 
-# Atualizar Logs IA para mostrar conversas finalizadas por robôs de qualquer departamento
+Atualmente o envio de feedback e manual (um atendente por vez). O usuario quer:
 
-## Problema atual
-A página Logs IA (`src/pages/AILogs.tsx`) está hardcoded para buscar apenas do `SUPORTE_DEPARTMENT_ID`. Precisa mostrar conversas finalizadas por robôs filtradas pelo departamento do usuário logado.
+1. Botao "Notificar Todos" que gera e envia feedback para TODOS os atendentes do Suporte  de uma vez
+2. Periodo fixo semanal (7 dias)
+3. Limpar as notificacoes duplicadas/excessivas existentes
 
-## Mudanças
+## Mudancas
 
-### 1. `src/pages/AILogs.tsx` — Remover filtro hardcoded e usar departamentos do usuário
+### 1. Migration — Limpar notificacoes existentes
 
-**Query (linhas 185-189):**
-- Remover `.eq('department_id', SUPORTE_DEPARTMENT_ID)`
-- Filtrar por departamentos do usuário: `.in('department_id', user.departments)` (para atendentes/supervisores)
-- Admin vê todos os departamentos
-- Manter filtro de `finalized_by is null` (robô finalizou)
+- Deletar todas as `agent_notifications` existentes para comecar limpo
+- Adicionar constraint unique `(agent_id, period_days)` com janela semanal via coluna `week_start` (date) para evitar duplicatas futuras
 
-**Adicionar filtro de departamento na UI:**
-- Adicionar um select de departamento nos filtros existentes (ao lado de canal/período)
-- Se o usuário tem apenas 1 departamento, pré-selecionar automaticamente
+### 2. `src/pages/admin/AdminBrain.tsx` — Botao "Notificar Todos"
 
-### 2. `supabase/functions/ai-logs-report/index.ts` — Aceitar departmentId dinâmico
+- Adicionar funcao `sendAllNotifications()` que itera sobre todos os `agentStats` do metrics:
+  - Para cada atendente, chama `brain-agent-feedback` para gerar a mensagem
+  - Insere na `agent_notifications` com `period_days: 7`
+  - Pula atendentes ja notificados na semana atual
+- Adicionar botao "Notificar Todos" ao lado do seletor de atendente individual
+- Mostrar progresso (ex: "Enviando 3/5...")
+- Fixar periodo em 7 dias para o feedback
 
-- Aceitar `departmentId` no body em vez de usar `SUPORTE_DEPARTMENT_ID` hardcoded
-- Fallback para Suporte se não informado (compatibilidade)
+### 3. UI — Indicador de status em massa
 
-### Detalhes técnicos
+- Na lista de atendentes, mostrar quantos ja foram notificados vs pendentes na semana
+- Badge "Todos Notificados" quando completo
 
-**AILogs.tsx fetchLogs:**
+### Detalhes tecnicos
+
+**sendAllNotifications:**
+
 ```typescript
-// Admin vê tudo, outros veem só seus departamentos
-let query = supabase
-  .from('conversation_logs')
-  .select('*')
-  .order('finalized_at', { ascending: false });
-
-if (!isAdmin) {
-  query = query.in('department_id', user.departments || []);
-}
-
-// + filtro departamento selecionado na UI
-if (selectedDept !== 'all') {
-  query = query.eq('department_id', selectedDept);
-}
+const sendAllNotifications = async () => {
+  const agents = metrics.agentStats.filter(a => !agentNotifications[profileIdMap[a.name]]);
+  for (const agent of agents) {
+    // 1. Gerar feedback via edge function
+    // 2. Inserir em agent_notifications
+    // 3. Atualizar progresso
+  }
+};
 ```
 
-**Filtro robô mantido:** `!log.finalized_by || !log.finalized_by_name` (identifica conversas finalizadas por robô).
+**Migration SQL:**
 
-**Report:** Passar `departmentId` selecionado para a edge function.
-
+```sql
+DELETE FROM agent_notifications;
+```
