@@ -126,6 +126,12 @@ const adminNavItems: NavItem[] = [
   { icon: Settings, label: 'Configurações', path: '#settings', isSettings: true },
 ];
 
+// Filtered admin nav for supervisors - only Robôs
+const supervisorAdminNavItems: NavItem[] = [
+  { icon: Bot, label: 'Robôs', path: '/admin/robos' },
+  { icon: Settings, label: 'Configurações', path: '#settings', isSettings: true },
+];
+
 interface SidebarProps {
   className?: string;
   variant?: 'desktop' | 'mobile';
@@ -185,7 +191,10 @@ export function Sidebar({ className, variant = 'desktop', onNavigate }: SidebarP
   const activeConversationsCount = conversations.filter(c => 
     c.status !== 'finalizada' && c.status !== 'em_fila'
   ).length;
-  const navItems = isAdmin ? adminNavItems : getNavItems(queueCount, activeConversationsCount, unreadCount.internalChat, userBelongsToSuport, userBelongsToComercial, unreadAlerts);
+  const isSupervisorRole = user?.role === 'supervisor';
+  const navItems = isAdmin 
+    ? (isSupervisorRole ? supervisorAdminNavItems : adminNavItems) 
+    : getNavItems(queueCount, activeConversationsCount, unreadCount.internalChat, userBelongsToSuport, userBelongsToComercial, unreadAlerts);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
@@ -411,11 +420,11 @@ export function Sidebar({ className, variant = 'desktop', onNavigate }: SidebarP
           })}
         </nav>
 
-        {/* Mode Switch - Only show admin option for admins */}
-        {(user?.role === 'admin' || isAdmin) && (
+        {/* Mode Switch - Show for admins and supervisors */}
+        {(user?.role === 'admin' || user?.role === 'supervisor' || isAdmin) && (
           <div className="px-3 py-2 border-t border-sidebar-border">
             <NavLink
-              to={isAdmin ? '/fila' : '/admin'}
+              to={isAdmin ? '/fila' : (isSupervisorRole ? '/admin/robos' : '/admin')}
               onClick={() => onNavigate?.()}
               className={cn(
                 "sidebar-item text-muted-foreground hover:text-primary",
