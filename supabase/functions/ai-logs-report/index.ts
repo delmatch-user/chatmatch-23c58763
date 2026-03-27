@@ -6,7 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const SUPORTE_DEPARTMENT_ID = "dea51138-49e4-45b0-a491-fb07a5fad479";
+const SUPORTE_DEPARTMENT_ID_FALLBACK = "dea51138-49e4-45b0-a491-fb07a5fad479";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });

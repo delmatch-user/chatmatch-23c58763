@@ -323,6 +323,24 @@ export default function AILogs() {
 
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-2">
+          <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
+            <SelectTrigger className="w-[180px] h-9 text-sm">
+              <Building2 className="w-3.5 h-3.5 mr-1.5 text-muted-foreground" />
+              <SelectValue placeholder="Departamento" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos departamentos</SelectItem>
+              {accessibleDepartments.map(dept => (
+                <SelectItem key={dept.id} value={dept.id}>
+                  <span className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: dept.color }} />
+                    {dept.name}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           <Select value={periodFilter} onValueChange={(v) => setPeriodFilter(v as PeriodFilter)}>
             <SelectTrigger className="w-[150px] h-9 text-sm">
               <SelectValue placeholder="Período" />
