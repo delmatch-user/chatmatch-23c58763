@@ -239,6 +239,7 @@ const AdminBrain = () => {
   const [trainModalOpen, setTrainModalOpen] = useState(false);
   const [trainModalTag, setTrainModalTag] = useState('');
   const [trainNote, setTrainNote] = useState('');
+  const [trainedTags, setTrainedTags] = useState<Set<string>>(new Set());
   const [expandedErrors, setExpandedErrors] = useState<Set<string>>(new Set());
   const [topTagsChannelFilter, setTopTagsChannelFilter] = useState('all');
   const [groupSimilarTags, setGroupSimilarTags] = useState(false);
