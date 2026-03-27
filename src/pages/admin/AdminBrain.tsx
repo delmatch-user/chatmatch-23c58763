@@ -1676,7 +1676,43 @@ const AdminBrain = () => {
                 </Card>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+               {/* Notificar Todos button + status */}
+               <div className="flex items-center justify-between">
+                 <div className="flex items-center gap-2">
+                   <span className="text-sm text-muted-foreground">
+                     {(() => {
+                       const total = metrics.agentStats.length;
+                       const notified = metrics.agentStats.filter(a => {
+                         const pid = agentLiveStatus[a.name]?.profileId;
+                         return pid && agentNotifications[pid];
+                       }).length;
+                       return notified === total
+                         ? <Badge className="bg-success/20 text-success">Todos Notificados ({total})</Badge>
+                         : <Badge variant="outline">{notified}/{total} notificados esta semana</Badge>;
+                     })()}
+                   </span>
+                 </div>
+                 <Button
+                   onClick={sendAllNotifications}
+                   disabled={bulkSending}
+                   className="gap-2"
+                   size="sm"
+                 >
+                   {bulkSending ? (
+                     <>
+                       <Loader2 className="w-4 h-4 animate-spin" />
+                       Enviando {bulkProgress.current}/{bulkProgress.total}...
+                     </>
+                   ) : (
+                     <>
+                       <Bell className="w-4 h-4" />
+                       Notificar Todos (7 dias)
+                     </>
+                   )}
+                 </Button>
+               </div>
+
+               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {metrics.agentStats.map((agent) => {
                   const avgAll = metrics.agentStats.reduce((s, a) => s + a.avgTime, 0) / metrics.agentStats.length;
                   const status = agent.avgTime <= avgAll * 0.8 ? 'green' : agent.avgTime <= avgAll * 1.2 ? 'yellow' : 'red';
