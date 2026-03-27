@@ -404,49 +404,65 @@ export function ConversationList({
     } catch (error: any) {
       console.error('Erro ao criar conversa:', error);
       
-      // Tratar unique constraint - contato já tem conversa ativa
-      if (error?.code === '23505' || error?.message?.includes('conversations_unique_active_contact') || error?.message?.includes('duplicate key')) {
+      // Detecção robusta de unique constraint — verificar em qualquer parte do erro
+      const errorStr = [
+        String(error?.code || ''),
+        String(error?.message || ''),
+        String(error?.details || ''),
+        String(error?.hint || ''),
+        JSON.stringify(error || '')
+      ].join(' ').toLowerCase();
+      
+      const isDuplicate = errorStr.includes('23505') || 
+                          errorStr.includes('unique') || 
+                          errorStr.includes('duplicate') || 
+                          errorStr.includes('active_contact');
+      
+      if (isDuplicate) {
         try {
-          // Buscar contato pelo telefone da busca
+          // Buscar contato pelo telefone para encontrar a conversa ativa
           let searchPhone = cleanedSearch;
           if (!searchPhone.startsWith('55') && searchPhone.length <= 11) {
             searchPhone = '55' + searchPhone;
           }
-          const { data: phoneMatches } = await supabase.rpc('find_contact_by_phone', { phone_input: searchPhone });
-          const foundContactId = phoneMatches?.[0]?.id;
-
-          // Buscar quem está com a conversa
-          const { data: activeConv } = foundContactId ? await supabase
-            .from('conversations')
-            .select('id, assigned_to, status')
-            .eq('contact_id', foundContactId)
-            .in('status', ['em_fila', 'em_atendimento', 'pendente'])
-            .maybeSingle() : { data: null };
-
-          if (activeConv?.assigned_to) {
-            const { data: agentProfile } = await supabase
-              .from('profiles')
-              .select('name')
-              .eq('id', activeConv.assigned_to)
+          const { data: phoneMatches2 } = await supabase.rpc('find_contact_by_phone', { phone_input: searchPhone });
+          const foundContactId = phoneMatches2?.[0]?.id;
+          
+          if (foundContactId) {
+            const { data: activeConv } = await supabase
+              .from('conversations')
+              .select('id, assigned_to, status')
+              .eq('contact_id', foundContactId)
+              .in('status', ['em_fila', 'em_atendimento', 'pendente', 'transferida'])
               .maybeSingle();
-            
-            const agentName = agentProfile?.name || 'outro atendente';
-            
-            if (activeConv.assigned_to === user?.id) {
-              toast.info('Você já possui uma conversa ativa com este contato');
-              // Abrir a conversa existente
-              await refetchConversations();
-              const fullConv = conversations.find(c => c.id === activeConv.id);
-              if (fullConv) setSelectedConversation(fullConv);
+
+            if (activeConv?.assigned_to) {
+              const { data: agentProfile } = await supabase
+                .from('profiles')
+                .select('name')
+                .eq('id', activeConv.assigned_to)
+                .maybeSingle();
+              
+              const agentName = agentProfile?.name || 'outro atendente';
+              
+              if (activeConv.assigned_to === user?.id) {
+                toast.info('Você já possui uma conversa ativa com este contato');
+                await refetchConversations();
+                const fullConv = conversations.find(c => c.id === activeConv.id);
+                if (fullConv) setSelectedConversation(fullConv);
+              } else {
+                toast.warning(`Este contato já está em atendimento com ${agentName}`);
+              }
+            } else if (activeConv) {
+              toast.info('Este contato já está na fila de atendimento');
             } else {
-              toast.warning(`Este contato já está em atendimento com ${agentName}`);
+              toast.error('Este contato já possui uma conversa ativa');
             }
-          } else if (activeConv) {
-            toast.info('Este contato já está na fila de atendimento');
           } else {
             toast.error('Este contato já possui uma conversa ativa');
           }
         } catch (lookupErr) {
+          console.error('Erro ao buscar conversa ativa:', lookupErr);
           toast.error('Este contato já possui uma conversa ativa');
         }
         return;

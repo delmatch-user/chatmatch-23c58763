@@ -176,8 +176,38 @@ export default function SDRContactsPage() {
 
       if (error) {
         console.error('Error creating conversation:', error);
-        if (error.code === '23505') {
-          toast.info('Já existe uma conversa ativa para este contato');
+        const errStr = [String(error.code || ''), String(error.message || ''), JSON.stringify(error)].join(' ').toLowerCase();
+        const isDup = errStr.includes('23505') || errStr.includes('unique') || errStr.includes('duplicate') || errStr.includes('active_contact');
+        
+        if (isDup) {
+          // Buscar quem está com a conversa
+          const { data: activeConv } = await supabase
+            .from('conversations')
+            .select('id, assigned_to, status')
+            .eq('contact_id', contactId)
+            .in('status', ['em_fila', 'em_atendimento', 'pendente', 'transferida'])
+            .maybeSingle();
+
+          if (activeConv?.assigned_to) {
+            const { data: agentProfile } = await supabase
+              .from('profiles')
+              .select('name')
+              .eq('id', activeConv.assigned_to)
+              .maybeSingle();
+            
+            const agentName = agentProfile?.name || 'outro atendente';
+            
+            if (activeConv.assigned_to === user?.id) {
+              toast.info('Você já possui uma conversa ativa com este contato');
+            } else {
+              toast.warning(`Este contato já está em atendimento com ${agentName}`);
+            }
+          } else if (activeConv) {
+            toast.info('Este contato já está na fila de atendimento');
+          } else {
+            toast.info('Já existe uma conversa ativa para este contato');
+          }
+          
           await refetchConversations();
           navigate('/conversas', { state: { selectContactId: contactId } });
           return;
