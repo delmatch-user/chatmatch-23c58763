@@ -1,48 +1,53 @@
 
 
-# Corrigir Botões da Central de Sugestões da Delma (sempre 0)
+# Tornar o Score de Maturidade reflexo real do conhecimento da Delma
 
-## Problemas identificados
+## Problema atual
 
-### 1. CORS Headers incompletos em `brain-learn-from-conversations`
-O header CORS inclui apenas `"authorization, x-client-info, apikey, content-type"`, mas o Supabase JS client envia headers adicionais (`x-supabase-client-platform`, etc.). Isso faz o preflight CORS falhar silenciosamente — a função nunca executa.
+A formula atual (linha 2796) calcula:
 
-### 2. Deduplicação agressiva demais (linhas 401-412)
-O filtro usa `existing.includes(titleLower) || titleLower.includes(existing)` — substring match bidirecional. Qualquer título que contenha uma palavra em comum com outro título existente é descartado. Com títulos em português genéricos, isso elimina quase tudo.
-
-### 3. Funções possivelmente não deployadas
-Os logs das Edge Functions estão vazios, indicando que as edições recentes podem não ter sido deployadas.
-
-## Dados confirmados
-- **2680 conversas do Suporte** nos últimos 7 dias — dados abundantes
-- Banco tem apenas sugestões `report_schedule` — nenhuma `aprendizado_humano` ou `aprendizado_robo` existe
-
-## Correções
-
-| # | Arquivo | Mudança |
-|---|---------|---------|
-| 1 | `supabase/functions/brain-learn-from-conversations/index.ts` | Corrigir CORS headers (adicionar headers completos do Supabase client). Substituir deduplicação por substring por comparação de similaridade mais estrita (igualdade exata apenas). |
-| 2 | `supabase/functions/brain-learn-instruction-patterns/index.ts` | Verificar e corrigir mesma deduplicação agressiva se existente |
-| 3 | `supabase/functions/brain-train-robots/index.ts` | Verificar CORS headers |
-
-### Detalhes técnicos
-
-**CORS (todas as 3 funções):**
-```
-"Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version"
+```text
+Score = (% IA resolve * 0.40) + (melhoria TMA * 0.30) + (100 - erros% * 0.30)
 ```
 
-**Deduplicação (brain-learn-from-conversations, linha 401-412):**
-Substituir substring match por igualdade exata:
-```typescript
-const filtered = suggestions.filter(s => {
-  const titleLower = s.title?.toLowerCase();
-  if (!titleLower) return false;
-  if (rejectedTitles.has(titleLower)) return false;
-  if (approvedTitles.has(titleLower)) return false;
-  return !existingTitles.some(existing => existing === titleLower);
-});
+Isso ignora completamente o conhecimento acumulado da Delma: sugestoes aprovadas, Q&As dos robos, memorias ativas, temas dominados. O score fica travado em ~25 porque depende apenas de metricas de volume do periodo selecionado, sem considerar evolucao cumulativa.
+
+## Nova formula proposta
+
+```text
+Score = (Automacao * 0.25) + (Conhecimento * 0.25) + (Aprendizado * 0.25) + (Eficiencia * 0.25)
 ```
 
-As funções serão re-deployadas automaticamente após a edição.
+Cada componente (0-100):
+
+| Componente | O que mede | Como calcula |
+|---|---|---|
+| Automacao | % conversas resolvidas por IA | aiPct (ja existe) |
+| Conhecimento | Cobertura de Q&A + temas dominados | (qaPairs total / max esperado) + (temas dominados / total temas) |
+| Aprendizado | Sugestoes aprovadas + memorias ativas | count de delma_suggestions approved + delma_memory ativas |
+| Eficiencia | Melhoria de TMA + reducao de erros | tmaBonusPct + (100 - errorPct) combinados |
+
+O score so pode crescer ou manter — nunca cai abaixo do maximo historico (efeito ratchet), refletindo que conhecimento adquirido nao se perde.
+
+## Mudanca
+
+| # | Arquivo | O que muda |
+|---|---------|-----------|
+| 1 | `src/pages/admin/AdminBrain.tsx` | Nova funcao `computeKnowledgeData` que busca dados cumulativos (delma_suggestions aprovadas, delma_memory ativas, qa_pairs dos robos) e aplica a nova formula com piso historico |
+
+### Detalhes tecnicos (AdminBrain.tsx)
+
+**Antes de `computeKnowledgeData`** — adicionar fetch de dados cumulativos no `fetchMetrics` ou em useEffect separado:
+- `delma_suggestions` com `status = 'approved'` ou `'edited'` — count total
+- `delma_memory` com `expires_at > now()` — count total
+- `robots` (Julia + Sebastiao) — somar total de `qa_pairs`
+
+**Na funcao `computeKnowledgeData`** — receber esses counts como parametros extras:
+- `knowledgeScore = min(100, (totalQAs / 50) * 50 + (masteredCount / max(topTags.length, 1)) * 50)`
+- `learningScore = min(100, (approvedSuggestions * 5) + (activeMemories * 2))`
+- `efficiencyScore = (tmaBonusPct * 0.5) + (max(0, 100 - errorPct * 5) * 0.5)`
+- `automationScore = aiPct`
+- `maturityScore = round((automationScore * 0.25) + (knowledgeScore * 0.25) + (learningScore * 0.25) + (efficiencyScore * 0.25))`
+
+**Piso historico (ratchet)**: comparar com o maior valor em `maturityHistory` e usar `max(calculado, historicoMax * 0.95)` — permite queda maxima de 5% para refletir que conhecimento nao se perde mas pode ficar desatualizado.
 
