@@ -2992,7 +2992,6 @@ function computeLearnings(m: BrainMetrics): string[] {
   if (totalErrors > 5) {
     insights.push(`🔴 ${totalErrors} conversas problemáticas detectadas no período — confira a aba "Erros & Gaps".`);
   }
-  }
 
   if (m.abandonRate != null && m.abandonRate > 5) {
     insights.push(`⚠️ Taxa de abandono em ${m.abandonRate}% — ${m.abandonedCount} conversas saíram sem atendimento.`);
