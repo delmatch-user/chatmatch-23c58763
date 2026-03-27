@@ -10,10 +10,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
-import { Search, MessageSquare, Clock, Bot, Instagram, CalendarIcon, Bike, AlertTriangle, FileText, Loader2, Copy, Download, Check } from 'lucide-react';
+import { Search, MessageSquare, Clock, Bot, Instagram, CalendarIcon, Bike, AlertTriangle, FileText, Loader2, Copy, Download, Check, Building2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/hooks/useAuth';
+import { useDepartments } from '@/hooks/useDepartments';
 import { format, startOfDay, endOfDay, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { getTagColorClasses, getTagDotColor, normalizeTag, SUPORTE_TAXONOMY_TAGS } from '@/lib/tagColors';
@@ -89,14 +90,13 @@ interface ConversationLog {
   protocol?: string | null;
 }
 
-const SUPORTE_DEPARTMENT_ID = 'dea51138-49e4-45b0-a491-fb07a5fad479';
-
 type PeriodFilter = 'all' | 'today' | 'yesterday' | 'custom';
 type ChannelFilter = 'all' | 'whatsapp' | 'instagram' | 'machine';
 
 export default function AILogs() {
   const { isAdmin, isSupervisor } = useAuth();
   const { user } = useApp();
+  const { departments } = useDepartments();
   const [logs, setLogs] = useState<ConversationLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -106,6 +106,13 @@ export default function AILogs() {
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('all');
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>('all');
   const [tagFilter, setTagFilter] = useState<string>('all');
+  const [selectedDepartment, setSelectedDepartment] = useState<string>('all');
+
+  // Get user's departments for filtering
+  const userDepartmentIds = (user as any)?.departments?.map((d: any) => typeof d === 'string' ? d : d.id) || [];
+  const accessibleDepartments = isAdmin
+    ? departments
+    : departments.filter(d => userDepartmentIds.includes(d.id));
   const [customDateRange, setCustomDateRange] = useState<{ from?: Date; to?: Date }>({});
 
   // Report state
