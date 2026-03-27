@@ -90,6 +90,10 @@ interface BrainMetrics {
     motoboy: ErrorTypeGroup;
     outros: ErrorTypeGroup;
   };
+  totalErrorCount?: number;
+  totalEstabelecimento?: number;
+  totalMotoboy?: number;
+  totalOutros?: number;
 }
 
 const normalizeTopTags = (tags: [string, number][]): [string, number][] => {
