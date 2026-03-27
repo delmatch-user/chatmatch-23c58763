@@ -970,8 +970,12 @@ async function handleAutomaticMode(body: {
   await supabase.from('conversations').update({ robot_lock_until: immediateLockUntil }).eq('id', conversationId);
   console.log(`[Robot-Chat Auto] Lock imediato de 20s setado para evitar duplicação.`);
   
-  // Delay de 2s para garantir que chamadas concorrentes vejam o lock
-  await new Promise(resolve => setTimeout(resolve, 2000));
+  // Delay de 2s para garantir que chamadas concorrentes vejam o lock (pular em transferências - lock da origem já protege)
+  if (!isFromTransfer) {
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  } else {
+    console.log(`[Robot-Chat Auto] Transferência detectada — pulando delay anti-race de 2s (lock da origem protege).`);
+  }
   
   // Re-verificar se a conversa ainda está atribuída a este robô após o delay
   const { data: convRecheck } = await supabase
@@ -1218,7 +1222,7 @@ async function handleAutomaticMode(body: {
     .maybeSingle();
   
   const isFromTransfer = recentTransfer && (Date.now() - new Date(recentTransfer.created_at).getTime()) < 60000;
-  const transferDelay = 15; // 15s delay para transferências (reduzido de 30s)
+  const transferDelay = 3; // 3s para transferências (contexto já completo)
 
   // === SET LOCK + GROUP MESSAGES ===
   const groupMessages = robotConfig.tools.groupMessages;
@@ -1227,7 +1231,8 @@ async function handleAutomaticMode(body: {
   // Triagem inteligente: se o cliente já enviou conteúdo substantivo, reduz delay pela metade
   let effectiveDelay: number;
   if (isFromTransfer) {
-    effectiveDelay = Math.max(transferDelay, groupMessages ? groupMessagesTime : 0);
+    effectiveDelay = transferDelay; // Não aplicar groupMessagesTime em transferências — contexto já completo
+    console.log(`[Robot-Chat Auto] Transferência: delay reduzido para ${effectiveDelay}s (sem agrupamento).`);
   } else if (groupMessages) {
     // Verificar a última mensagem do cliente para decidir o delay
     const customerMessages = (messagesData || []).filter((m: any) => !m.sender_name?.startsWith('[ROBOT]') && !m.sender_name?.startsWith('[SISTEMA]') && m.sender_id === null);
