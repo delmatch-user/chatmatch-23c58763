@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Sparkles, MessageSquare, Users, FileText, Target, CalendarClock, ChevronRight, ChevronDown, CheckCircle2, XCircle, Loader2, Brain, Info, AlertCircle, ThumbsUp, ThumbsDown, Edit3, Bot, Filter } from 'lucide-react';
+import { Sparkles, MessageSquare, Users, FileText, Target, CalendarClock, ChevronRight, ChevronDown, CheckCircle2, XCircle, Loader2, Brain, Info, AlertCircle, ThumbsUp, ThumbsDown, Edit3, Bot, Filter, Activity } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -68,6 +68,9 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
   const [editingSuggestion, setEditingSuggestion] = useState<DelmaSuggestion | null>(null);
   const [editedContent, setEditedContent] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
+  const [lastDiagnostics, setLastDiagnostics] = useState<any>(null);
+  const [lastRunAt, setLastRunAt] = useState<string | null>(null);
+  const [flowHealth, setFlowHealth] = useState<'green' | 'yellow' | 'red'>('green');
 
   const loadSuggestions = useCallback(async () => {
     setLoading(true);
@@ -138,9 +141,16 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
     try {
       const { data, error } = await supabase.functions.invoke('brain-learn-from-conversations');
       if (error) throw error;
-      toast.success(data.message || 'Análise de conversas concluída!');
+      const msg = data.message || 'Análise de conversas concluída!';
+      if (data.diagnostics) {
+        setLastDiagnostics(data.diagnostics);
+        setLastRunAt(new Date().toISOString());
+        setFlowHealth(data.suggestions_generated > 0 ? 'green' : data.diagnostics?.total_processable > 0 ? 'yellow' : 'red');
+      }
+      toast.success(msg);
       loadSuggestions();
     } catch (e: any) {
+      setFlowHealth('red');
       toast.error('Erro ao analisar conversas: ' + (e.message || 'Erro desconhecido'));
     } finally {
       setAnalyzingConversations(false);
@@ -152,9 +162,15 @@ export function DelmaSuggestionsTab({ onSuggestionsCountChange }: DelmaSuggestio
     try {
       const { data, error } = await supabase.functions.invoke('brain-learn-instruction-patterns');
       if (error) throw error;
-      toast.success(data.message || 'Análise de instruções concluída!');
+      const msg = data.message || 'Análise de instruções concluída!';
+      if (data.diagnostics) {
+        setLastDiagnostics(prev => ({ ...prev, ...data.diagnostics, instruction_suggestions: data.suggestions }));
+        setLastRunAt(new Date().toISOString());
+      }
+      toast.success(msg);
       loadSuggestions();
     } catch (e: any) {
+      setFlowHealth('red');
       toast.error('Erro ao analisar instruções: ' + (e.message || 'Erro desconhecido'));
     } finally {
       setAnalyzingInstructions(false);
