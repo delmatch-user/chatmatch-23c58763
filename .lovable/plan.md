@@ -1,24 +1,29 @@
 
 
-# Corrigir mensagem de contato já em atendimento
+# Corrigir contagem de Erros & Gaps no Cérebro
 
 ## Problema
-O código já tem a lógica para detectar unique constraint e mostrar o nome do atendente (linhas 408-452), mas a condição do `if` não está capturando o erro corretamente. O toast genérico da linha 455 é exibido em vez do tratamento amigável.
+A Edge Function `brain-analysis` tem um `.slice(0, 50)` hardcoded na linha 275 que limita os errorLogs a no máximo 50. Isso explica por que sempre mostra "50 conversas problemáticas" — o número real pode ser muito maior, mas é cortado antes de chegar na UI.
 
-## Causa raiz
-A comparação `error?.code === '23505'` pode falhar porque o Supabase JS client pode retornar o código em formato diferente ou dentro de um wrapper. A condição precisa ser mais robusta.
+O mesmo problema afeta os sub-grupos (estabelecimento/motoboy/outros): eles são calculados sobre os 50 logs já cortados, não sobre o total real.
 
 ## Correção
 
 | # | Arquivo | Mudança |
 |---|---------|---------|
-| 1 | `src/components/chat/ConversationList.tsx` | Tornar a detecção do erro de unique constraint mais robusta e mover a lógica de lookup para ser o fallback padrão em qualquer erro de insert |
+| 1 | `supabase/functions/brain-analysis/index.ts` | Remover `.slice(0, 50)` dos errorLogs. Calcular contagem total real. Aplicar slice apenas nos logs enviados para a UI (limitar a 200 para não estourar payload), mas enviar `totalErrorCount` separado com o número real |
+| 2 | `src/pages/admin/AdminBrain.tsx` | Usar `metrics.totalErrorCount` (quando disponível) em vez de `metrics.errorLogs.length` para exibir a contagem total de conversas problemáticas |
 
-### Detalhes da mudança (ConversationList.tsx, linhas 404-455)
+### Detalhes técnicos
 
-- Converter `error` para string com `JSON.stringify` + `String(error?.message)` + `String(error?.code)` para capturar qualquer formato
-- Verificar se qualquer parte do erro contém `23505`, `unique`, `duplicate`, ou `active_contact`
-- Se qualquer desses padrões for detectado, entrar no bloco de lookup que busca quem está com a conversa
-- No bloco de lookup, usar o `contactId` já disponível (da variável local) em vez de refazer `find_contact_by_phone` — mais rápido e confiável
-- Manter o fallback genérico apenas para erros completamente diferentes (rede, auth, etc)
+**brain-analysis/index.ts (linha 272-275)**:
+- Manter o filtro de classificação (urgent/high/tags com erro/reclamação)
+- Computar `totalErrorCount = errorLogs.length` antes de qualquer slice
+- Aplicar `.slice(0, 200)` apenas para o payload de logs detalhados
+- Fazer a classificação por tipo (estabelecimento/motoboy/outros) sobre TODOS os errorLogs, não os sliced
+- Adicionar `totalErrorCount`, `totalEstabelecimento`, `totalMotoboy`, `totalOutros` no objeto metrics
+
+**AdminBrain.tsx**:
+- Na aba Erros & Gaps, usar `metrics.totalErrorCount || metrics.errorLogs.length` para o badge "Todos"
+- Usar `metrics.totalEstabelecimento`, `metrics.totalMotoboy`, `metrics.totalOutros` para os badges de sub-categoria
 
