@@ -1,29 +1,48 @@
 
 
-# Corrigir contagem de Erros & Gaps no Cérebro
+# Corrigir Botões da Central de Sugestões da Delma (sempre 0)
 
-## Problema
-A Edge Function `brain-analysis` tem um `.slice(0, 50)` hardcoded na linha 275 que limita os errorLogs a no máximo 50. Isso explica por que sempre mostra "50 conversas problemáticas" — o número real pode ser muito maior, mas é cortado antes de chegar na UI.
+## Problemas identificados
 
-O mesmo problema afeta os sub-grupos (estabelecimento/motoboy/outros): eles são calculados sobre os 50 logs já cortados, não sobre o total real.
+### 1. CORS Headers incompletos em `brain-learn-from-conversations`
+O header CORS inclui apenas `"authorization, x-client-info, apikey, content-type"`, mas o Supabase JS client envia headers adicionais (`x-supabase-client-platform`, etc.). Isso faz o preflight CORS falhar silenciosamente — a função nunca executa.
 
-## Correção
+### 2. Deduplicação agressiva demais (linhas 401-412)
+O filtro usa `existing.includes(titleLower) || titleLower.includes(existing)` — substring match bidirecional. Qualquer título que contenha uma palavra em comum com outro título existente é descartado. Com títulos em português genéricos, isso elimina quase tudo.
+
+### 3. Funções possivelmente não deployadas
+Os logs das Edge Functions estão vazios, indicando que as edições recentes podem não ter sido deployadas.
+
+## Dados confirmados
+- **2680 conversas do Suporte** nos últimos 7 dias — dados abundantes
+- Banco tem apenas sugestões `report_schedule` — nenhuma `aprendizado_humano` ou `aprendizado_robo` existe
+
+## Correções
 
 | # | Arquivo | Mudança |
 |---|---------|---------|
-| 1 | `supabase/functions/brain-analysis/index.ts` | Remover `.slice(0, 50)` dos errorLogs. Calcular contagem total real. Aplicar slice apenas nos logs enviados para a UI (limitar a 200 para não estourar payload), mas enviar `totalErrorCount` separado com o número real |
-| 2 | `src/pages/admin/AdminBrain.tsx` | Usar `metrics.totalErrorCount` (quando disponível) em vez de `metrics.errorLogs.length` para exibir a contagem total de conversas problemáticas |
+| 1 | `supabase/functions/brain-learn-from-conversations/index.ts` | Corrigir CORS headers (adicionar headers completos do Supabase client). Substituir deduplicação por substring por comparação de similaridade mais estrita (igualdade exata apenas). |
+| 2 | `supabase/functions/brain-learn-instruction-patterns/index.ts` | Verificar e corrigir mesma deduplicação agressiva se existente |
+| 3 | `supabase/functions/brain-train-robots/index.ts` | Verificar CORS headers |
 
 ### Detalhes técnicos
 
-**brain-analysis/index.ts (linha 272-275)**:
-- Manter o filtro de classificação (urgent/high/tags com erro/reclamação)
-- Computar `totalErrorCount = errorLogs.length` antes de qualquer slice
-- Aplicar `.slice(0, 200)` apenas para o payload de logs detalhados
-- Fazer a classificação por tipo (estabelecimento/motoboy/outros) sobre TODOS os errorLogs, não os sliced
-- Adicionar `totalErrorCount`, `totalEstabelecimento`, `totalMotoboy`, `totalOutros` no objeto metrics
+**CORS (todas as 3 funções):**
+```
+"Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version"
+```
 
-**AdminBrain.tsx**:
-- Na aba Erros & Gaps, usar `metrics.totalErrorCount || metrics.errorLogs.length` para o badge "Todos"
-- Usar `metrics.totalEstabelecimento`, `metrics.totalMotoboy`, `metrics.totalOutros` para os badges de sub-categoria
+**Deduplicação (brain-learn-from-conversations, linha 401-412):**
+Substituir substring match por igualdade exata:
+```typescript
+const filtered = suggestions.filter(s => {
+  const titleLower = s.title?.toLowerCase();
+  if (!titleLower) return false;
+  if (rejectedTitles.has(titleLower)) return false;
+  if (approvedTitles.has(titleLower)) return false;
+  return !existingTitles.some(existing => existing === titleLower);
+});
+```
+
+As funções serão re-deployadas automaticamente após a edição.
 
