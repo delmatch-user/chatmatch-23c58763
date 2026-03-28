@@ -468,6 +468,10 @@ Deno.serve(async (req) => {
       // Já foi chamado acima como novo lead SDR, pular
       console.log('[webhook-machine] SDR robot-chat já chamado para novo lead');
     } else if (convUpdated?.assigned_to_robot) {
+      // Setar lock antes de chamar robot-chat para evitar duplicata pelo sync-robot-schedules
+      await supabase.from('conversations').update({
+        robot_lock_until: new Date(Date.now() + 30000).toISOString()
+      }).eq('id', conversationId);
       if (convUpdated.sdr_deal_id) {
         console.log('[webhook-machine] SDR deal detectado, roteando para sdr-robot-chat');
         fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/sdr-robot-chat`, {
