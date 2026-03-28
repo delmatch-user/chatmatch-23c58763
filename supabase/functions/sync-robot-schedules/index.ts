@@ -279,7 +279,7 @@ Deno.serve(async (req) => {
 
     const { data: stuckConversations, error: stuckError } = await supabase
       .from("conversations")
-      .select("id, department_id, channel, contact_id, external_id, assigned_to_robot, sdr_deal_id, robot_transferred")
+      .select("id, department_id, channel, contact_id, external_id, assigned_to_robot, sdr_deal_id, robot_transferred, robot_lock_until")
       .eq("status", "em_atendimento")
       .not("assigned_to_robot", "is", null)
       .is("assigned_to", null)
@@ -291,6 +291,11 @@ Deno.serve(async (req) => {
       console.log(`[sync-robot-schedules] Conversas potencialmente travadas: ${stuckConversations.length}`);
 
       for (const conv of stuckConversations) {
+        // Pular se robot_lock_until ativo — robot-chat já está processando
+        if (conv.robot_lock_until && new Date(conv.robot_lock_until) > new Date()) {
+          continue;
+        }
+
         // Verificar se houve transferência recente (últimos 3 min) — dar tempo ao robô destino
         const threeMinAgo = new Date(Date.now() - 3 * 60 * 1000).toISOString();
         const { data: recentTransfer } = await supabase
