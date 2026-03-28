@@ -109,6 +109,7 @@ Deno.serve(async (req) => {
               assigned_to_robot: matchedRobot.id,
               status: 'em_atendimento',
               updated_at: new Date().toISOString(),
+              robot_lock_until: new Date(Date.now() + 30000).toISOString(),
             })
             .eq('id', conversationId);
         }
