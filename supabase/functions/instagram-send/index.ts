@@ -285,6 +285,34 @@ async function callGraphAPI(
         lastStatus = fbRes.status;
         lastError = fallbackErr.message;
         console.warn(`[Instagram Send] Fallback page_id também falhou: code=${fallbackErr.code}, msg=${fallbackErr.message}`);
+
+        // Se fallback falhou com "Page Access Token", tentar derivar token de página
+        if (isPageAccessTokenRequired(fallbackErr.code, fallbackErr.message) && !triedDerive) {
+          triedDerive = true;
+          console.log(`[Instagram Send] Fallback requer Page Access Token. Derivando para pageId=${pageId}...`);
+          const derived = await derivePageAccessToken(pageId, activeToken, appSecret);
+          if (derived && derived.token !== activeToken) {
+            console.log(`[Instagram Send] Token de página derivado via ${derived.strategy}. Retentando fallback...`);
+            const derivedToken = derived.token;
+
+            // Persistir token derivado
+            if (candidate.source.startsWith('db')) {
+              await persistDerivedDbToken(pageId, igAccountId, originalToken, derivedToken);
+            }
+
+            // Retentar com token derivado no endpoint page_id
+            const { response: retryRes } = await fetchWithProofFallback(fallbackUrl, derivedToken, appSecret, 'POST', JSON.stringify(payload));
+            const retryResult = await retryRes.json().catch(() => ({}));
+            if (retryRes.ok) {
+              console.log('[Instagram Send] Sucesso via page_id + token derivado:', { source: candidate.source, messageId: retryResult.message_id });
+              return { ok: true, result: retryResult, status: 200, error: '' };
+            }
+            const retryErr = parseGraphError(retryResult);
+            lastStatus = retryRes.status;
+            lastError = retryErr.message;
+            console.warn(`[Instagram Send] Retry com token derivado falhou: code=${retryErr.code}, msg=${retryErr.message}`);
+          }
+        }
       }
 
       // non-auth error: stop trying this and next candidates
