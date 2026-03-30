@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Loader2, Calendar as CalendarIcon, Clock, X, Video, FileText, AlertCircle, CheckCircle2, ExternalLink } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Loader2, Calendar as CalendarIcon, Clock, X, Video, FileText, AlertCircle, CheckCircle2, ExternalLink, Users } from 'lucide-react';
 import { sdrApi, SDRAppointment } from '@/services/sdrApi';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
+import { useApp } from '@/contexts/AppContext';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -11,19 +13,28 @@ import { MainLayout } from '@/components/layout/MainLayout';
 
 type ViewMode = 'month' | 'week';
 
+interface DeptMember {
+  id: string;
+  name: string;
+}
+
 export default function SDRSchedulingPage() {
+  const { isAdmin, isSupervisor } = useAuth();
+  const { user } = useApp();
+  const canAssign = isAdmin || isSupervisor;
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [appointments, setAppointments] = useState<SDRAppointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [formData, setFormData] = useState({ title: '', time: '09:00', type: 'meeting', description: '', duration: 60 });
+  const [formData, setFormData] = useState({ title: '', time: '09:00', type: 'meeting', description: '', duration: 60, assignedTo: '' });
   const [isSaving, setIsSaving] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<SDRAppointment | null>(null);
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportData, setReportData] = useState<{ transcription_summary?: string; processing_status?: string } | null>(null);
   const [googleStatus, setGoogleStatus] = useState<{ connected: boolean; email?: string; expired?: boolean } | null>(null);
+  const [deptMembers, setDeptMembers] = useState<DeptMember[]>([]);
 
   const loadData = async () => {
     try {
