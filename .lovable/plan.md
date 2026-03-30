@@ -1,52 +1,62 @@
 
 
-# Corrigir primeira mensagem duplicada da Delma
+# Supervisor atribuir tarefas na agenda para atendentes do departamento
 
-## Causa raiz
+## Problema
+1. **SDRRoute** só permite acesso a quem está no departamento "Comercial" — supervisores de outros departamentos (como "Cardápio Digital") não conseguem acessar
+2. **RLS de `sdr_appointments`** mesma restrição — só "Comercial" ou admin
+3. **Edge function** sempre seta `user_id` como o usuário autenticado — não permite atribuir a outro membro
+4. **UI** não tem campo para selecionar o atendente que receberá a tarefa
 
-Duas chamadas concorrentes ao `robot-chat` para a mesma conversa:
+## Mudanças
 
-1. **webhook-machine** cria a conversa, atribui o robô, e chama `robot-chat` (fire-and-forget)
-2. **sync-robot-schedules** (segunda varredura — "conversas travadas") encontra a mesma conversa com robô atribuído mas sem resposta do robô ainda (porque o robot-chat da etapa 1 ainda está processando com delays de 2s + agrupamento) e chama `robot-chat` novamente
+### 1. `src/components/sdr/SDRRoute.tsx` — Permitir supervisores acessarem
 
-A segunda varredura (linha 330-350) verifica se existe mensagem do robô **após** a última do cliente, mas como o primeiro `robot-chat` ainda está no delay de agrupamento, não há resposta do robô ainda → dispara segunda chamada.
+Adicionar verificação: se o usuário é supervisor (`isSupervisor`), permitir acesso à rota SDR (agenda). Isso permite que Fabio (supervisor) acesse `/comercial/agenda`.
 
-O lock de 20s (`robot_lock_until`) deveria bloquear a segunda chamada, mas o sync-robot-schedules **não verifica o lock** antes de chamar robot-chat. Embora robot-chat tenha o guard na linha 960, a janela de timing entre o webhook-machine setando o lock e o sync rodando pode causar race conditions.
+### 2. Migration — Expandir RLS de `sdr_appointments`
 
-## Correção
+Adicionar policy para supervisores poderem gerenciar appointments de membros dos seus departamentos:
 
-### 1. `supabase/functions/sync-robot-schedules/index.ts` — Checar `robot_lock_until` antes de retry
-
-Na segunda varredura (conversas travadas), adicionar `robot_lock_until` ao select (linha 282) e pular conversas com lock ativo antes de disparar robot-chat.
-
-**Select (linha 282):** Adicionar `robot_lock_until` ao select
-```typescript
-.select("id, department_id, channel, contact_id, external_id, assigned_to_robot, sdr_deal_id, robot_transferred, robot_lock_until")
+```sql
+-- Supervisores podem gerenciar agendamentos
+CREATE POLICY "Supervisors can manage sdr_appointments"
+ON public.sdr_appointments FOR ALL TO authenticated
+USING (has_role(auth.uid(), 'supervisor'::app_role))
+WITH CHECK (has_role(auth.uid(), 'supervisor'::app_role));
 ```
 
-**Guard (após linha 306, antes de buscar última mensagem):** Pular se lock ativo
+### 3. `supabase/functions/sdr-meeting-create-with-meet/index.ts` — Aceitar `assigned_to`
+
+Aceitar campo `assigned_to` no body. Se fornecido (e o usuário é supervisor/admin), usar esse ID como `user_id` do appointment. Caso contrário, manter `user.id`.
+
+### 4. `src/pages/sdr/SDRSchedulingPage.tsx` — UI de atribuição
+
+- Carregar membros do departamento do supervisor (via `profile_departments` + `profiles`)
+- No modal de criação, se o usuário é supervisor, mostrar `<Select>` com os atendentes do departamento
+- Enviar `assigned_to` na chamada à edge function
+- No calendário, mostrar o nome do atendente atribuído nos cards (ex: "09:00 - Demo [Yasmin]")
+
+### Detalhes
+
+**Carregamento de membros:**
 ```typescript
-if (conv.robot_lock_until && new Date(conv.robot_lock_until) > new Date()) {
-  continue; // Lock ativo — robot-chat já está processando
-}
+// No useEffect, se supervisor:
+const { data } = await supabase
+  .from('profile_departments')
+  .select('profile_id, profiles!inner(id, name)')
+  .in('department_id', userDepartmentIds);
 ```
 
-### 2. `supabase/functions/webhook-machine/index.ts` — Setar lock antes de chamar robot-chat
-
-Quando o webhook-machine atribui o robô e vai chamar robot-chat, setar `robot_lock_until` imediatamente na conversa para que o sync-robot-schedules não dispare uma segunda chamada.
-
-**Após criação/atualização da conversa com robô atribuído (antes de chamar robot-chat, ~linha 484-497):**
+**Form atualizado:**
 ```typescript
-// Setar lock antes de chamar robot-chat para evitar que sync-robot-schedules duplique
-await supabase.from('conversations').update({
-  robot_lock_until: new Date(Date.now() + 30000).toISOString()
-}).eq('id', conversationId);
+formData: { ...existing, assignedTo: '' }
+// Select no modal: "Atribuir para:" com lista de membros
 ```
 
-Aplicar o mesmo na linha 106-113 (conversa existente que recebe robô).
-
-### Resultado
-- webhook-machine seta lock de 30s antes de chamar robot-chat
-- sync-robot-schedules verifica o lock e pula conversas sendo processadas
-- Elimina a janela de race condition que causa mensagem duplicada
+**Edge function:**
+```typescript
+const targetUserId = (assigned_to && isAdminOrSupervisor) ? assigned_to : user.id;
+// ... insert com user_id: targetUserId
+```
 
