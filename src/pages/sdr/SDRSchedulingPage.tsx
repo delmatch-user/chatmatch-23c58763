@@ -173,10 +173,12 @@ export default function SDRSchedulingPage() {
   }, []);
 
   const getTypeColor = (t: string) => {
-    if (t === 'demo') return 'bg-primary/10 text-primary border-primary/20';
     if (t === 'meeting') return 'bg-violet-500/10 text-violet-500 border-violet-500/20';
+    if (t === 'franquia') return 'bg-primary/10 text-primary border-primary/20';
     if (t === 'support') return 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20';
-    return 'bg-orange-500/10 text-orange-500 border-orange-500/20';
+    if (t === 'cardapio') return 'bg-amber-500/10 text-amber-500 border-amber-500/20';
+    if (t === 'implantacao') return 'bg-blue-500/10 text-blue-500 border-blue-500/20';
+    return 'bg-muted text-muted-foreground border-border';
   };
 
   const getProcessingBadge = (status?: string) => {
