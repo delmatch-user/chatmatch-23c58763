@@ -65,6 +65,7 @@ export interface SDRAppointment {
   processingStatus?: string;
   transcriptionSummary?: string;
   status: string;
+  taskStatus: string;
   metadata?: Record<string, any>;
   userId?: string;
   userName?: string;
