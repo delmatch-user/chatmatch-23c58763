@@ -1783,6 +1783,7 @@ export type Database = {
           next_transcript_check: string | null
           processing_status: string | null
           status: string
+          task_status: string
           time: string
           title: string
           transcript_import_attempts: number | null
@@ -1808,6 +1809,7 @@ export type Database = {
           next_transcript_check?: string | null
           processing_status?: string | null
           status?: string
+          task_status?: string
           time?: string
           title: string
           transcript_import_attempts?: number | null
@@ -1833,6 +1835,7 @@ export type Database = {
           next_transcript_check?: string | null
           processing_status?: string | null
           status?: string
+          task_status?: string
           time?: string
           title?: string
           transcript_import_attempts?: number | null
