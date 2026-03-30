@@ -53,6 +53,23 @@ export default function SDRSchedulingPage() {
     return () => { supabase.removeChannel(ch); };
   }, []);
 
+  // Load department members for supervisors/admins
+  useEffect(() => {
+    if (!canAssign || !user?.departments?.length) return;
+    const loadMembers = async () => {
+      const { data } = await supabase
+        .from('profile_departments')
+        .select('profile_id, profiles!inner(id, name)')
+        .in('department_id', user.departments);
+      if (data) {
+        const members = data.map((d: any) => ({ id: d.profiles.id, name: d.profiles.name }));
+        const unique = Array.from(new Map(members.map((m: DeptMember) => [m.id, m])).values());
+        setDeptMembers(unique);
+      }
+    };
+    loadMembers();
+  }, [canAssign, user?.departments]);
+
   const navigateDate = (dir: number) => {
     const d = new Date(currentDate);
     if (viewMode === 'month') d.setMonth(d.getMonth() + dir); else d.setDate(d.getDate() + dir * 7);
@@ -91,13 +108,14 @@ export default function SDRSchedulingPage() {
           time: formData.time,
           duration: formData.duration,
           type: formData.type,
+          ...(formData.assignedTo ? { assigned_to: formData.assignedTo } : {}),
         }),
       });
       const result = await res.json();
       if (result.error) throw new Error(result.error);
       toast.success(result.google_meet_url ? 'Agendamento criado com Google Meet!' : 'Agendamento criado!');
       setShowModal(false);
-      setFormData({ title: '', time: '09:00', type: 'meeting', description: '', duration: 60 });
+      setFormData({ title: '', time: '09:00', type: 'meeting', description: '', duration: 60, assignedTo: '' });
     } catch (err: any) {
       toast.error(err.message || 'Erro ao criar');
     } finally { setIsSaving(false); }
