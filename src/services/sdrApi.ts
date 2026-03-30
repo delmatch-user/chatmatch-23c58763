@@ -313,7 +313,7 @@ export const sdrApi = {
       meetingUrl: a.meeting_url || undefined, googleMeetUrl: a.google_meet_url || undefined,
       googleEventId: a.google_event_id || undefined, processingStatus: a.processing_status || undefined,
       transcriptionSummary: a.transcription_summary || undefined,
-      status: a.status, metadata: a.metadata as any,
+      status: a.status, taskStatus: a.task_status || 'pending', metadata: a.metadata as any,
       userId: a.user_id || undefined, userName: a.assigned_user?.name || undefined,
     }));
   },
