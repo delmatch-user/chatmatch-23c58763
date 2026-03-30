@@ -325,6 +325,17 @@ export default function SDRPipelinePage() {
         <SDRCreateDealModal open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen} onDealCreated={reload} />
         <SDRLostReasonModal open={isLostModalOpen} onOpenChange={setIsLostModalOpen} onConfirm={handleMarkLost} dealTitle={selectedDeal?.title || ''} />
         <SDRPipelineSettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} onSave={reload} />
+        {linkedConversationId && (() => {
+          const conv = conversations.find(c => c.id === linkedConversationId);
+          return conv ? (
+            <ConversationPreviewDialog
+              conversation={conv}
+              open={isPreviewOpen}
+              onOpenChange={setIsPreviewOpen}
+              onAssume={() => { setIsPreviewOpen(false); handleGoToConversation(); }}
+            />
+          ) : null;
+        })()}
       </div>
     </MainLayout>
   );
