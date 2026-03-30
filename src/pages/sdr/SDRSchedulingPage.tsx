@@ -287,10 +287,11 @@ export default function SDRSchedulingPage() {
                   <Select value={formData.type} onValueChange={v => setFormData(p => ({ ...p, type: v }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="demo">Demo</SelectItem>
                       <SelectItem value="meeting">Reunião</SelectItem>
+                      <SelectItem value="franquia">Franquia</SelectItem>
                       <SelectItem value="support">Suporte</SelectItem>
-                      <SelectItem value="followup">Follow-up</SelectItem>
+                      <SelectItem value="cardapio">Cardápio Digital</SelectItem>
+                      <SelectItem value="implantacao">Implantação</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
