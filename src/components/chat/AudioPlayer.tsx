@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Play, Pause, AlertCircle, Loader2, FileText, ChevronDown, ChevronUp } from 'lucide-react';
+import { Play, Pause, AlertCircle, Loader2, FileText, ChevronDown, ChevronUp, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
