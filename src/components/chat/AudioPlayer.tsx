@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Play, Pause, AlertCircle, Loader2, FileText, ChevronDown, ChevronUp } from 'lucide-react';
+import { Play, Pause, AlertCircle, Loader2, FileText, ChevronDown, ChevronUp, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
@@ -254,6 +254,18 @@ export function AudioPlayer({ url, className, messageId }: AudioPlayerProps) {
         >
           {formatSpeed(playbackRate)}
         </Button>
+
+        {/* Botão de download */}
+        <a
+          href={url}
+          download={`audio_${Date.now()}.mp3`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center justify-center h-7 w-7 shrink-0 rounded-md hover:bg-accent hover:text-accent-foreground"
+          title="Baixar áudio"
+        >
+          <Download className="w-3.5 h-3.5" />
+        </a>
 
         {/* Botão de transcrição */}
         <Button
