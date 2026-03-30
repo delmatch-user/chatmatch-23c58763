@@ -197,7 +197,7 @@ export default function SDRSchedulingPage() {
 
   return (
     <MainLayout>
-      <div className="h-full flex flex-col p-3 sm:p-6 overflow-hidden">
+      <div className="h-full flex flex-col p-3 sm:p-6 overflow-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-4 flex-shrink-0">
           <div>
@@ -227,21 +227,21 @@ export default function SDRSchedulingPage() {
         </div>
 
         {/* Calendar Grid */}
-        <div className="flex-1 overflow-hidden rounded-xl border bg-card">
+        <div className="flex-1 min-h-0 rounded-xl border bg-card flex flex-col overflow-auto">
           <div className="grid grid-cols-7 border-b bg-secondary">
             {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => (
               <div key={d} className="p-2 text-center text-xs font-semibold text-muted-foreground uppercase">{d}</div>
             ))}
           </div>
-          <div className="grid grid-cols-7 flex-1 auto-rows-fr">
-            {Array.from({ length: firstDay }).map((_, i) => <div key={`e-${i}`} className="border-b border-r border-border min-h-[100px]" />)}
+          <div className="grid grid-cols-7 flex-1">
+            {Array.from({ length: firstDay }).map((_, i) => <div key={`e-${i}`} className="border-b border-r border-border min-h-[80px]" />)}
             {Array.from({ length: days }).map((_, i) => {
               const day = i + 1;
               const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
               const dayApts = appointments.filter(a => a.date === dateStr);
               const isToday = formatDateStr(new Date()) === dateStr;
               return (
-                <div key={day} onClick={() => handleDateClick(day)} className={`border-b border-r border-border p-2 min-h-[100px] cursor-pointer hover:bg-secondary/50 group ${isToday ? 'bg-primary/5' : ''}`}>
+                <div key={day} onClick={() => handleDateClick(day)} className={`border-b border-r border-border p-1.5 min-h-[80px] cursor-pointer hover:bg-secondary/50 group ${isToday ? 'bg-primary/5' : ''}`}>
                   <span className={`text-sm font-medium w-7 h-7 flex items-center justify-center rounded-full mb-1 ${isToday ? 'bg-primary text-primary-foreground' : 'text-muted-foreground group-hover:text-foreground'}`}>{day}</span>
                   <div className="space-y-1">
                     {dayApts.map(a => (
