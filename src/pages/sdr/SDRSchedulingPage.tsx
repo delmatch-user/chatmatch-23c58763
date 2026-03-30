@@ -299,6 +299,19 @@ export default function SDRSchedulingPage() {
                 <label className="text-sm font-medium">Descrição</label>
                 <Input value={formData.description} onChange={e => setFormData(p => ({ ...p, description: e.target.value }))} placeholder="Detalhes opcionais" />
               </div>
+              {canAssign && deptMembers.length > 0 && (
+                <div>
+                  <label className="text-sm font-medium flex items-center gap-1.5"><Users className="w-3.5 h-3.5" />Atribuir para</label>
+                  <Select value={formData.assignedTo} onValueChange={v => setFormData(p => ({ ...p, assignedTo: v }))}>
+                    <SelectTrigger><SelectValue placeholder="Selecionar atendente" /></SelectTrigger>
+                    <SelectContent>
+                      {deptMembers.map(m => (
+                        <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setShowModal(false)}>Cancelar</Button>
                 <Button type="submit" disabled={isSaving || !formData.title.trim()}>{isSaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}Criar</Button>
