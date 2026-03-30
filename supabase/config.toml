@@ -92,3 +92,6 @@ verify_jwt = false
 
 [functions.meta-webhook-diagnose]
 verify_jwt = false
+
+[functions.appointment-alerts-cron]
+verify_jwt = false

@@ -113,6 +113,17 @@ export default function SDRSchedulingPage() {
       });
       const result = await res.json();
       if (result.error) throw new Error(result.error);
+      // Insert immediate alert for assigned user
+      if (formData.assignedTo && result.appointment) {
+        await supabase.from('appointment_alerts' as any).insert({
+          appointment_id: result.appointment.id || result.appointment,
+          user_id: formData.assignedTo,
+          alert_type: 'assigned',
+          title: `📋 Nova tarefa atribuída: ${formData.title}`,
+          body: `Você recebeu "${formData.title}" para ${selectedDate} às ${formData.time}.`,
+          scheduled_for: new Date().toISOString(),
+        });
+      }
       toast.success(result.google_meet_url ? 'Agendamento criado com Google Meet!' : 'Agendamento criado!');
       setShowModal(false);
       setFormData({ title: '', time: '09:00', type: 'meeting', description: '', duration: 60, assignedTo: '' });

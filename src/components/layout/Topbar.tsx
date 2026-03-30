@@ -38,6 +38,8 @@ import { requestNotificationPermission, getNotificationStatusMessage } from '@/l
 import { useWorkScheduleMonitor } from '@/hooks/useWorkScheduleMonitor';
 import { EndOfShiftDialog } from '@/components/schedule/EndOfShiftDialog';
 import { Switch } from '@/components/ui/switch';
+import { useAppointmentAlerts } from '@/hooks/useAppointmentAlerts';
+import { Calendar as CalendarIcon } from 'lucide-react';
 import { Slider } from '@/components/ui/slider';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
@@ -70,6 +72,10 @@ export function Topbar({ title = 'Match Conversa', onOpenSidebar }: TopbarProps)
   
   // Use queue notifications hook
   useQueueNotifications(totalQueue, notificationsEnabled);
+
+  // Appointment alerts
+  const { alerts: appointmentAlerts, markAsRead: markAlertRead, markAllAsRead: markAllAlertsRead, unreadCount: alertsUnreadCount } = useAppointmentAlerts();
+  const [showAlertsBanner, setShowAlertsBanner] = useState(false);
 
   // Use work schedule monitor hook
   const {
