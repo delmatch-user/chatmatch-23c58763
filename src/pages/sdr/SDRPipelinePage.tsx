@@ -32,6 +32,7 @@ export default function SDRPipelinePage() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [linkedConversationId, setLinkedConversationId] = useState<string | null>(null);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const dragItem = useRef<string | null>(null);
 
   const reload = async () => {
