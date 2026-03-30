@@ -32,6 +32,7 @@ export interface SDRDeal {
   wonAt?: string;
   lostAt?: string;
   lostReason?: string;
+  createdAt?: string;
 }
 
 export interface SDRDealActivity {
