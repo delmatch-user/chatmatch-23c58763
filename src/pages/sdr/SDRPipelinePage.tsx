@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, DollarSign, Loader2, CalendarClock, Tag, Settings, MoreHorizontal, X, FileText, Phone, CheckCircle2, Circle, Trash2, Clock, MessageSquare, RotateCcw, MapPin } from 'lucide-react';
+import { Plus, Search, DollarSign, Loader2, CalendarClock, Tag, Settings, MoreHorizontal, X, FileText, Phone, CheckCircle2, Circle, Trash2, Clock, MessageSquare, RotateCcw, MapPin, Eye } from 'lucide-react';
 import { sdrApi, SDRDeal, SDRPipelineStage, SDRDealActivity } from '@/services/sdrApi';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import { SDRPipelineSettingsModal } from '@/components/sdr/SDRPipelineSettingsMo
 import { getTagColorClasses } from '@/lib/tagColors';
 import { useApp } from '@/contexts/AppContext';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { ConversationPreviewDialog } from '@/components/queue/ConversationPreviewDialog';
 
 export default function SDRPipelinePage() {
   const navigate = useNavigate();
@@ -31,6 +32,7 @@ export default function SDRPipelinePage() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [linkedConversationId, setLinkedConversationId] = useState<string | null>(null);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const dragItem = useRef<string | null>(null);
 
   const reload = async () => {
@@ -234,9 +236,14 @@ export default function SDRPipelinePage() {
                   </div>
                 )}
                 {linkedConversationId && (
-                  <Button variant="outline" className="w-full" onClick={handleGoToConversation}>
-                    <MessageSquare className="w-4 h-4 mr-2" />Ir para Conversa
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button variant="outline" className="flex-1" onClick={() => setIsPreviewOpen(true)}>
+                      <Eye className="w-4 h-4 mr-2" />Preview
+                    </Button>
+                    <Button variant="outline" className="flex-1" onClick={handleGoToConversation}>
+                      <MessageSquare className="w-4 h-4 mr-2" />Ir para Conversa
+                    </Button>
+                  </div>
                 )}
                 <div className="flex gap-2">
                   <Button className="flex-1" variant="outline" onClick={handleMarkWon}><CheckCircle2 className="w-4 h-4 mr-2 text-emerald-500" />Ganho</Button>
@@ -318,6 +325,17 @@ export default function SDRPipelinePage() {
         <SDRCreateDealModal open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen} onDealCreated={reload} />
         <SDRLostReasonModal open={isLostModalOpen} onOpenChange={setIsLostModalOpen} onConfirm={handleMarkLost} dealTitle={selectedDeal?.title || ''} />
         <SDRPipelineSettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} onSave={reload} />
+        {linkedConversationId && (() => {
+          const conv = conversations.find(c => c.id === linkedConversationId);
+          return conv ? (
+            <ConversationPreviewDialog
+              conversation={conv}
+              open={isPreviewOpen}
+              onOpenChange={setIsPreviewOpen}
+              onAssume={() => { setIsPreviewOpen(false); handleGoToConversation(); }}
+            />
+          ) : null;
+        })()}
       </div>
     </MainLayout>
   );
