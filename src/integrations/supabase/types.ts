@@ -160,6 +160,67 @@ export type Database = {
         }
         Relationships: []
       }
+      appointment_alerts: {
+        Row: {
+          alert_type: string
+          appointment_id: string
+          body: string
+          created_at: string
+          id: string
+          is_read: boolean
+          read_at: string | null
+          scheduled_for: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          alert_type?: string
+          appointment_id: string
+          body: string
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          read_at?: string | null
+          scheduled_for: string
+          title: string
+          user_id: string
+        }
+        Update: {
+          alert_type?: string
+          appointment_id?: string
+          body?: string
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          read_at?: string | null
+          scheduled_for?: string
+          title?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointment_alerts_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "sdr_appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointment_alerts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointment_alerts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       brain_reports: {
         Row: {
           content: string
