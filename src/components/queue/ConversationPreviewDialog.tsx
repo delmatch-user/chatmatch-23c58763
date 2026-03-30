@@ -154,9 +154,9 @@ export function ConversationPreviewDialog({
 
   useEffect(() => {
     if (open && !isLoadingMessages) {
-      setTimeout(scrollToBottom, 100);
+      requestAnimationFrame(() => scrollToBottom());
     }
-  }, [open, isLoadingMessages, scrollToBottom]);
+  }, [open, isLoadingMessages, realMessages, scrollToBottom]);
 
   const formatDateLabel = (date: Date) => {
     if (isToday(date)) return 'Hoje';
@@ -281,8 +281,8 @@ export function ConversationPreviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
-        <DialogHeader className="border-b border-border pb-4">
+      <DialogContent className="sm:max-w-2xl h-[90vh] max-h-[90vh] flex flex-col overflow-hidden">
+        <DialogHeader className="shrink-0 border-b border-border pb-4">
           <div className="flex items-center gap-4">
             <div className="relative">
               <Avatar className="h-12 w-12">
@@ -352,8 +352,8 @@ export function ConversationPreviewDialog({
         </DialogHeader>
 
         {/* Messages */}
-        <ScrollArea className="flex-1 min-h-0 max-h-[60vh]" viewportRef={scrollViewportRef}>
-          <div className="py-4 px-3 space-y-3">
+        <ScrollArea className="flex-1 min-h-0" viewportRef={scrollViewportRef}>
+          <div className="py-4 px-3 pr-4 space-y-3 pb-4">
             {isLoadingMessages ? (
               <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground">
                 <Loader2 className="w-5 h-5 animate-spin" />
@@ -445,7 +445,7 @@ export function ConversationPreviewDialog({
         </ScrollArea>
 
         {/* Footer */}
-        <div className="border-t border-border pt-4 flex items-center justify-between">
+        <div className="shrink-0 border-t border-border pt-4 flex items-center justify-between">
           <div className="flex items-center gap-2 flex-wrap">
             {conversation.tags.map((tag) => (
               <span 
