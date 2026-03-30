@@ -352,8 +352,8 @@ export function ConversationPreviewDialog({
         </DialogHeader>
 
         {/* Messages */}
-        <ScrollArea className="flex-1 min-h-0 max-h-[60vh]" viewportRef={scrollViewportRef}>
-          <div className="py-4 px-3 space-y-3">
+        <ScrollArea className="flex-1 min-h-0" viewportRef={scrollViewportRef}>
+          <div className="py-4 px-3 pr-4 space-y-3 pb-4">
             {isLoadingMessages ? (
               <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground">
                 <Loader2 className="w-5 h-5 animate-spin" />
