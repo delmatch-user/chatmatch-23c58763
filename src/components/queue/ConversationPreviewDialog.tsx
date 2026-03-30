@@ -281,7 +281,7 @@ export function ConversationPreviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
         <DialogHeader className="border-b border-border pb-4">
           <div className="flex items-center gap-4">
             <div className="relative">
@@ -352,7 +352,7 @@ export function ConversationPreviewDialog({
         </DialogHeader>
 
         {/* Messages */}
-        <ScrollArea className="flex-1 min-h-0 max-h-[45vh]" viewportRef={scrollViewportRef}>
+        <ScrollArea className="flex-1 min-h-0 max-h-[60vh]" viewportRef={scrollViewportRef}>
           <div className="py-4 px-3 space-y-3">
             {isLoadingMessages ? (
               <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground">
