@@ -1,38 +1,61 @@
 
 
-# Unificar conversas duplicadas do Robson Escatamburlo
+# Gestão de status de tarefas na agenda + modal de tarefas do dia
 
-## Causa raiz
-O contato original (`da97506b`) só tem o LID (`211368342986941@lid`) sem telefone. Quando o Robson respondeu, o webhook resolveu o telefone real mas não encontrou o contato existente (que não tinha `phone`), criando um segundo contato e uma segunda conversa.
+## Mudanças
 
-## Correção (migration SQL)
+### 1. Adicionar coluna `task_status` na tabela `sdr_appointments` (migration)
 
-### 1. Mover mensagens da conversa nova para a original
 ```sql
-UPDATE messages SET conversation_id = '3dad9b82-eea8-41bb-8e39-2add2a9f7452'
-WHERE conversation_id = 'ad362ee4-2f2a-450f-8315-d3c4fd853051';
+ALTER TABLE sdr_appointments ADD COLUMN task_status text NOT NULL DEFAULT 'pending';
+-- Valores: 'pending', 'completed', 'overdue'
 ```
 
-### 2. Deletar a conversa duplicada (na fila)
+RLS já cobre — atendentes precisam poder atualizar o status das suas tarefas:
 ```sql
-DELETE FROM conversations WHERE id = 'ad362ee4-2f2a-450f-8315-d3c4fd853051';
+CREATE POLICY "Users can update own appointments status"
+ON sdr_appointments FOR UPDATE TO authenticated
+USING (user_id = auth.uid())
+WITH CHECK (user_id = auth.uid());
 ```
 
-### 3. Atualizar o contato original com o telefone real e JID
-```sql
-UPDATE contacts SET 
-  phone = '+55 14 98147-7889',
-  notes = 'jid:5514981477889@s.whatsapp.net | jid:211368342986941@lid'
-WHERE id = 'da97506b-8027-4fbb-92ca-130ca290445a';
+### 2. `src/services/sdrApi.ts` — Expor `taskStatus` no tipo e adicionar método
+
+- Adicionar `taskStatus` ao `SDRAppointment` interface
+- Mapear `task_status` no `fetchAppointments`
+- Adicionar `updateTaskStatus(id, status)` que faz `UPDATE sdr_appointments SET task_status = status`
+
+### 3. `src/pages/sdr/SDRSchedulingPage.tsx` — Duas mudanças principais
+
+**A) Clicar na data abre modal com lista de tarefas do dia (não o form de criação)**
+
+Novo modal "Tarefas do dia" mostrando todas as tarefas daquela data com:
+- Horário, título, tipo (badge colorido), nome do atendente
+- Badges de status: Pendente (amarelo), Concluído (verde), Atrasado (vermelho)
+- Botões para marcar como concluído/pendente (atendente pode alterar as suas; supervisor/admin todas)
+- Botão "+" para abrir o form de criação existente
+
+**B) Cálculo automático de "atrasado"**
+
+No render, se `task_status === 'pending'` e data+horário já passaram → exibir como "Atrasado" visualmente. Ao abrir o modal do dia, verificar e atualizar no banco as que estão atrasadas.
+
+**C) No calendário**, mostrar indicador de cor por status:
+- Verde: concluído
+- Amarelo: pendente
+- Vermelho: atrasado (data/hora passada e ainda pendente)
+
+### Fluxo
+
+```text
+Fabio cria tarefa → Yasmin vê na agenda
+Yasmin clica no dia → modal com todas tarefas do dia
+Yasmin marca "Concluído" → badge verde
+Se passou da hora e ainda pendente → badge vermelho "Atrasado"
 ```
 
-### 4. Deletar o contato duplicado
-```sql
-DELETE FROM contacts WHERE id = '9e7fdd71-6416-479a-9ac3-13cdd8aee0bc';
-```
+### Detalhes técnicos
 
-### Resultado
-- Conversa única com Yasmin contendo todas as mensagens (inclusive as respostas do Robson)
-- Contato único com telefone + ambos os JIDs nas notas
-- Conversa sai da fila e volta a aparecer normalmente no chat da Yasmin
+- O status "overdue" é calculado client-side comparando `date + time` com `now()`. Não precisa de cron.
+- O `task_status` no banco só armazena `pending` e `completed`. O "overdue" é derivado.
+- Atendente só pode alterar tarefas onde `user_id = auth.uid()`.
 
