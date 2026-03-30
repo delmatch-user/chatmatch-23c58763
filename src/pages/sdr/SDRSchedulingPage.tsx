@@ -249,7 +249,7 @@ export default function SDRSchedulingPage() {
                           if (a.processingStatus === 'completed') handleViewReport(a);
                           else if (a.status === 'scheduled') handleDelete(a.id);
                         }}>
-                          {a.time.slice(0, 5)} - {a.title}
+                          {a.time.slice(0, 5)} - {a.title}{a.userName ? ` [${a.userName.split(' ')[0]}]` : ''}
                         </span>
                         {a.googleMeetUrl && <Video className="w-2.5 h-2.5 flex-shrink-0 text-primary" />}
                         {getProcessingBadge(a.processingStatus)}
