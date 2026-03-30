@@ -38,6 +38,8 @@ import { requestNotificationPermission, getNotificationStatusMessage } from '@/l
 import { useWorkScheduleMonitor } from '@/hooks/useWorkScheduleMonitor';
 import { EndOfShiftDialog } from '@/components/schedule/EndOfShiftDialog';
 import { Switch } from '@/components/ui/switch';
+import { useAppointmentAlerts } from '@/hooks/useAppointmentAlerts';
+import { Calendar as CalendarIcon } from 'lucide-react';
 import { Slider } from '@/components/ui/slider';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
@@ -70,6 +72,10 @@ export function Topbar({ title = 'Match Conversa', onOpenSidebar }: TopbarProps)
   
   // Use queue notifications hook
   useQueueNotifications(totalQueue, notificationsEnabled);
+
+  // Appointment alerts
+  const { alerts: appointmentAlerts, markAsRead: markAlertRead, markAllAsRead: markAllAlertsRead, unreadCount: alertsUnreadCount } = useAppointmentAlerts();
+  const [showAlertsBanner, setShowAlertsBanner] = useState(false);
 
   // Use work schedule monitor hook
   const {
@@ -242,7 +248,35 @@ export function Topbar({ title = 'Match Conversa', onOpenSidebar }: TopbarProps)
 
   return (
     <>
-      <header className="h-16 bg-card border-b border-border flex items-center justify-between px-4 sm:px-6">
+      {/* Appointment Alerts Banner */}
+      {alertsUnreadCount > 0 && (
+        <div className="fixed top-0 left-0 right-0 z-[100] bg-primary/95 text-primary-foreground px-4 py-2 flex items-center justify-between shadow-lg">
+          <div className="flex items-center gap-2">
+            <CalendarIcon className="w-4 h-4" />
+            <span className="text-sm font-medium">
+              {alertsUnreadCount === 1 ? appointmentAlerts[0]?.title : `${alertsUnreadCount} alertas de reunião pendentes`}
+            </span>
+            {alertsUnreadCount === 1 && (
+              <span className="text-xs opacity-80 ml-2">{appointmentAlerts[0]?.body}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {alertsUnreadCount > 1 && (
+              <Button size="sm" variant="secondary" className="h-7 text-xs" onClick={() => setShowAlertsBanner(true)}>
+                Ver todos
+              </Button>
+            )}
+            <Button size="sm" variant="secondary" className="h-7 text-xs" onClick={() => {
+              if (alertsUnreadCount === 1) markAlertRead(appointmentAlerts[0].id);
+              else markAllAlertsRead();
+            }}>
+              Entendi ✓
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <header className={cn("h-16 bg-card border-b border-border flex items-center justify-between px-4 sm:px-6", alertsUnreadCount > 0 && "mt-10")}>
         <div className="flex items-center gap-3 sm:gap-4 min-w-0">
           {onOpenSidebar && (
             <Button
@@ -256,27 +290,19 @@ export function Topbar({ title = 'Match Conversa', onOpenSidebar }: TopbarProps)
             </Button>
           )}
           <h1 className="text-xl font-semibold text-foreground truncate">{title}</h1>
-          {/* Department Online Users Summary - clickable with popover - visible to all users */}
           <div className="hidden md:flex items-center gap-2 ml-4">
             {departments
               .filter((dept) => dept.onlineCount > 0)
               .map((dept) => {
-                // Get users from this department who are online or away
                 const usersInDept = users.filter(u => 
                   u.departments?.includes(dept.id) && 
                   (u.status === 'online' || u.status === 'away')
                 );
-                
                 return (
                   <Popover key={dept.id}>
                     <PopoverTrigger asChild>
-                      <div 
-                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-secondary text-xs cursor-pointer hover:bg-secondary/80 transition-colors"
-                      >
-                        <span 
-                          className="w-2 h-2 rounded-full" 
-                          style={{ backgroundColor: dept.color }}
-                        />
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-secondary text-xs cursor-pointer hover:bg-secondary/80 transition-colors">
+                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: dept.color }} />
                         <span className="text-muted-foreground">{dept.name}</span>
                         <span className="font-semibold text-foreground">{dept.onlineCount}</span>
                       </div>
@@ -284,28 +310,18 @@ export function Topbar({ title = 'Match Conversa', onOpenSidebar }: TopbarProps)
                     <PopoverContent className="w-64 p-0" align="start">
                       <div className="p-3 border-b border-border">
                         <div className="flex items-center gap-2">
-                          <span 
-                            className="w-3 h-3 rounded-full" 
-                            style={{ backgroundColor: dept.color }}
-                          />
+                          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: dept.color }} />
                           <h4 className="font-medium text-sm">{dept.name}</h4>
-                          <span className="text-xs text-muted-foreground ml-auto">
-                            {usersInDept.length} online
-                          </span>
+                          <span className="text-xs text-muted-foreground ml-auto">{usersInDept.length} online</span>
                         </div>
                       </div>
                       <ScrollArea className="max-h-60">
                         <div className="p-2 space-y-1">
                           {usersInDept.length === 0 ? (
-                            <p className="text-xs text-muted-foreground text-center py-3">
-                              Nenhum usuário online
-                            </p>
+                            <p className="text-xs text-muted-foreground text-center py-3">Nenhum usuário online</p>
                           ) : (
                             usersInDept.map(u => (
-                              <div 
-                                key={u.id} 
-                                className="flex items-center gap-2 p-2 rounded-md hover:bg-secondary/50"
-                              >
+                              <div key={u.id} className="flex items-center gap-2 p-2 rounded-md hover:bg-secondary/50">
                                 <div className="relative">
                                   <Avatar className="h-7 w-7">
                                     <AvatarImage src={u.avatar} />
@@ -321,9 +337,7 @@ export function Topbar({ title = 'Match Conversa', onOpenSidebar }: TopbarProps)
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <p className="text-sm font-medium truncate">{u.name}</p>
-                                  <p className="text-[10px] text-muted-foreground">
-                                    {u.status === 'online' ? 'Online' : 'Em pausa'}
-                                  </p>
+                                  <p className="text-[10px] text-muted-foreground">{u.status === 'online' ? 'Online' : 'Em pausa'}</p>
                                 </div>
                               </div>
                             ))
@@ -338,49 +352,33 @@ export function Topbar({ title = 'Match Conversa', onOpenSidebar }: TopbarProps)
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Search */}
           <div className="relative hidden md:block">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input 
-              placeholder="Buscar conversas, contatos..." 
-              className="pl-9 w-64 input-search"
-            />
+            <Input placeholder="Buscar conversas, contatos..." className="pl-9 w-64 input-search" />
           </div>
 
-          {/* Notifications */}
           <Button 
-            variant="ghost" 
-            size="icon" 
-            className="relative"
+            variant="ghost" size="icon" className="relative"
             onClick={async () => {
               const newValue = !notificationsEnabled;
               setNotificationsEnabled(newValue);
               if (newValue) {
                 const permission = await requestNotificationPermission();
-                if (permission === 'denied') {
-                  toast.error(getNotificationStatusMessage());
-                } else if (permission === 'unsupported') {
-                  toast.warning(getNotificationStatusMessage());
-                } else {
-                  toast.success('Notificações ativadas');
-                }
+                if (permission === 'denied') toast.error(getNotificationStatusMessage());
+                else if (permission === 'unsupported') toast.warning(getNotificationStatusMessage());
+                else toast.success('Notificações ativadas');
               } else {
                 toast.success('Notificações desativadas');
               }
             }}
             title={notificationsEnabled ? 'Desativar notificações' : 'Ativar notificações'}
           >
-            {notificationsEnabled ? (
-              <Bell className="w-5 h-5 text-muted-foreground" />
-            ) : (
-              <BellOff className="w-5 h-5 text-muted-foreground" />
-            )}
+            {notificationsEnabled ? <Bell className="w-5 h-5 text-muted-foreground" /> : <BellOff className="w-5 h-5 text-muted-foreground" />}
             {totalQueue > 0 && notificationsEnabled && (
               <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-primary animate-pulse" />
             )}
           </Button>
 
-          {/* User Menu */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="flex items-center gap-2 px-2">
@@ -404,9 +402,7 @@ export function Topbar({ title = 'Match Conversa', onOpenSidebar }: TopbarProps)
                   <p className="text-xs text-muted-foreground">
                     {user?.status === 'away' && pauseTimeRemaining !== null 
                       ? `Pausa (${formatPauseTime(pauseTimeRemaining)})` 
-                      : user?.status === 'online' 
-                        ? 'Online' 
-                        : 'Offline'}
+                      : user?.status === 'online' ? 'Online' : 'Offline'}
                   </p>
                 </div>
                 <ChevronDown className="w-4 h-4 text-muted-foreground hidden md:block" />
@@ -415,60 +411,35 @@ export function Topbar({ title = 'Match Conversa', onOpenSidebar }: TopbarProps)
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>Minha Conta</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem 
-                className="cursor-pointer"
-                onClick={() => handleStatusChange('online')}
-              >
-                <span className="w-2 h-2 rounded-full bg-online mr-2" />
-                Online
+              <DropdownMenuItem className="cursor-pointer" onClick={() => handleStatusChange('online')}>
+                <span className="w-2 h-2 rounded-full bg-online mr-2" />Online
                 {user?.status === 'online' && <span className="ml-auto text-xs">✓</span>}
               </DropdownMenuItem>
-              <DropdownMenuItem 
-                className="cursor-pointer"
-                onClick={() => handleStatusChange('away')}
-              >
+              <DropdownMenuItem className="cursor-pointer" onClick={() => handleStatusChange('away')}>
                 <span className="w-2 h-2 rounded-full bg-away mr-2" />
                 <div className="flex items-center gap-1">
-                  <Timer className="w-3 h-3" />
-                  <span>Pausa</span>
+                  <Timer className="w-3 h-3" /><span>Pausa</span>
                   {user?.status === 'away' && pauseTimeRemaining !== null && (
-                    <span className="text-xs text-muted-foreground ml-1">
-                      ({formatPauseTime(pauseTimeRemaining)})
-                    </span>
+                    <span className="text-xs text-muted-foreground ml-1">({formatPauseTime(pauseTimeRemaining)})</span>
                   )}
-                  {user?.status !== 'away' && (
-                    <span className="text-xs text-muted-foreground ml-1">(1h05)</span>
-                  )}
+                  {user?.status !== 'away' && <span className="text-xs text-muted-foreground ml-1">(1h05)</span>}
                 </div>
                 {user?.status === 'away' && <span className="ml-auto text-xs">✓</span>}
               </DropdownMenuItem>
-              <DropdownMenuItem 
-                className="cursor-pointer"
-                onClick={() => handleStatusChange('offline')}
-              >
-                <span className="w-2 h-2 rounded-full bg-offline mr-2" />
-                Offline
+              <DropdownMenuItem className="cursor-pointer" onClick={() => handleStatusChange('offline')}>
+                <span className="w-2 h-2 rounded-full bg-offline mr-2" />Offline
                 {user?.status === 'offline' && <span className="ml-auto text-xs">✓</span>}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="cursor-pointer"
-                onSelect={() => handleOpenProfile()}
-              >
-                <User className="w-4 h-4 mr-2" />
-                Meu Perfil
+              <DropdownMenuItem className="cursor-pointer" onSelect={() => handleOpenProfile()}>
+                <User className="w-4 h-4 mr-2" />Meu Perfil
               </DropdownMenuItem>
-              <DropdownMenuItem
-                className="cursor-pointer"
-                onSelect={() => setSettingsOpen(true)}
-              >
-                <Settings className="w-4 h-4 mr-2" />
-                Configurações
+              <DropdownMenuItem className="cursor-pointer" onSelect={() => setSettingsOpen(true)}>
+                <Settings className="w-4 h-4 mr-2" />Configurações
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem className="cursor-pointer text-destructive" onClick={handleLogout}>
-                <LogOut className="w-4 h-4 mr-2" />
-                Sair
+                <LogOut className="w-4 h-4 mr-2" />Sair
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -493,39 +464,20 @@ export function Topbar({ title = 'Match Conversa', onOpenSidebar }: TopbarProps)
             </div>
             <div className="space-y-2">
               <Label htmlFor="profile-name">Nome</Label>
-              <Input 
-                id="profile-name"
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                placeholder="Seu nome"
-              />
+              <Input id="profile-name" value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Seu nome" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="profile-email">Email</Label>
-              <Input 
-                id="profile-email"
-                value={user?.email || ''}
-                disabled
-                className="bg-muted"
-              />
+              <Input id="profile-email" value={user?.email || ''} disabled className="bg-muted" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="profile-phone">Telefone</Label>
-              <Input 
-                id="profile-phone"
-                value={editPhone}
-                onChange={(e) => setEditPhone(e.target.value)}
-                placeholder="(00) 00000-0000"
-              />
+              <Input id="profile-phone" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} placeholder="(00) 00000-0000" />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setProfileOpen(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={handleSaveProfile} disabled={isSaving}>
-              {isSaving ? 'Salvando...' : 'Salvar'}
-            </Button>
+            <Button variant="secondary" onClick={() => setProfileOpen(false)}>Cancelar</Button>
+            <Button onClick={handleSaveProfile} disabled={isSaving}>{isSaving ? 'Salvando...' : 'Salvar'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -538,45 +490,22 @@ export function Topbar({ title = 'Match Conversa', onOpenSidebar }: TopbarProps)
             <DialogDescription>Configure suas preferências do aplicativo</DialogDescription>
           </DialogHeader>
           <div className="space-y-6 py-4">
-            {/* Theme Section */}
             <div className="space-y-3">
               <h3 className="text-sm font-medium text-foreground">Aparência</h3>
               <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/50">
                 <div className="flex items-center gap-3">
-                  {theme === 'dark' ? (
-                    <Moon className="w-5 h-5 text-muted-foreground" />
-                  ) : (
-                    <Sun className="w-5 h-5 text-muted-foreground" />
-                  )}
+                  {theme === 'dark' ? <Moon className="w-5 h-5 text-muted-foreground" /> : <Sun className="w-5 h-5 text-muted-foreground" />}
                   <div>
                     <p className="text-sm font-medium">Tema</p>
-                    <p className="text-xs text-muted-foreground">
-                      {theme === 'dark' ? 'Modo escuro ativado' : 'Modo claro ativado'}
-                    </p>
+                    <p className="text-xs text-muted-foreground">{theme === 'dark' ? 'Modo escuro ativado' : 'Modo claro ativado'}</p>
                   </div>
                 </div>
                 <div className="flex gap-1">
-                  <Button
-                    variant={theme === 'light' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setTheme('light')}
-                    className="h-8 px-3"
-                  >
-                    <Sun className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant={theme === 'dark' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setTheme('dark')}
-                    className="h-8 px-3"
-                  >
-                    <Moon className="w-4 h-4" />
-                  </Button>
+                  <Button variant={theme === 'light' ? 'default' : 'outline'} size="sm" onClick={() => setTheme('light')} className="h-8 px-3"><Sun className="w-4 h-4" /></Button>
+                  <Button variant={theme === 'dark' ? 'default' : 'outline'} size="sm" onClick={() => setTheme('dark')} className="h-8 px-3"><Moon className="w-4 h-4" /></Button>
                 </div>
               </div>
             </div>
-
-            {/* Notifications Section */}
             <div className="space-y-3">
               <h3 className="text-sm font-medium text-foreground">Notificações</h3>
               <div className="space-y-3">
@@ -594,63 +523,37 @@ export function Topbar({ title = 'Match Conversa', onOpenSidebar }: TopbarProps)
                       setNotificationsEnabled(checked);
                       if (checked) {
                         const permission = await requestNotificationPermission();
-                        if (permission === 'denied') {
-                          toast.error(getNotificationStatusMessage());
-                        } else if (permission === 'unsupported') {
-                          toast.warning(getNotificationStatusMessage());
-                        } else {
-                          toast.success('Notificações ativadas');
-                        }
+                        if (permission === 'denied') toast.error(getNotificationStatusMessage());
+                        else if (permission === 'unsupported') toast.warning(getNotificationStatusMessage());
+                        else toast.success('Notificações ativadas');
                       }
                     }}
                   />
                 </div>
               </div>
             </div>
-
-            {/* Sound Section */}
             <div className="space-y-3">
               <h3 className="text-sm font-medium text-foreground">Sons</h3>
               <div className="space-y-3">
                 <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/50">
                   <div className="flex items-center gap-3">
-                    {soundEnabled ? (
-                      <Volume2 className="w-5 h-5 text-muted-foreground" />
-                    ) : (
-                      <VolumeX className="w-5 h-5 text-muted-foreground" />
-                    )}
+                    {soundEnabled ? <Volume2 className="w-5 h-5 text-muted-foreground" /> : <VolumeX className="w-5 h-5 text-muted-foreground" />}
                     <div>
                       <p className="text-sm font-medium">Sons de notificação</p>
                       <p className="text-xs text-muted-foreground">Alertas sonoros para novas mensagens</p>
                     </div>
                   </div>
-                  <Switch
-                    checked={soundEnabled}
-                    onCheckedChange={setSoundEnabled}
-                  />
+                  <Switch checked={soundEnabled} onCheckedChange={setSoundEnabled} />
                 </div>
-
                 {soundEnabled && (
                   <div className="p-3 rounded-lg bg-secondary/50 space-y-3">
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-medium">Volume</p>
                       <span className="text-xs text-muted-foreground">{Math.round(soundVolume * 100)}%</span>
                     </div>
-                    <Slider
-                      value={[soundVolume]}
-                      onValueChange={([value]) => setSoundVolume(value)}
-                      max={1}
-                      step={0.1}
-                      className="w-full"
-                    />
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={handleTestSound}
-                      className="w-full"
-                    >
-                      <Volume2 className="w-4 h-4 mr-2" />
-                      Testar som
+                    <Slider value={[soundVolume]} onValueChange={([value]) => setSoundVolume(value)} max={1} step={0.1} className="w-full" />
+                    <Button variant="outline" size="sm" onClick={handleTestSound} className="w-full">
+                      <Volume2 className="w-4 h-4 mr-2" />Testar som
                     </Button>
                   </div>
                 )}
@@ -658,9 +561,28 @@ export function Topbar({ title = 'Match Conversa', onOpenSidebar }: TopbarProps)
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={() => setSettingsOpen(false)}>
-              Fechar
-            </Button>
+            <Button onClick={() => setSettingsOpen(false)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Alerts detail dialog */}
+      <Dialog open={showAlertsBanner} onOpenChange={setShowAlertsBanner}>
+        <DialogContent>
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><CalendarIcon className="w-5 h-5 text-primary" />Alertas de Reunião</DialogTitle></DialogHeader>
+          <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+            {appointmentAlerts.map(alert => (
+              <div key={alert.id} className="p-3 rounded-lg border bg-secondary/30 flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">{alert.title}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{alert.body}</p>
+                </div>
+                <Button size="sm" variant="outline" className="shrink-0 h-7 text-xs" onClick={() => markAlertRead(alert.id)}>Entendi</Button>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => { markAllAlertsRead(); setShowAlertsBanner(false); }}>Marcar todos como lidos</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

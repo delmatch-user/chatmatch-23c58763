@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Bell, CheckCircle2, Clock, ChevronDown, ChevronRight } from 'lucide-react';
+import { Bell, CheckCircle2, Clock, ChevronDown, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useAppointmentAlerts } from '@/hooks/useAppointmentAlerts';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -23,6 +25,7 @@ const Notifications = () => {
   const [notifications, setNotifications] = useState<AgentNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const { alerts: appointmentAlerts, markAsRead: markAlertRead } = useAppointmentAlerts();
 
   const fetchNotifications = async () => {
     if (!user) return;
@@ -95,6 +98,38 @@ const Notifications = () => {
             </p>
           </div>
         </div>
+        {/* Appointment Alerts */}
+        {appointmentAlerts.length > 0 && (
+          <div className="space-y-3">
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+              <CalendarIcon className="w-4 h-4" /> Alertas de Reunião
+            </h2>
+            {appointmentAlerts.map(alert => (
+              <Card key={alert.id} className="border-primary/40 bg-primary/5">
+                <CardContent className="pt-4 pb-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-primary/15 flex items-center justify-center shrink-0 mt-0.5">
+                        <CalendarIcon className="w-4 h-4 text-primary" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">{alert.title}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{alert.body}</p>
+                        <p className="text-[10px] text-muted-foreground mt-1">
+                          {format(new Date(alert.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                        </p>
+                      </div>
+                    </div>
+                    <Button size="sm" variant="outline" className="shrink-0 h-7 text-xs" onClick={() => markAlertRead(alert.id)}>
+                      Entendi
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+
 
         {loading ? (
           <div className="space-y-3">
