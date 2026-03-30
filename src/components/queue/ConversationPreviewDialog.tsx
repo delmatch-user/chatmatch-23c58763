@@ -154,9 +154,9 @@ export function ConversationPreviewDialog({
 
   useEffect(() => {
     if (open && !isLoadingMessages) {
-      setTimeout(scrollToBottom, 100);
+      requestAnimationFrame(() => scrollToBottom());
     }
-  }, [open, isLoadingMessages, scrollToBottom]);
+  }, [open, isLoadingMessages, realMessages, scrollToBottom]);
 
   const formatDateLabel = (date: Date) => {
     if (isToday(date)) return 'Hoje';
