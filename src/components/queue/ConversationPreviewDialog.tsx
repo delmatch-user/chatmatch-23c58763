@@ -281,8 +281,8 @@ export function ConversationPreviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
-        <DialogHeader className="border-b border-border pb-4">
+      <DialogContent className="sm:max-w-2xl h-[90vh] max-h-[90vh] flex flex-col overflow-hidden">
+        <DialogHeader className="shrink-0 border-b border-border pb-4">
           <div className="flex items-center gap-4">
             <div className="relative">
               <Avatar className="h-12 w-12">
