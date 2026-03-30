@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Loader2, Calendar as CalendarIcon, Clock, X, Video, FileText, AlertCircle, CheckCircle2, ExternalLink } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Loader2, Calendar as CalendarIcon, Clock, X, Video, FileText, AlertCircle, CheckCircle2, ExternalLink, Users } from 'lucide-react';
 import { sdrApi, SDRAppointment } from '@/services/sdrApi';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
+import { useApp } from '@/contexts/AppContext';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -11,19 +13,28 @@ import { MainLayout } from '@/components/layout/MainLayout';
 
 type ViewMode = 'month' | 'week';
 
+interface DeptMember {
+  id: string;
+  name: string;
+}
+
 export default function SDRSchedulingPage() {
+  const { isAdmin, isSupervisor } = useAuth();
+  const { user } = useApp();
+  const canAssign = isAdmin || isSupervisor;
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [appointments, setAppointments] = useState<SDRAppointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [formData, setFormData] = useState({ title: '', time: '09:00', type: 'meeting', description: '', duration: 60 });
+  const [formData, setFormData] = useState({ title: '', time: '09:00', type: 'meeting', description: '', duration: 60, assignedTo: '' });
   const [isSaving, setIsSaving] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<SDRAppointment | null>(null);
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportData, setReportData] = useState<{ transcription_summary?: string; processing_status?: string } | null>(null);
   const [googleStatus, setGoogleStatus] = useState<{ connected: boolean; email?: string; expired?: boolean } | null>(null);
+  const [deptMembers, setDeptMembers] = useState<DeptMember[]>([]);
 
   const loadData = async () => {
     try {
@@ -41,6 +52,23 @@ export default function SDRSchedulingPage() {
     const ch = supabase.channel('sdr-appointments').on('postgres_changes', { event: '*', schema: 'public', table: 'sdr_appointments' }, loadData).subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
+
+  // Load department members for supervisors/admins
+  useEffect(() => {
+    if (!canAssign || !user?.departments?.length) return;
+    const loadMembers = async () => {
+      const { data } = await supabase
+        .from('profile_departments')
+        .select('profile_id, profiles!inner(id, name)')
+        .in('department_id', user.departments);
+      if (data) {
+        const members = data.map((d: any) => ({ id: d.profiles.id, name: d.profiles.name }));
+        const unique = Array.from(new Map(members.map((m: DeptMember) => [m.id, m])).values());
+        setDeptMembers(unique);
+      }
+    };
+    loadMembers();
+  }, [canAssign, user?.departments]);
 
   const navigateDate = (dir: number) => {
     const d = new Date(currentDate);
@@ -80,13 +108,14 @@ export default function SDRSchedulingPage() {
           time: formData.time,
           duration: formData.duration,
           type: formData.type,
+          ...(formData.assignedTo ? { assigned_to: formData.assignedTo } : {}),
         }),
       });
       const result = await res.json();
       if (result.error) throw new Error(result.error);
       toast.success(result.google_meet_url ? 'Agendamento criado com Google Meet!' : 'Agendamento criado!');
       setShowModal(false);
-      setFormData({ title: '', time: '09:00', type: 'meeting', description: '', duration: 60 });
+      setFormData({ title: '', time: '09:00', type: 'meeting', description: '', duration: 60, assignedTo: '' });
     } catch (err: any) {
       toast.error(err.message || 'Erro ao criar');
     } finally { setIsSaving(false); }
@@ -220,7 +249,7 @@ export default function SDRSchedulingPage() {
                           if (a.processingStatus === 'completed') handleViewReport(a);
                           else if (a.status === 'scheduled') handleDelete(a.id);
                         }}>
-                          {a.time.slice(0, 5)} - {a.title}
+                          {a.time.slice(0, 5)} - {a.title}{a.userName ? ` [${a.userName.split(' ')[0]}]` : ''}
                         </span>
                         {a.googleMeetUrl && <Video className="w-2.5 h-2.5 flex-shrink-0 text-primary" />}
                         {getProcessingBadge(a.processingStatus)}
@@ -270,6 +299,19 @@ export default function SDRSchedulingPage() {
                 <label className="text-sm font-medium">Descrição</label>
                 <Input value={formData.description} onChange={e => setFormData(p => ({ ...p, description: e.target.value }))} placeholder="Detalhes opcionais" />
               </div>
+              {canAssign && deptMembers.length > 0 && (
+                <div>
+                  <label className="text-sm font-medium flex items-center gap-1.5"><Users className="w-3.5 h-3.5" />Atribuir para</label>
+                  <Select value={formData.assignedTo} onValueChange={v => setFormData(p => ({ ...p, assignedTo: v }))}>
+                    <SelectTrigger><SelectValue placeholder="Selecionar atendente" /></SelectTrigger>
+                    <SelectContent>
+                      {deptMembers.map(m => (
+                        <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setShowModal(false)}>Cancelar</Button>
                 <Button type="submit" disabled={isSaving || !formData.title.trim()}>{isSaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}Criar</Button>

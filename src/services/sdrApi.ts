@@ -66,6 +66,8 @@ export interface SDRAppointment {
   transcriptionSummary?: string;
   status: string;
   metadata?: Record<string, any>;
+  userId?: string;
+  userName?: string;
 }
 
 export interface SDRLostReason {
@@ -299,7 +301,7 @@ export const sdrApi = {
   fetchAppointments: async (): Promise<SDRAppointment[]> => {
     const { data, error } = await supabase
       .from('sdr_appointments')
-      .select('*, contact:contacts(name, phone)')
+      .select('*, contact:contacts(name, phone), assigned_user:profiles!sdr_appointments_user_id_fkey(name)')
       .order('date').order('time');
     if (error) throw error;
     return (data || []).map((a: any) => ({
@@ -311,6 +313,7 @@ export const sdrApi = {
       googleEventId: a.google_event_id || undefined, processingStatus: a.processing_status || undefined,
       transcriptionSummary: a.transcription_summary || undefined,
       status: a.status, metadata: a.metadata as any,
+      userId: a.user_id || undefined, userName: a.assigned_user?.name || undefined,
     }));
   },
 
