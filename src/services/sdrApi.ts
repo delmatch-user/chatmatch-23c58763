@@ -65,6 +65,7 @@ export interface SDRAppointment {
   processingStatus?: string;
   transcriptionSummary?: string;
   status: string;
+  taskStatus: string;
   metadata?: Record<string, any>;
   userId?: string;
   userName?: string;
@@ -312,7 +313,7 @@ export const sdrApi = {
       meetingUrl: a.meeting_url || undefined, googleMeetUrl: a.google_meet_url || undefined,
       googleEventId: a.google_event_id || undefined, processingStatus: a.processing_status || undefined,
       transcriptionSummary: a.transcription_summary || undefined,
-      status: a.status, metadata: a.metadata as any,
+      status: a.status, taskStatus: a.task_status || 'pending', metadata: a.metadata as any,
       userId: a.user_id || undefined, userName: a.assigned_user?.name || undefined,
     }));
   },
@@ -334,6 +335,11 @@ export const sdrApi = {
 
   deleteAppointment: async (id: string) => {
     const { error } = await supabase.from('sdr_appointments').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  updateTaskStatus: async (id: string, taskStatus: string) => {
+    const { error } = await supabase.from('sdr_appointments').update({ task_status: taskStatus } as any).eq('id', id);
     if (error) throw error;
   },
 
