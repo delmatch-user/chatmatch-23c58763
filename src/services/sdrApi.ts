@@ -338,6 +338,11 @@ export const sdrApi = {
     if (error) throw error;
   },
 
+  updateTaskStatus: async (id: string, taskStatus: string) => {
+    const { error } = await supabase.from('sdr_appointments').update({ task_status: taskStatus } as any).eq('id', id);
+    if (error) throw error;
+  },
+
   // Dashboard metrics
   fetchDashboardMetrics: async (days: number = 1): Promise<SDRStatMetric[]> => {
     const now = new Date();
