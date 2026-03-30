@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, DollarSign, Loader2, CalendarClock, Tag, Settings, MoreHorizontal, X, FileText, Phone, CheckCircle2, Circle, Trash2, Clock, MessageSquare, RotateCcw, MapPin } from 'lucide-react';
+import { Plus, Search, DollarSign, Loader2, CalendarClock, Tag, Settings, MoreHorizontal, X, FileText, Phone, CheckCircle2, Circle, Trash2, Clock, MessageSquare, RotateCcw, MapPin, Eye } from 'lucide-react';
 import { sdrApi, SDRDeal, SDRPipelineStage, SDRDealActivity } from '@/services/sdrApi';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
