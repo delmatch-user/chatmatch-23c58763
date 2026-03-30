@@ -248,7 +248,61 @@ export function Topbar({ title = 'Match Conversa', onOpenSidebar }: TopbarProps)
 
   return (
     <>
-      <header className="h-16 bg-card border-b border-border flex items-center justify-between px-4 sm:px-6">
+      {/* Appointment Alerts Banner */}
+      {alertsUnreadCount > 0 && (
+        <div className="fixed top-0 left-0 right-0 z-[100] bg-primary/95 text-primary-foreground px-4 py-2 flex items-center justify-between shadow-lg">
+          <div className="flex items-center gap-2">
+            <CalendarIcon className="w-4 h-4" />
+            <span className="text-sm font-medium">
+              {alertsUnreadCount === 1 ? appointmentAlerts[0]?.title : `${alertsUnreadCount} alertas de reunião pendentes`}
+            </span>
+            {alertsUnreadCount === 1 && (
+              <span className="text-xs opacity-80 ml-2">{appointmentAlerts[0]?.body}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {alertsUnreadCount > 1 && (
+              <Button size="sm" variant="secondary" className="h-7 text-xs" onClick={() => setShowAlertsBanner(true)}>
+                Ver todos
+              </Button>
+            )}
+            <Button size="sm" variant="secondary" className="h-7 text-xs" onClick={() => {
+              if (alertsUnreadCount === 1) markAlertRead(appointmentAlerts[0].id);
+              else markAllAlertsRead();
+            }}>
+              Entendi ✓
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Alerts detail dialog */}
+      <Dialog open={showAlertsBanner} onOpenChange={setShowAlertsBanner}>
+        <DialogContent>
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><CalendarIcon className="w-5 h-5 text-primary" />Alertas de Reunião</DialogTitle></DialogHeader>
+          <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+            {appointmentAlerts.map(alert => (
+              <div key={alert.id} className="p-3 rounded-lg border bg-secondary/30 flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">{alert.title}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{alert.body}</p>
+                </div>
+                <Button size="sm" variant="outline" className="shrink-0 h-7 text-xs" onClick={() => markAlertRead(alert.id)}>
+                  Entendi
+                </Button>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => { markAllAlertsRead(); setShowAlertsBanner(false); }}>Marcar todos como lidos</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+    </>
+  );
+}
+
         <div className="flex items-center gap-3 sm:gap-4 min-w-0">
           {onOpenSidebar && (
             <Button
