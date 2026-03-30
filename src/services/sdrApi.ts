@@ -32,6 +32,7 @@ export interface SDRDeal {
   wonAt?: string;
   lostAt?: string;
   lostReason?: string;
+  createdAt?: string;
 }
 
 export interface SDRDealActivity {
@@ -209,7 +210,7 @@ export const sdrApi = {
       ownerId: d.owner_id, ownerName: d.owner?.name,
       ownerAvatar: d.owner?.avatar_url || `https://ui-avatars.com/api/?name=NA&background=334155&color=fff`,
       tags: d.tags || [], dueDate: d.due_date, priority: (d.priority || 'medium') as 'low' | 'medium' | 'high',
-      wonAt: d.won_at, lostAt: d.lost_at, lostReason: d.lost_reason,
+      wonAt: d.won_at, lostAt: d.lost_at, lostReason: d.lost_reason, createdAt: d.created_at,
     }));
   },
 

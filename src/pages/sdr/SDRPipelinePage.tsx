@@ -142,7 +142,7 @@ export default function SDRPipelinePage() {
         <div className="flex-1 overflow-x-auto overflow-y-hidden pb-4">
           <div className="flex h-full gap-4 min-w-max">
             {stages.map(col => {
-              const colDeals = filteredDeals.filter(d => d.stageId === col.id);
+              const colDeals = filteredDeals.filter(d => d.stageId === col.id).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
               const total = colDeals.reduce((a, c) => a + c.value, 0);
               const isWon = col.title === 'Ganho', isLost = col.title === 'Perdido';
               return (
