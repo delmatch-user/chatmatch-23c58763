@@ -1,62 +1,104 @@
 
 
-# Supervisor atribuir tarefas na agenda para atendentes do departamento
+# Alertas de reunião atribuída para atendentes
 
 ## Problema
-1. **SDRRoute** só permite acesso a quem está no departamento "Comercial" — supervisores de outros departamentos (como "Cardápio Digital") não conseguem acessar
-2. **RLS de `sdr_appointments`** mesma restrição — só "Comercial" ou admin
-3. **Edge function** sempre seta `user_id` como o usuário autenticado — não permite atribuir a outro membro
-4. **UI** não tem campo para selecionar o atendente que receberá a tarefa
+Quando o supervisor/admin atribui uma reunião na agenda para um atendente, este não recebe nenhum alerta. Precisamos:
+1. Alerta diário (lembrete das reuniões do dia)
+2. Alerta 30 minutos antes da reunião
+3. Confirmação de leitura em ambos
 
 ## Mudanças
 
-### 1. `src/components/sdr/SDRRoute.tsx` — Permitir supervisores acessarem
-
-Adicionar verificação: se o usuário é supervisor (`isSupervisor`), permitir acesso à rota SDR (agenda). Isso permite que Fabio (supervisor) acesse `/comercial/agenda`.
-
-### 2. Migration — Expandir RLS de `sdr_appointments`
-
-Adicionar policy para supervisores poderem gerenciar appointments de membros dos seus departamentos:
+### 1. Nova tabela `appointment_alerts` (migration)
 
 ```sql
--- Supervisores podem gerenciar agendamentos
-CREATE POLICY "Supervisors can manage sdr_appointments"
-ON public.sdr_appointments FOR ALL TO authenticated
-USING (has_role(auth.uid(), 'supervisor'::app_role))
-WITH CHECK (has_role(auth.uid(), 'supervisor'::app_role));
+CREATE TABLE public.appointment_alerts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  appointment_id uuid NOT NULL,
+  user_id uuid NOT NULL,
+  alert_type text NOT NULL DEFAULT 'daily', -- 'daily' | '30min'
+  title text NOT NULL,
+  body text NOT NULL,
+  is_read boolean NOT NULL DEFAULT false,
+  read_at timestamptz,
+  scheduled_for timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.appointment_alerts ENABLE ROW LEVEL SECURITY;
+
+-- Atendentes veem e atualizam seus alertas
+CREATE POLICY "Users can view own alerts" ON public.appointment_alerts
+  FOR SELECT TO authenticated USING (user_id = auth.uid());
+
+CREATE POLICY "Users can update own alerts" ON public.appointment_alerts
+  FOR UPDATE TO authenticated USING (user_id = auth.uid());
+
+-- Admins/supervisores podem inserir e gerenciar
+CREATE POLICY "Admins supervisors can manage alerts" ON public.appointment_alerts
+  FOR ALL TO authenticated
+  USING (has_role(auth.uid(), 'admin'::app_role) OR has_role(auth.uid(), 'supervisor'::app_role))
+  WITH CHECK (has_role(auth.uid(), 'admin'::app_role) OR has_role(auth.uid(), 'supervisor'::app_role));
+
+-- Service role insert (para edge function de cron)
+CREATE POLICY "Service can insert alerts" ON public.appointment_alerts
+  FOR INSERT TO public WITH CHECK (true);
+
+ALTER PUBLICATION supabase_realtime ADD TABLE public.appointment_alerts;
 ```
 
-### 3. `supabase/functions/sdr-meeting-create-with-meet/index.ts` — Aceitar `assigned_to`
+### 2. Edge function `appointment-alerts-cron` (nova)
 
-Aceitar campo `assigned_to` no body. Se fornecido (e o usuário é supervisor/admin), usar esse ID como `user_id` do appointment. Caso contrário, manter `user.id`.
+Chamada por cron a cada 15 minutos. Faz duas verificações:
+- **Alerta diário**: às 8h (horário de Brasília), cria alertas para reuniões do dia que ainda não foram alertadas
+- **Alerta 30min**: cria alertas para reuniões que começam nos próximos 30-45 minutos
 
-### 4. `src/pages/sdr/SDRSchedulingPage.tsx` — UI de atribuição
+Lógica: consulta `sdr_appointments` com `status = 'scheduled'`, verifica se já existe alerta do mesmo tipo para aquele appointment+user, insere se não existir.
 
-- Carregar membros do departamento do supervisor (via `profile_departments` + `profiles`)
-- No modal de criação, se o usuário é supervisor, mostrar `<Select>` com os atendentes do departamento
-- Enviar `assigned_to` na chamada à edge function
-- No calendário, mostrar o nome do atendente atribuído nos cards (ex: "09:00 - Demo [Yasmin]")
+### 3. Cron job (SQL insert)
 
-### Detalhes
-
-**Carregamento de membros:**
-```typescript
-// No useEffect, se supervisor:
-const { data } = await supabase
-  .from('profile_departments')
-  .select('profile_id, profiles!inner(id, name)')
-  .in('department_id', userDepartmentIds);
+```sql
+SELECT cron.schedule('appointment-alerts', '*/15 * * * *', $$
+  SELECT net.http_post(
+    url:='https://jfbixwfioehqkussmhov.supabase.co/functions/v1/appointment-alerts-cron',
+    headers:='{"Content-Type":"application/json","Authorization":"Bearer <anon_key>"}'::jsonb,
+    body:='{"time":"now"}'::jsonb
+  );
+$$);
 ```
 
-**Form atualizado:**
-```typescript
-formData: { ...existing, assignedTo: '' }
-// Select no modal: "Atribuir para:" com lista de membros
-```
+### 4. `src/pages/sdr/SDRSchedulingPage.tsx` — Inserir alerta ao criar
 
-**Edge function:**
-```typescript
-const targetUserId = (assigned_to && isAdminOrSupervisor) ? assigned_to : user.id;
-// ... insert com user_id: targetUserId
+Quando `formData.assignedTo` é preenchido (supervisor atribuindo), inserir imediatamente um alerta `daily` para o atendente na `appointment_alerts`.
+
+### 5. `src/components/layout/Topbar.tsx` — Banner de alerta de reunião
+
+Adicionar hook que:
+- Escuta `appointment_alerts` via realtime para o `user_id` logado
+- Busca alertas não lidos ao montar
+- Mostra um banner/dialog com os alertas pendentes (título, horário, tipo)
+- Botão "Entendi" marca `is_read = true` e `read_at = now()`
+- Também dispara notificação nativa via `sendNativeNotification`
+
+### 6. `src/pages/Notifications.tsx` — Mostrar alertas de reunião
+
+Adicionar seção ou mesclar alertas de reunião na lista de notificações existente, diferenciando pelo ícone (Calendar vs Bell).
+
+## Fluxo
+
+```text
+Supervisor cria reunião atribuída a Yasmin
+  → Insere em sdr_appointments (user_id = Yasmin)
+  → Insere alerta imediato em appointment_alerts (type='assigned')
+  
+Cron a cada 15min:
+  → 8h: cria alertas 'daily' para reuniões do dia
+  → 30min antes: cria alertas '30min'
+  
+Yasmin abre o sistema:
+  → Topbar mostra banner com alertas pendentes
+  → Clica "Entendi" → marca como lido
+  → Notificação nativa enviada (background/PWA)
 ```
 
