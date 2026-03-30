@@ -131,6 +131,7 @@ const Notifications = () => {
         )}
 
 
+        {loading ? (
           <div className="space-y-3">
             {[1, 2, 3].map(i => (
               <Card key={i}><CardContent className="h-20 animate-pulse bg-muted/30" /></Card>
