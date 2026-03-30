@@ -54,7 +54,7 @@ export interface SDRAppointment {
   date: string;
   time: string;
   duration: number;
-  type: 'demo' | 'meeting' | 'support' | 'followup';
+  type: 'meeting' | 'franquia' | 'support' | 'cardapio' | 'implantacao';
   attendees: string[];
   contactId?: string;
   contactName?: string;
