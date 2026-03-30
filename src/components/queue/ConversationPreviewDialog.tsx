@@ -445,7 +445,7 @@ export function ConversationPreviewDialog({
         </ScrollArea>
 
         {/* Footer */}
-        <div className="border-t border-border pt-4 flex items-center justify-between">
+        <div className="shrink-0 border-t border-border pt-4 flex items-center justify-between">
           <div className="flex items-center gap-2 flex-wrap">
             {conversation.tags.map((tag) => (
               <span 
