@@ -236,9 +236,14 @@ export default function SDRPipelinePage() {
                   </div>
                 )}
                 {linkedConversationId && (
-                  <Button variant="outline" className="w-full" onClick={handleGoToConversation}>
-                    <MessageSquare className="w-4 h-4 mr-2" />Ir para Conversa
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button variant="outline" className="flex-1" onClick={() => setIsPreviewOpen(true)}>
+                      <Eye className="w-4 h-4 mr-2" />Preview
+                    </Button>
+                    <Button variant="outline" className="flex-1" onClick={handleGoToConversation}>
+                      <MessageSquare className="w-4 h-4 mr-2" />Ir para Conversa
+                    </Button>
+                  </div>
                 )}
                 <div className="flex gap-2">
                   <Button className="flex-1" variant="outline" onClick={handleMarkWon}><CheckCircle2 className="w-4 h-4 mr-2 text-emerald-500" />Ganho</Button>
