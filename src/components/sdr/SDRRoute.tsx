@@ -8,7 +8,7 @@ interface SDRRouteProps {
 }
 
 export function SDRRoute({ children }: SDRRouteProps) {
-  const { user: authUser, isLoading, isAdmin } = useAuth();
+  const { user: authUser, isLoading, isAdmin, isSupervisor } = useAuth();
   const { user, departments, loading: appLoading } = useApp();
 
   // Wait for both auth AND app context to finish loading
@@ -27,8 +27,8 @@ export function SDRRoute({ children }: SDRRouteProps) {
     return <Navigate to="/login" replace />;
   }
 
-  // Admin always has access
-  if (isAdmin) {
+  // Admin and supervisors always have access
+  if (isAdmin || isSupervisor) {
     return <>{children}</>;
   }
 

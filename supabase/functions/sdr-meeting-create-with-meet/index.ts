@@ -31,7 +31,20 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    const { title, description, date, time, duration, type, attendees, contact_id } = body;
+    const { title, description, date, time, duration, type, attendees, contact_id, assigned_to } = body;
+
+    // Check if caller is admin or supervisor to allow assigning to another user
+    let targetUserId = user.id;
+    if (assigned_to && assigned_to !== user.id) {
+      const { data: callerRoles } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user.id)
+        .in('role', ['admin', 'supervisor']);
+      if (callerRoles && callerRoles.length > 0) {
+        targetUserId = assigned_to;
+      }
+    }
 
     if (!title || !date) {
       return new Response(JSON.stringify({ error: "title and date required" }), {
