@@ -1,23 +1,32 @@
 
 
-# Ordenar leads por data (mais recentes primeiro)
+# Melhorar scroll do preview de conversa no lead
 
-## Situação atual
-A API já busca os deals com `.order('created_at', { ascending: false })`, mas o campo `createdAt` não é mapeado para o objeto `SDRDeal`, então não há garantia de ordenação client-side após atualizações em tempo real.
+## Problema
+O `ScrollArea` tem `max-h-[45vh]` e o `DialogContent` tem `max-h-[80vh]`, o que pode estar limitando a área visível das mensagens. O scroll existe mas a área é pequena demais para conversas longas.
 
-## Mudanças
+## Mudança
 
-### 1. `src/services/sdrApi.ts` — Mapear `createdAt` no SDRDeal
-- Adicionar `createdAt?: string` na interface `SDRDeal`
-- No `fetchPipeline`, mapear `createdAt: d.created_at`
+**`src/components/queue/ConversationPreviewDialog.tsx`**:
+- Aumentar `max-h` do `DialogContent` de `80vh` para `90vh`
+- Aumentar `max-h` do `ScrollArea` de `45vh` para `60vh`
+- Adicionar `overflow-y-auto` explícito no viewport para garantir scroll funcional
 
-### 2. `src/pages/sdr/SDRPipelinePage.tsx` — Ordenar explicitamente por data
-- No render de cada coluna, ordenar `colDeals` por `createdAt` descendente:
-```typescript
-const colDeals = filteredDeals
-  .filter(d => d.stageId === col.id)
-  .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+Linha 284:
+```tsx
+// De:
+<DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col">
+// Para:
+<DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
 ```
 
-Isso garante que mesmo após drag-and-drop ou atualização em tempo real, os leads mais recentes sempre aparecem no topo de cada coluna.
+Linha 355:
+```tsx
+// De:
+<ScrollArea className="flex-1 min-h-0 max-h-[45vh]" viewportRef={scrollViewportRef}>
+// Para:
+<ScrollArea className="flex-1 min-h-0 max-h-[60vh]" viewportRef={scrollViewportRef}>
+```
+
+Isso dá mais espaço vertical para as mensagens e garante que o scroll funcione adequadamente para conversas longas.
 
