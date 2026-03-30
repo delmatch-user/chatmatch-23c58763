@@ -110,7 +110,7 @@ serve(async (req) => {
       title, description, date, time: time || "09:00",
       duration: duration || 60, type: type || "meeting",
       attendees: attendees || [], contact_id: contact_id || null,
-      user_id: user.id, status: "scheduled",
+      user_id: targetUserId, status: "scheduled",
       meeting_url: googleMeetUrl, google_meet_url: googleMeetUrl, google_event_id: googleEventId,
     }).select().single();
 
