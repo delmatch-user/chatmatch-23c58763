@@ -12,6 +12,7 @@ import { SDRPipelineSettingsModal } from '@/components/sdr/SDRPipelineSettingsMo
 import { getTagColorClasses } from '@/lib/tagColors';
 import { useApp } from '@/contexts/AppContext';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { ConversationPreviewDialog } from '@/components/queue/ConversationPreviewDialog';
 
 export default function SDRPipelinePage() {
   const navigate = useNavigate();
