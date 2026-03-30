@@ -163,6 +163,11 @@ export default function SDRPipelinePage() {
                           <span className={`text-[9px] px-1.5 py-0.5 rounded border font-medium ${getPriorityColor(deal.priority)}`}>
                             {deal.priority === 'high' ? 'Alta' : deal.priority === 'medium' ? 'Média' : 'Baixa'}
                           </span>
+                          {deal.createdAt && (
+                            <span className="text-[9px] text-muted-foreground">
+                              {new Date(deal.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                            </span>
+                          )}
                         </div>
                         <h4 className="font-semibold text-sm mb-0.5 leading-tight">{deal.title}</h4>
                         <p className="text-[10px] text-muted-foreground mb-1">{deal.company}</p>
