@@ -205,7 +205,7 @@ export function ConversationPreviewDialog({
     const isMediaType = mediaTypes.includes(msgType);
     
     if (!isMediaType) {
-      return <p className="whitespace-pre-wrap break-words">{message.content}</p>;
+      return <p className="whitespace-pre-wrap break-words">{formatWhatsAppText(message.content)}</p>;
     }
     
     const content = message.content?.trim() || '';
