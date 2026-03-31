@@ -73,6 +73,15 @@ export function MessageAttachment({ attachments, messageId }: MessageAttachmentP
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const getDocIcon = (name?: string) => {
+    const ext = name?.split('.').pop()?.toLowerCase();
+    if (ext && ['xlsx', 'xls', 'csv'].includes(ext)) return <FileSpreadsheet className="w-5 h-5 text-green-600 flex-shrink-0" />;
+    if (ext === 'pdf') return <FileText className="w-5 h-5 text-red-500 flex-shrink-0" />;
+    if (ext && ['doc', 'docx'].includes(ext)) return <FileText className="w-5 h-5 text-blue-500 flex-shrink-0" />;
+    if (ext === 'txt') return <FileText className="w-5 h-5 text-muted-foreground flex-shrink-0" />;
+    return <FileText className="w-5 h-5 text-muted-foreground flex-shrink-0" />;
+  };
+
   const renderAttachment = (attachment: AttachmentData, url: string | null) => {
     const isStory = attachment.isStoryMention;
 
