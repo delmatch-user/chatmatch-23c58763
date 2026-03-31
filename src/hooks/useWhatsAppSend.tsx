@@ -13,6 +13,81 @@ interface WhatsAppConnection {
   status: string;
 }
 
+interface NormalizedSendError {
+  code: string;
+  message: string;
+}
+
+function extractFunctionErrorMessage(rawMessage?: string): string {
+  if (!rawMessage) return 'Falha ao enviar mensagem';
+
+  const trimmed = rawMessage.trim();
+  const jsonMatch = trimmed.match(/(\{[\s\S]*\})$/);
+  if (!jsonMatch) return trimmed;
+
+  try {
+    const parsed = JSON.parse(jsonMatch[1]);
+    if (typeof parsed?.error === 'string' && parsed.error.trim()) {
+      return parsed.error.trim();
+    }
+  } catch {
+    // Ignora erro de parse e mantém a mensagem original
+  }
+
+  return trimmed;
+}
+
+function normalizeInstagramSendError(rawMessage?: string, fallbackCode = 'INSTAGRAM_SEND_ERROR'): NormalizedSendError {
+  const message = extractFunctionErrorMessage(rawMessage);
+  const normalized = message.toLowerCase();
+
+  if (
+    normalized.includes('instagram_manage_messages') &&
+    normalized.includes('função no app')
+  ) {
+    return {
+      code: 'INSTAGRAM_PERMISSION_REQUIRED',
+      message:
+        'Não foi possível enviar no Instagram: o app da Meta ainda não tem permissão avançada para conversar com esse usuário. Adicione o destinatário como testador do app ou solicite Advanced Access para instagram_manage_messages.',
+    };
+  }
+
+  return {
+    code: fallbackCode,
+    message,
+  };
+}
+
+async function parseFunctionInvokeError(
+  error: unknown,
+  fallbackCode = 'INSTAGRAM_SEND_ERROR'
+): Promise<NormalizedSendError> {
+  const invokeError = error as {
+    context?: string | { text?: () => Promise<string> };
+    message?: string;
+  };
+
+  try {
+    if (invokeError?.context) {
+      const bodyText =
+        typeof invokeError.context === 'string'
+          ? invokeError.context
+          : typeof invokeError.context?.text === 'function'
+            ? await invokeError.context.text()
+            : JSON.stringify(invokeError.context);
+
+      const parsed = JSON.parse(bodyText);
+      if (typeof parsed?.error === 'string' && parsed.error.trim()) {
+        return normalizeInstagramSendError(parsed.error, parsed?.errorCode || fallbackCode);
+      }
+    }
+  } catch {
+    // Se não conseguir ler o body, faz fallback para a message do erro
+  }
+
+  return normalizeInstagramSendError(invokeError?.message, fallbackCode);
+}
+
 // Cache global de JIDs para evitar lookups repetidos
 const jidCache = new Map<string, string>();
 
@@ -395,25 +470,45 @@ export function useWhatsAppSend() {
     // Para mídias, a "message" contém a URL do arquivo
     const isMedia = ['image', 'video', 'file'].includes(type);
 
-    const { data, error } = await supabase.functions.invoke('instagram-send', {
-      body: {
-        page_id: pageId,
-        ig_account_id: igAccountId,
-        recipient_id: cleanRecipientId,
-        message: isMedia ? '' : message,
-        type: type,
-        media_url: isMedia ? message : undefined
-      },
-    });
+    let data: any = null;
+    let error: unknown = null;
+
+    try {
+      const response = await supabase.functions.invoke('instagram-send', {
+        body: {
+          page_id: pageId,
+          ig_account_id: igAccountId,
+          recipient_id: cleanRecipientId,
+          message: isMedia ? '' : message,
+          type: type,
+          media_url: isMedia ? message : undefined
+        },
+      });
+
+      data = response.data;
+      error = response.error;
+    } catch (invokeError) {
+      const normalizedError = await parseFunctionInvokeError(invokeError, 'INSTAGRAM_SEND_ERROR');
+      const err = new Error(normalizedError.message);
+      (err as Error & { code?: string }).code = normalizedError.code;
+      console.error('[Instagram] Erro ao enviar:', invokeError);
+      return { data: null, error: err };
+    }
 
     if (error) {
       console.error('[Instagram] Erro ao enviar:', error);
-      return { data: null, error };
+      const normalizedError = await parseFunctionInvokeError(error, 'INSTAGRAM_SEND_ERROR');
+      const err = new Error(normalizedError.message);
+      (err as Error & { code?: string }).code = normalizedError.code;
+      return { data: null, error: err };
     }
 
     if (data && !data.success) {
       console.error('[Instagram] Falha no envio:', data.error);
-      return { data: null, error: new Error(data.error || 'Falha ao enviar mensagem') };
+      const normalizedError = normalizeInstagramSendError(data.error, data.errorCode || 'INSTAGRAM_API_ERROR');
+      const err = new Error(normalizedError.message);
+      (err as Error & { code?: string }).code = normalizedError.code;
+      return { data: null, error: err };
     }
 
     console.log('[Instagram] Mensagem enviada com sucesso:', data);
