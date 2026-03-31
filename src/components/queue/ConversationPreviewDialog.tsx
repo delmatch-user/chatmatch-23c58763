@@ -277,7 +277,7 @@ export function ConversationPreviewDialog({
       );
     }
     
-    return <p className="whitespace-pre-wrap break-words">{message.content}</p>;
+    return <p className="whitespace-pre-wrap break-words">{formatWhatsAppText(message.content)}</p>;
   };
 
   return (

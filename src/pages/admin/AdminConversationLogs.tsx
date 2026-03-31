@@ -847,7 +847,7 @@ export default function AdminConversationLogs() {
                                           return <MessageAttachment attachments={parsed} />;
                                         }
                                       } catch {}
-                                      return <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>;
+                                      return <p className="text-sm whitespace-pre-wrap break-words">{formatWhatsAppText(msg.content)}</p>;
                                     })()}
                                   </div>
                                   <p className={cn(

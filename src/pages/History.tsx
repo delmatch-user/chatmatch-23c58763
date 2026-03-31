@@ -561,7 +561,7 @@ export default function History() {
                                 return <MessageAttachment attachments={parsed} />;
                               }
                             } catch {}
-                            return <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>;
+                            return <p className="text-sm whitespace-pre-wrap break-words">{formatWhatsAppText(msg.content)}</p>;
                           })()}
                           <p className={`text-[10px] mt-1 ${isContact ? 'text-muted-foreground' : 'text-primary-foreground/60'}`}>
                             {msgTimestamp ? format(new Date(msgTimestamp), "HH:mm", { locale: ptBR }) : ''}
