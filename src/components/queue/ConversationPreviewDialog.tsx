@@ -1,4 +1,5 @@
 import { Clock, Phone, User, ArrowRight, MessageSquare, X, Mic, ImageIcon, Film, FileText, Loader2, Bike } from 'lucide-react';
+import { formatWhatsAppText } from '@/lib/whatsappFormat';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Dialog,
