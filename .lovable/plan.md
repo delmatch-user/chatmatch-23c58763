@@ -1,57 +1,50 @@
 
-Objetivo: fazer o preview da conversa realmente rolar até o fim, inclusive em conversas longas dentro do pipeline.
 
-Diagnóstico
-- O problema não parece ser falta de altura apenas; isso já foi aumentado para `90vh` no dialog e `60vh` no `ScrollArea`.
-- O ponto mais provável é estrutural:
-  1. `DialogContent` usa `grid`, o que costuma exigir `min-h-0` explícito nos blocos internos para permitir overflow real.
-  2. O `ScrollAreaPrimitive.Viewport` não recebe `overflow-y-auto` explicitamente no wrapper customizado.
-  3. O conteúdo das mensagens não reserva espaço lateral/inferior para a scrollbar, então pode parecer “travado” ou cortar o fim visual.
-- No chat interno do sistema, o scroll funciona porque usa um container simples com `flex-1 overflow-y-auto`, sem a camada do Radix `ScrollArea`.
+# Melhorar recebimento e exibição de documentos via WhatsApp
 
-Mudanças
-1. Ajustar o wrapper `src/components/ui/scroll-area.tsx`
-- Adicionar overflow explícito no viewport:
-```tsx
-className="h-full w-full rounded-[inherit] overflow-y-auto overflow-x-hidden"
-```
-- Manter o `viewportRef` como está para o scroll programático até o fim.
+## Situação atual
+O backend (Baileys server + webhook) **já suporta** todos os tipos de arquivo (xlsx, pdf, doc, txt, etc.) — faz download, upload para Storage e salva na mensagem. O que precisa melhorar:
 
-2. Ajustar a estrutura do dialog em `src/components/queue/ConversationPreviewDialog.tsx`
-- Garantir que o container principal permita contração correta:
-  - `DialogContent`: manter `flex flex-col`, adicionar `overflow-hidden`
-  - `DialogHeader`: adicionar `shrink-0`
-  - Footer: adicionar `shrink-0`
-  - `ScrollArea`: manter `flex-1 min-h-0`, remover dependência de `max-h` fixo se necessário
-- Estrutura alvo:
-```tsx
-<DialogContent className="sm:max-w-2xl h-[90vh] max-h-[90vh] flex flex-col overflow-hidden">
-  <DialogHeader className="shrink-0 ..." />
-  <ScrollArea className="flex-1 min-h-0" ...>
-  <div className="shrink-0 ..." />
-</DialogContent>
+1. **Preview na lista de conversas**: quando o Baileys faz upload direto (caminho principal), o preview mostra o conteúdo bruto em vez de "📎 Documento", porque a condição só verifica `mediaBase64` e ignora `mediaUrl`.
+2. **Download de documentos**: o link do documento abre em nova aba (`target="_blank"`) sem atributo `download`, o que não funciona bem para .xlsx/.doc.
+3. **Ícones por tipo de arquivo**: todos os documentos mostram o mesmo ícone genérico `FileText`.
+
+## Mudanças
+
+### 1. `supabase/functions/whatsapp-webhook/index.ts` — Corrigir preview para mediaUrl
+Linha ~1594: expandir a condição do preview para cobrir `mediaUrl` além de `mediaBase64`:
+```typescript
+if (mediaBase64 || mediaUrl) {
+  if (mimeType?.startsWith('image/')) messagePreview = '📷 Imagem';
+  else if (mimeType?.startsWith('audio/')) messagePreview = '🎵 Áudio';
+  else if (mimeType?.startsWith('video/')) messagePreview = '🎬 Vídeo';
+  else messagePreview = `📎 ${fileName || 'Documento'}`;
+}
 ```
 
-3. Melhorar a área interna das mensagens
-- Adicionar `pr-3` ou `pr-4` no conteúdo do `ScrollArea` para não colar na scrollbar.
-- Adicionar `pb-2`/`pb-4` para a última mensagem não ficar visualmente “cortada” junto ao rodapé.
+### 2. `src/components/chat/MessageAttachment.tsx` — Adicionar download + ícones por tipo
+- Adicionar atributo `download` no link de documentos para forçar download direto.
+- Adicionar ícones específicos por extensão (xlsx → tabela, pdf → FileText, etc.).
+- Importar `Download` e `Table` do lucide-react.
 
-4. Refinar o autoscroll
-- Manter o `scrollToBottom`, mas disparar também quando `realMessages` mudar após carregamento:
 ```tsx
-useEffect(() => {
-  if (open && !isLoadingMessages) {
-    requestAnimationFrame(() => scrollToBottom());
-  }
-}, [open, isLoadingMessages, realMessages, scrollToBottom]);
+// Ícone por extensão
+const getDocIcon = (name: string) => {
+  const ext = name?.split('.').pop()?.toLowerCase();
+  if (['xlsx','xls','csv'].includes(ext)) return <Table />;
+  if (['pdf'].includes(ext)) return <FileText />;
+  return <FileText />;
+};
+
+// No link do documento:
+<a href={url} download={attachment.name} ...>
 ```
-- Isso evita o caso em que o scroll roda antes do layout final do dialog.
 
-Resultado esperado
-- O preview abre ocupando a altura útil da tela.
-- A lista de mensagens vira a única área rolável entre cabeçalho e rodapé.
-- Dá para arrastar a scrollbar até o fim e visualizar toda a conversa sem trocar de tela.
+### 3. Redeployar a Edge Function `whatsapp-webhook`
+Para que o fix de preview entre em vigor.
 
-Detalhes técnicos
-- A correção principal é de layout/overflow, não de dados.
-- Se após isso ainda houver travamento em casos específicos, o próximo fallback mais robusto é trocar só este preview de `ScrollArea` para um `div` simples com `flex-1 min-h-0 overflow-y-auto`, seguindo o padrão do `InternalChatPanel`.
+## Resultado
+- Documentos xlsx, pdf, doc, txt recebidos via WhatsApp aparecem com preview correto na lista de conversas
+- Clicando no arquivo no chat, faz download direto com o nome original
+- Ícones diferenciados por tipo de arquivo
+
