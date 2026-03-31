@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FileText, ExternalLink, Mic, ImageIcon, Film, FileQuestion, Loader2 } from 'lucide-react';
+import { FileText, ExternalLink, Mic, ImageIcon, Film, FileQuestion, Loader2, Download, Table2, FileSpreadsheet } from 'lucide-react';
 import { AudioPlayer } from './AudioPlayer';
 import { ImagePreview } from './ImagePreview';
 import { supabase } from '@/integrations/supabase/client';
