@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { formatWhatsAppText } from '@/lib/whatsappFormat';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
