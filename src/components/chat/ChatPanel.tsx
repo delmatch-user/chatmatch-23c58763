@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { formatWhatsAppText } from '@/lib/whatsappFormat';
 import { 
   Send, 
   Paperclip, 
