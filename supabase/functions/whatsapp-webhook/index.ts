@@ -1592,11 +1592,11 @@ serve(async (req) => {
 
         // ====== SALVAR MENSAGEM E ATUALIZAR CONVERSA EM PARALELO ======
         let messagePreview = finalContent?.substring(0, 100) || '[Mídia]';
-        if (mediaBase64) {
+        if (mediaBase64 || mediaUrl) {
           if (mimeType?.startsWith('image/')) messagePreview = '📷 Imagem';
           else if (mimeType?.startsWith('audio/')) messagePreview = '🎵 Áudio';
           else if (mimeType?.startsWith('video/')) messagePreview = '🎬 Vídeo';
-          else messagePreview = '📎 Documento';
+          else messagePreview = `📎 ${fileName || 'Documento'}`;
         } else if (messageType === 'contact') {
           messagePreview = '👤 Contato';
         }

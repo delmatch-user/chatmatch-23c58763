@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FileText, ExternalLink, Mic, ImageIcon, Film, FileQuestion, Loader2 } from 'lucide-react';
+import { FileText, ExternalLink, Mic, ImageIcon, Film, FileQuestion, Loader2, Download, Table2, FileSpreadsheet } from 'lucide-react';
 import { AudioPlayer } from './AudioPlayer';
 import { ImagePreview } from './ImagePreview';
 import { supabase } from '@/integrations/supabase/client';
@@ -73,6 +73,15 @@ export function MessageAttachment({ attachments, messageId }: MessageAttachmentP
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const getDocIcon = (name?: string) => {
+    const ext = name?.split('.').pop()?.toLowerCase();
+    if (ext && ['xlsx', 'xls', 'csv'].includes(ext)) return <FileSpreadsheet className="w-5 h-5 text-green-600 flex-shrink-0" />;
+    if (ext === 'pdf') return <FileText className="w-5 h-5 text-red-500 flex-shrink-0" />;
+    if (ext && ['doc', 'docx'].includes(ext)) return <FileText className="w-5 h-5 text-blue-500 flex-shrink-0" />;
+    if (ext === 'txt') return <FileText className="w-5 h-5 text-muted-foreground flex-shrink-0" />;
+    return <FileText className="w-5 h-5 text-muted-foreground flex-shrink-0" />;
+  };
+
   const renderAttachment = (attachment: AttachmentData, url: string | null) => {
     const isStory = attachment.isStoryMention;
 
@@ -130,18 +139,19 @@ export function MessageAttachment({ attachments, messageId }: MessageAttachmentP
     return url ? (
       <a
         href={url}
+        download={attachment.name || `arquivo_${Date.now()}`}
         target="_blank"
         rel="noopener noreferrer"
         className="flex items-center gap-2 p-2 rounded-lg bg-background/50 hover:bg-background/80 transition-colors"
       >
-        <FileText className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+        {getDocIcon(attachment.name)}
         <div className="flex-1 min-w-0">
           <p className="text-xs font-medium truncate">{attachment.name}</p>
           {attachment.size && (
             <p className="text-[10px] text-muted-foreground">{formatSize(attachment.size)}</p>
           )}
         </div>
-        <ExternalLink className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+        <Download className="w-4 h-4 text-muted-foreground flex-shrink-0" />
       </a>
     ) : (
       <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 text-muted-foreground">
