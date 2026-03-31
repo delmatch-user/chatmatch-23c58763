@@ -264,7 +264,7 @@ export default function SDRSchedulingPage() {
                       const effective = getEffectiveStatus(a);
                       const sc = statusConfig[effective];
                       return (
-                        <div key={a.id} className={`text-[10px] px-1.5 py-0.5 rounded border truncate font-medium flex items-center gap-1 ${getTypeColor(a.type)}`} onClick={e => e.stopPropagation()}>
+                        <div key={a.id} className={`text-[10px] px-1.5 py-0.5 rounded border truncate font-medium flex items-center gap-1 ${getTypeColor(a.type)}`}>
                           <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${sc.dot}`} />
                           <span className="truncate flex-1">{a.time.slice(0, 5)} {a.title}</span>
                           {a.googleMeetUrl && <Video className="w-2.5 h-2.5 flex-shrink-0 text-primary" />}
