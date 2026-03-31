@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { formatWhatsAppText } from '@/lib/whatsappFormat';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { MessageAttachment } from '@/components/chat/MessageAttachment';
