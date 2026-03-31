@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { formatWhatsAppText } from '@/lib/whatsappFormat';
 import { 
   Send, 
   Paperclip, 
@@ -1546,7 +1547,7 @@ export function ChatPanel({ conversation, showContactDetails, onToggleContactDet
                   ) : attachments ? (
                     <MessageAttachment attachments={attachments} messageId={msg.id} />
                   ) : (
-                    <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
+                    <p className="text-sm whitespace-pre-wrap break-words">{formatWhatsAppText(msg.content)}</p>
                   )}
                 </div>
 

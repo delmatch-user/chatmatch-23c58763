@@ -1,4 +1,5 @@
 import { Clock, Phone, User, ArrowRight, MessageSquare, X, Mic, ImageIcon, Film, FileText, Loader2, Bike } from 'lucide-react';
+import { formatWhatsAppText } from '@/lib/whatsappFormat';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Dialog,
@@ -204,7 +205,7 @@ export function ConversationPreviewDialog({
     const isMediaType = mediaTypes.includes(msgType);
     
     if (!isMediaType) {
-      return <p className="whitespace-pre-wrap break-words">{message.content}</p>;
+      return <p className="whitespace-pre-wrap break-words">{formatWhatsAppText(message.content)}</p>;
     }
     
     const content = message.content?.trim() || '';
@@ -276,7 +277,7 @@ export function ConversationPreviewDialog({
       );
     }
     
-    return <p className="whitespace-pre-wrap break-words">{message.content}</p>;
+    return <p className="whitespace-pre-wrap break-words">{formatWhatsAppText(message.content)}</p>;
   };
 
   return (
