@@ -1,50 +1,47 @@
 
 
-# Melhorar recebimento e exibição de documentos via WhatsApp
+# Adicionar Histórico ao Painel Franqueado
 
-## Situação atual
-O backend (Baileys server + webhook) **já suporta** todos os tipos de arquivo (xlsx, pdf, doc, txt, etc.) — faz download, upload para Storage e salva na mensagem. O que precisa melhorar:
+## Objetivo
+Adicionar um ícone/botão de "Histórico" no painel do franqueado que mostra as conversas finalizadas (da tabela `conversation_logs`) filtradas apenas pelas cidades do franqueado.
 
-1. **Preview na lista de conversas**: quando o Baileys faz upload direto (caminho principal), o preview mostra o conteúdo bruto em vez de "📎 Documento", porque a condição só verifica `mediaBase64` e ignora `mediaUrl`.
-2. **Download de documentos**: o link do documento abre em nova aba (`target="_blank"`) sem atributo `download`, o que não funciona bem para .xlsx/.doc.
-3. **Ícones por tipo de arquivo**: todos os documentos mostram o mesmo ícone genérico `FileText`.
+## Abordagem
+Adicionar uma alternância entre duas views no painel: **Conversas** (atual) e **Histórico** (novo). Um botão no header alterna entre as duas.
 
 ## Mudanças
 
-### 1. `supabase/functions/whatsapp-webhook/index.ts` — Corrigir preview para mediaUrl
-Linha ~1594: expandir a condição do preview para cobrir `mediaUrl` além de `mediaBase64`:
-```typescript
-if (mediaBase64 || mediaUrl) {
-  if (mimeType?.startsWith('image/')) messagePreview = '📷 Imagem';
-  else if (mimeType?.startsWith('audio/')) messagePreview = '🎵 Áudio';
-  else if (mimeType?.startsWith('video/')) messagePreview = '🎬 Vídeo';
-  else messagePreview = `📎 ${fileName || 'Documento'}`;
-}
+### `src/pages/FranqueadoPanel.tsx`
+1. Adicionar estado `activeView: 'conversations' | 'history'` e estados do histórico (`historyLogs`, `historyLoading`, `historySearch`, `selectedLog`, `showMessages`)
+2. No header, adicionar botão com ícone `History` para alternar entre views
+3. Criar função `fetchHistory` que consulta `conversation_logs` filtrando por `channel = 'machine'` e fazendo match de `contact_notes` com as cidades do franqueado (usando `ilike` para cada cidade)
+4. Quando `activeView === 'history'`, renderizar lista de logs finalizados no lugar da lista de conversas, com:
+   - Busca por nome/telefone
+   - Card para cada log mostrando: nome do contato, cidade, data de finalização, total de mensagens, tags
+   - Ao clicar, abrir Dialog com as mensagens do log (similar ao History.tsx existente)
+5. O RLS de `conversation_logs` já permite SELECT para membros do departamento — precisamos verificar se franqueados têm acesso
+
+### Possível migração SQL
+- Adicionar política RLS em `conversation_logs` para franqueados poderem ver logs de canal `machine` cujas `contact_notes` contenham suas cidades (similar à política existente em `messages`)
+
+```sql
+CREATE POLICY "Franqueados can view machine logs"
+ON public.conversation_logs
+FOR SELECT
+TO authenticated
+USING (
+  has_role(auth.uid(), 'franqueado'::app_role)
+  AND channel = 'machine'
+  AND EXISTS (
+    SELECT 1 FROM franqueado_cities fc
+    WHERE fc.user_id = auth.uid()
+    AND conversation_logs.contact_notes ILIKE '%franqueado:' || fc.city || '%'
+  )
+);
 ```
-
-### 2. `src/components/chat/MessageAttachment.tsx` — Adicionar download + ícones por tipo
-- Adicionar atributo `download` no link de documentos para forçar download direto.
-- Adicionar ícones específicos por extensão (xlsx → tabela, pdf → FileText, etc.).
-- Importar `Download` e `Table` do lucide-react.
-
-```tsx
-// Ícone por extensão
-const getDocIcon = (name: string) => {
-  const ext = name?.split('.').pop()?.toLowerCase();
-  if (['xlsx','xls','csv'].includes(ext)) return <Table />;
-  if (['pdf'].includes(ext)) return <FileText />;
-  return <FileText />;
-};
-
-// No link do documento:
-<a href={url} download={attachment.name} ...>
-```
-
-### 3. Redeployar a Edge Function `whatsapp-webhook`
-Para que o fix de preview entre em vigor.
 
 ## Resultado
-- Documentos xlsx, pdf, doc, txt recebidos via WhatsApp aparecem com preview correto na lista de conversas
-- Clicando no arquivo no chat, faz download direto com o nome original
-- Ícones diferenciados por tipo de arquivo
+- Franqueado vê botão "Histórico" no header do painel
+- Ao clicar, lista todas as conversas Machine finalizadas das suas cidades
+- Pode buscar por nome/telefone e clicar para ver as mensagens
+- Botão "Conversas" volta à view atual
 
