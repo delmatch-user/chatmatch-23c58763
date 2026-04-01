@@ -527,7 +527,7 @@ export default function FranqueadoPanel() {
                       isAgent ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
                     )}>
                       <p className="text-[10px] font-medium opacity-70 mb-0.5">{msg.sender_name}</p>
-                      <div className="break-words whitespace-pre-wrap">{renderWhatsAppFormatting(msg.content || '')}</div>
+                      <div className="break-words whitespace-pre-wrap">{formatWhatsAppText(msg.content || '')}</div>
                       {msg.created_at && (
                         <p className="text-[9px] opacity-50 mt-1 text-right">
                           {format(new Date(msg.created_at), 'HH:mm')}
