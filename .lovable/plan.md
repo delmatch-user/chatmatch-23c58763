@@ -1,47 +1,41 @@
 
 
-# Adicionar Histórico ao Painel Franqueado
+# Por que o Arthur não pesquisa mais a população
 
-## Objetivo
-Adicionar um ícone/botão de "Histórico" no painel do franqueado que mostra as conversas finalizadas (da tabela `conversation_logs`) filtradas apenas pelas cidades do franqueado.
+## Diagnóstico
 
-## Abordagem
-Adicionar uma alternância entre duas views no painel: **Conversas** (atual) e **Histórico** (novo). Um botão no header alterna entre as duas.
+O problema é uma **instrução conflitante** no prompt do Arthur (`sdr-robot-chat`). Na linha 890 do sistema, existe esta regra:
 
-## Mudanças
+> *"Responda SOMENTE com base nas informações presentes na sua Base de Conhecimento... NUNCA invente ou alucine informações que não estejam na sua base de conhecimento."*
 
-### `src/pages/FranqueadoPanel.tsx`
-1. Adicionar estado `activeView: 'conversations' | 'history'` e estados do histórico (`historyLogs`, `historyLoading`, `historySearch`, `selectedLog`, `showMessages`)
-2. No header, adicionar botão com ícone `History` para alternar entre views
-3. Criar função `fetchHistory` que consulta `conversation_logs` filtrando por `channel = 'machine'` e fazendo match de `contact_notes` com as cidades do franqueado (usando `ilike` para cada cidade)
-4. Quando `activeView === 'history'`, renderizar lista de logs finalizados no lugar da lista de conversas, com:
-   - Busca por nome/telefone
-   - Card para cada log mostrando: nome do contato, cidade, data de finalização, total de mensagens, tags
-   - Ao clicar, abrir Dialog com as mensagens do log (similar ao History.tsx existente)
-5. O RLS de `conversation_logs` já permite SELECT para membros do departamento — precisamos verificar se franqueados têm acesso
+Essa regra impede o Arthur de usar dados que ele conhece (como população de cidades) porque tecnicamente não estão na Base de Conhecimento do robô. Ele interpreta a regra literalmente e diz "precisamos do dado exato para cálculo".
 
-### Possível migração SQL
-- Adicionar política RLS em `conversation_logs` para franqueados poderem ver logs de canal `machine` cujas `contact_notes` contenham suas cidades (similar à política existente em `messages`)
+Além disso, o flag `webSearch` existe na configuração dos robôs, mas **nunca foi implementado como ferramenta** — nem no `robot-chat` nem no `sdr-robot-chat`. Não existe uma function call `web_search` que o robô possa chamar.
 
-```sql
-CREATE POLICY "Franqueados can view machine logs"
-ON public.conversation_logs
-FOR SELECT
-TO authenticated
-USING (
-  has_role(auth.uid(), 'franqueado'::app_role)
-  AND channel = 'machine'
-  AND EXISTS (
-    SELECT 1 FROM franqueado_cities fc
-    WHERE fc.user_id = auth.uid()
-    AND conversation_logs.contact_notes ILIKE '%franqueado:' || fc.city || '%'
-  )
-);
+## Solução
+
+### 1. Ajustar a instrução do prompt no `sdr-robot-chat` (linha ~890)
+
+Adicionar uma exceção para dados públicos/cálculos:
+
+```
+- REGRA: Responda com base na Base de Conhecimento. Para dados públicos amplamente
+  conhecidos (população de cidades, dados do IBGE, cálculos matemáticos), você PODE
+  usar seu conhecimento geral para enriquecer simulações e respostas. NUNCA invente
+  dados sobre o PRODUTO/SERVIÇO que não estejam na base.
 ```
 
-## Resultado
-- Franqueado vê botão "Histórico" no header do painel
-- Ao clicar, lista todas as conversas Machine finalizadas das suas cidades
-- Pode buscar por nome/telefone e clicar para ver as mensagens
-- Botão "Conversas" volta à view atual
+### 2. (Opcional) Implementar ferramenta web_search no SDR
+
+Se quiser que o Arthur faça pesquisas reais na web (via Perplexity ou similar), seria necessário:
+- Adicionar uma tool `web_search` na lista de ferramentas do `sdr-robot-chat`
+- Implementar o handler que chama uma API de busca
+- Isso é mais complexo e pode ser feito num segundo momento
+
+## Recomendação
+
+A **solução 1 é suficiente** para o caso de uso atual — o Arthur já tem conhecimento sobre população de cidades brasileiras no modelo GPT-4o, só precisa de permissão no prompt para usá-lo em simulações.
+
+## Arquivo a editar
+- `supabase/functions/sdr-robot-chat/index.ts` — ajustar a diretriz na construção do `systemPrompt` (linhas ~885-890)
 
