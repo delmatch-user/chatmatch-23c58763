@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { renderWhatsAppFormatting } from '@/lib/whatsappFormat';
+import { formatWhatsAppText } from '@/lib/whatsappFormat';
 
 interface HistoryLog {
   id: string;
