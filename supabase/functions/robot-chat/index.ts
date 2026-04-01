@@ -875,6 +875,19 @@ async function handleAutomaticMode(body: {
     });
   }
 
+  // Verificar se o robô está pausado (não ativo)
+  if (robot.status === 'paused' && !isTransfer) {
+    console.log(`[Robot-Chat Auto] Robô ${robot.name} está PAUSADO. Removendo atribuição e colocando na fila.`);
+    await supabase.from('conversations').update({
+      assigned_to_robot: null,
+      status: 'em_fila'
+    }).eq('id', conversationId);
+    return new Response(JSON.stringify({ skipped: true, reason: 'robot_paused' }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   // Verificar se o robô está dentro do horário configurado (pular se ativado manualmente ou transferência manual)
   const isManuallyActivated = robot.manually_activated === true;
   if (!isManuallyActivated && !isTransfer) {
