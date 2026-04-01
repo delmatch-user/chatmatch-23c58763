@@ -170,15 +170,18 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // Atribuir robô à conversa
-      const { error: updateError } = await supabase
+      // Atribuir robô à conversa com lock para evitar duplicação
+      const { error: updateError, count: claimCount } = await supabase
         .from("conversations")
         .update({
           assigned_to_robot: matchedRobot.id,
           status: "em_atendimento",
           updated_at: new Date().toISOString(),
+          robot_lock_until: new Date(Date.now() + 30000).toISOString(),
         })
-        .eq("id", conv.id);
+        .eq("id", conv.id)
+        .eq("status", "em_fila")
+        .is("assigned_to_robot", null);
 
       if (updateError) {
         console.error("[sync-robot-schedules] Erro ao atribuir conversa:", conv.id, updateError.message);
