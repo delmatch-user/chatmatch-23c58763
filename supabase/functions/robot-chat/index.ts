@@ -1707,7 +1707,7 @@ async function handleAutomaticMode(body: {
           
           aiResponse = ''; // Robô destino responde, não a Delma
           skipSending = true; // O robô destino vai responder
-          skipPostProcessing = true; // Não limpar lock do destino
+          hasTransferTool = true; // Não limpar lock do destino
           actionTaken = true;
           
           // Chamar robot-chat para o robô destino
