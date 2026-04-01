@@ -183,8 +183,9 @@ Deno.serve(async (req) => {
         .eq("status", "em_fila")
         .is("assigned_to_robot", null);
 
-      if (updateError) {
-        console.error("[sync-robot-schedules] Erro ao atribuir conversa:", conv.id, updateError.message);
+      if (updateError || claimCount === 0) {
+        if (updateError) console.error("[sync-robot-schedules] Erro ao atribuir conversa:", conv.id, updateError.message);
+        else console.log(`[sync-robot-schedules] Conversa ${conv.id} já foi clamada por outro processo`);
         continue;
       }
 
