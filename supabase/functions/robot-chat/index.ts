@@ -854,6 +854,8 @@ async function handleAutomaticMode(body: {
   isTransfer?: boolean;
 }) {
   const { robotId, conversationId, message, isTransfer } = body;
+  const isRetry = !!(body as any).isRetry;
+  const skipAtomicLock = isTransfer || isRetry;
   let { contactPhone, contactJid, connectionType, phoneNumberId } = body;
   
   console.log(`[Robot-Chat Auto] Robot: ${robotId}, Conversation: ${conversationId}, ContactPhone: ${contactPhone || 'N/A'}, ContactJid: ${contactJid || 'N/A'}, ConnectionType: ${connectionType || 'auto-detect'}`);
