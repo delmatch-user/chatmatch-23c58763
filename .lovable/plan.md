@@ -1,69 +1,60 @@
 
-## Corrigir duplicação de mensagens em todos os robôs
 
-### Objetivo
-Garantir que nenhum robô envie a mesma resposta duas vezes, tanto no Machine quanto no WhatsApp, com um delay seguro e consistente.
+# Por que Júlia e Sebastião não respondem após transferência
 
-### Diagnóstico
-Hoje a duplicação não depende só do “delay”. O problema está na combinação de:
-- múltiplos gatilhos para a mesma conversa (`webhook-machine`, `whatsapp-webhook`, `sync-robot-schedules`);
-- lock de concorrência inconsistente entre quem dispara e quem responde;
-- proteção de saída incompleta: `robot-chat` já tem dedupe de resposta, mas `sdr-robot-chat` ainda não;
-- no WhatsApp, ainda falta uma trava equivalente antes de disparar o robô.
+## Diagnóstico (causa raiz confirmada)
 
-Ou seja: aumentar o delay sozinho não resolve. Precisa unificar lock + delay + dedupe de saída.
+O problema está no conflito entre o **lock de 5 segundos** que o robô de origem (Delma) seta ao transferir e o **lock atômico** que o robô de destino (Júlia/Sebastião) tenta adquirir ao iniciar.
 
-### O que vou implementar
-1. **Centralizar a proteção anti-duplicação nos robôs**
-   - Ajustar `robot-chat` e `sdr-robot-chat` para usar uma tomada de lock realmente atômica antes de processar.
-   - Se outro processo já estiver atendendo a mesma conversa, a nova execução será abortada sem responder.
+Fluxo atual quebrado:
+1. Delma decide transferir para Júlia via `transfer_to_robot`
+2. Código seta `robot_lock_until = agora + 5s` (linha 1692-1700 do `robot-chat`)
+3. Imediatamente chama `robot-chat` para Júlia via `fetch()` (fire-and-forget)
+4. Júlia tenta adquirir o lock atômico: `UPDATE ... WHERE robot_lock_until IS NULL OR < NOW()`
+5. O lock de 5s AINDA está ativo, então o UPDATE retorna `count: 0`
+6. Júlia aborta com "Lock atômico NÃO conquistado"
+7. Após 5s o lock expira, mas a chamada já retornou
+8. O cron (`sync-robot-schedules`) tem um guard de 3 minutos para transferências recentes, então só tenta retry depois de 3 min
+9. Resultado: o cliente espera 3+ minutos ou nunca recebe resposta
 
-2. **Padronizar um delay mínimo seguro**
-   - Manter o `groupMessagesTime` configurado por robô.
-   - Aplicar um piso mínimo de delay/lock para evitar que o lock expire antes do envio terminar.
-   - Transferências continuam com delay menor, mas ainda protegido.
+Além disso, a chamada de transferência (linha 1733-1747) **não envia o campo `message`**, então mesmo se o lock passasse, o robô destino receberia `message: undefined`.
 
-3. **Aplicar dedupe de saída em todos os robôs**
-   - Replicar no `sdr-robot-chat` a mesma proteção que já existe no `robot-chat`.
-   - Antes de salvar/enviar, verificar se conteúdo idêntico já foi enviado há poucos segundos naquela conversa.
-   - Se já foi, abortar envio e limpar lock.
+## O que vou implementar
 
-4. **Corrigir os disparadores**
-   - Revisar `webhook-machine`, `whatsapp-webhook` e `sync-robot-schedules` para não competirem entre si.
-   - Eles devem respeitar lock ativo e evitar re-disparar o mesmo robô para a mesma conversa.
+### 1) Permitir que transferências pulem o lock atômico
+No `robot-chat`, quando `isTransfer: true`, o robô destino deve pular a etapa de lock atômico e simplesmente setar seu próprio lock. Isso é seguro porque a transferência já é um evento controlado pelo robô de origem.
 
-5. **Fechar a lacuna do WhatsApp**
-   - Adicionar no fluxo do `whatsapp-webhook` a mesma proteção de concorrência já pensada para Machine.
-   - Isso cobre os casos em que a mensagem chega uma vez, mas o robô é acionado mais de uma vez.
+### 2) Incluir a mensagem na chamada de transferência
+Na seção `transfer_to_robot`, incluir o campo `message` com o conteúdo da última mensagem do cliente, para que o robô destino tenha contexto imediato.
 
-### Arquivos envolvidos
+### 3) Limpar o lock antes de chamar o destino
+Trocar o lock de 5s por `null` ANTES de chamar o robô destino, já que o destino vai setar seu próprio lock ao processar.
+
+## Arquivos envolvidos
 - `supabase/functions/robot-chat/index.ts`
-- `supabase/functions/sdr-robot-chat/index.ts`
-- `supabase/functions/webhook-machine/index.ts`
-- `supabase/functions/whatsapp-webhook/index.ts`
-- `supabase/functions/sync-robot-schedules/index.ts`
 
-### Detalhes técnicos
-- Vou usar o campo existente `robot_lock_until`, sem criar nova estrutura.
-- A correção principal será:
-  - **claim atômico do lock** no início do processamento;
-  - **delay alinhado com o lock**;
-  - **dedupe de saída** imediatamente antes do insert/envio;
-  - **respeito ao lock** em todos os pontos que chamam `robot-chat` e `sdr-robot-chat`.
-- Também vou garantir que o fluxo SDR siga exatamente a mesma regra anti-duplicação do robô normal, para não existir “robô protegido” e “robô sem proteção”.
+## Detalhes técnicos
 
-### Resultado esperado
-Depois disso:
-- Delma, Júlia, Sebastião, Arthur e demais robôs não respondem duas vezes à mesma mensagem;
-- Machine e WhatsApp passam a ter o mesmo padrão de proteção;
-- cron, webhook e retries deixam de disputar a mesma conversa;
-- o delay continua adequado para agrupamento, mas sem abrir brecha para envio duplicado.
+**Mudança 1** — No lock atômico (linhas ~972-989), adicionar bypass para `isTransfer`:
+```typescript
+if (isTransfer) {
+  // Transferência: setar lock diretamente sem competir
+  await supabase.from('conversations')
+    .update({ robot_lock_until: immediateLockUntil })
+    .eq('id', conversationId);
+} else {
+  // Fluxo normal: lock atômico competitivo
+  const { count } = await supabase...
+  if (!count) return skipped;
+}
+```
 
-### Validação
-Vou validar estes cenários na implementação:
-1. mesma mensagem chegando duas vezes no Machine;
-2. mesma conversa recebendo webhook + retry;
-3. mensagem no WhatsApp com disparo repetido do robô;
-4. conversa SDR com resposta única;
-5. transferência entre robôs sem duplicação;
-6. conversa normal ainda respondendo no tempo esperado.
+**Mudança 2** — Na seção `transfer_to_robot` (linhas ~1690-1748):
+- Setar `robot_lock_until: null` em vez de 5s
+- Incluir `message: lastCustomerContent` no payload do fetch
+
+## Resultado esperado
+- Após Delma transferir para Júlia/Sebastião, o robô destino responde imediatamente (sem esperar lock expirar)
+- O campo `message` sempre chega preenchido
+- O cron continua como safety net para casos onde a chamada direta falha
+
