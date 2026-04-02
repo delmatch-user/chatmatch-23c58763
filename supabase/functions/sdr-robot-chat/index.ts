@@ -522,22 +522,32 @@ serve(async (req) => {
     // === ATOMIC LOCK CLAIM: Evitar respostas duplicadas ===
     const immediateLockUntil = new Date(Date.now() + 30000).toISOString();
     const nowIso = new Date().toISOString();
-    const { count: lockClaimed } = await supabase
-      .from('conversations')
-      .update({ robot_lock_until: immediateLockUntil }, { count: 'exact' })
-      .eq('id', conversationId)
-      .or(`robot_lock_until.is.null,robot_lock_until.lt.${nowIso}`);
+    const skipAtomicLock = isRetry || isTransfer;
 
-    if (!lockClaimed || lockClaimed === 0) {
-      console.log(`[SDR-Robot-Chat] Lock atômico NÃO conquistado. Outro processo já está respondendo. Ignorando.`);
-      return new Response(JSON.stringify({ skipped: true, reason: 'atomic_lock_not_acquired' }), {
-        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (skipAtomicLock) {
+      // Cron retry ou transferência: bypass do lock competitivo, setar diretamente
+      await supabase.from('conversations')
+        .update({ robot_lock_until: immediateLockUntil })
+        .eq('id', conversationId);
+      console.log(`[SDR-Robot-Chat] Lock bypass (isRetry=${!!isRetry}, isTransfer=${!!isTransfer})`);
+    } else {
+      const { count: lockClaimed } = await supabase
+        .from('conversations')
+        .update({ robot_lock_until: immediateLockUntil }, { count: 'exact' })
+        .eq('id', conversationId)
+        .or(`robot_lock_until.is.null,robot_lock_until.lt.${nowIso}`);
+
+      if (!lockClaimed || lockClaimed === 0) {
+        console.log(`[SDR-Robot-Chat] Lock atômico NÃO conquistado. Outro processo já está respondendo. Ignorando.`);
+        return new Response(JSON.stringify({ skipped: true, reason: 'atomic_lock_not_acquired' }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      console.log(`[SDR-Robot-Chat] Lock atômico conquistado (30s) para evitar duplicação.`);
+      
+      // Delay de 2s para garantir que chamadas concorrentes vejam o lock
+      await new Promise(resolve => setTimeout(resolve, 2000));
     }
-    console.log(`[SDR-Robot-Chat] Lock atômico conquistado (30s) para evitar duplicação.`);
-    
-    // Delay de 2s para garantir que chamadas concorrentes vejam o lock
-    await new Promise(resolve => setTimeout(resolve, 2000));
     
     // Re-verificar se a conversa ainda está atribuída ao robô SDR após o delay
     const { data: convRecheck } = await supabase
