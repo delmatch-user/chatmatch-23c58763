@@ -393,11 +393,12 @@ Deno.serve(async (req) => {
         try {
           // === PRE-LOCK ATÔMICO: Setar lock ANTES de chamar robot-chat para evitar duplicação por crons paralelos ===
           const preLock = new Date(Date.now() + 30000).toISOString();
+          const nowIso = new Date().toISOString();
           const { count: lockClaimed } = await supabase
             .from("conversations")
             .update({ robot_lock_until: preLock }, { count: 'exact' })
             .eq("id", conv.id)
-            .is("robot_lock_until", null);
+            .or(`robot_lock_until.is.null,robot_lock_until.lt.${nowIso}`);
 
           // Se não conseguiu "clamar" o lock (outro cron já setou), pular
           if (!lockClaimed || lockClaimed === 0) {
@@ -425,6 +426,9 @@ Deno.serve(async (req) => {
             payload.dealId = conv.sdr_deal_id;
             payload.isTransfer = !!conv.robot_transferred;
           }
+          
+          // Sinalizar ao robot-chat que o lock já foi adquirido pelo cron
+          payload.isRetry = true;
 
           const chatUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/${functionName}`;
           const resp = await fetch(chatUrl, {

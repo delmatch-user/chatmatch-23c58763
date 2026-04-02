@@ -854,6 +854,8 @@ async function handleAutomaticMode(body: {
   isTransfer?: boolean;
 }) {
   const { robotId, conversationId, message, isTransfer } = body;
+  const isRetry = !!(body as any).isRetry;
+  const skipAtomicLock = isTransfer || isRetry;
   let { contactPhone, contactJid, connectionType, phoneNumberId } = body;
   
   console.log(`[Robot-Chat Auto] Robot: ${robotId}, Conversation: ${conversationId}, ContactPhone: ${contactPhone || 'N/A'}, ContactJid: ${contactJid || 'N/A'}, ConnectionType: ${connectionType || 'auto-detect'}`);
@@ -973,13 +975,13 @@ async function handleAutomaticMode(body: {
   const immediateLockUntil = new Date(Date.now() + 30000).toISOString();
   const nowIso = new Date().toISOString();
 
-  if (isTransfer) {
-    // Transferência: setar lock diretamente sem competir (a origem já controla a concorrência)
+  if (skipAtomicLock) {
+    // Transferência ou retry do cron: setar lock diretamente sem competir
     await supabase
       .from('conversations')
       .update({ robot_lock_until: immediateLockUntil })
       .eq('id', conversationId);
-    console.log(`[Robot-Chat Auto] Transferência — lock setado diretamente (bypass atômico).`);
+    console.log(`[Robot-Chat Auto] ${isTransfer ? 'Transferência' : 'Retry do cron'} — lock setado diretamente (bypass atômico).`);
   } else {
     // Fluxo normal: lock atômico competitivo
     const { count: lockClaimed } = await supabase
@@ -998,11 +1000,11 @@ async function handleAutomaticMode(body: {
     console.log(`[Robot-Chat Auto] Lock atômico conquistado (30s) para evitar duplicação.`);
   }
   
-  // Delay de 2s para garantir que chamadas concorrentes vejam o lock (pular em transferências - lock da origem já protege)
-  if (!isTransfer) {
+  // Delay de 2s para garantir que chamadas concorrentes vejam o lock (pular em transferências/retries)
+  if (!skipAtomicLock) {
     await new Promise(resolve => setTimeout(resolve, 2000));
   } else {
-    console.log(`[Robot-Chat Auto] Transferência detectada — pulando delay anti-race de 2s (lock da origem protege).`);
+    console.log(`[Robot-Chat Auto] ${isTransfer ? 'Transferência' : 'Retry'} detectado — pulando delay anti-race de 2s.`);
   }
   
   // Re-verificar se a conversa ainda está atribuída a este robô após o delay
