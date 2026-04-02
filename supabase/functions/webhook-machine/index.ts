@@ -35,6 +35,25 @@ Deno.serve(async (req) => {
       });
     }
 
+    // === FILTRO DE METADATA: Ignorar payloads que não são mensagem real ===
+    const trimmedMsg = mensagem.trim();
+    // Se a mensagem é exatamente igual ao nome do contato, é provavelmente um update de metadata
+    if (name && trimmedMsg === name.trim()) {
+      console.log('[webhook-machine] Payload ignorado: mensagem igual ao nome do contato (metadata update)');
+      return new Response(JSON.stringify({ success: true, skipped: true, reason: 'metadata_name_update' }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    // Mensagem muito curta (1-2 chars) provavelmente não é real
+    if (trimmedMsg.length <= 1) {
+      console.log('[webhook-machine] Payload ignorado: mensagem muito curta');
+      return new Response(JSON.stringify({ success: true, skipped: true, reason: 'message_too_short' }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // 1. Buscar conversa existente pelo external_id
     const { data: existingConversation } = await supabase
       .from('conversations')
