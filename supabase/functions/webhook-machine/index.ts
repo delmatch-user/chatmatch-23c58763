@@ -507,10 +507,22 @@ Deno.serve(async (req) => {
       // Já foi chamado acima como novo lead SDR, pular
       console.log('[webhook-machine] SDR robot-chat já chamado para novo lead');
     } else if (convUpdated?.assigned_to_robot) {
-      // Setar lock antes de chamar robot-chat para evitar duplicata pelo sync-robot-schedules
-      await supabase.from('conversations').update({
-        robot_lock_until: new Date(Date.now() + 30000).toISOString()
-      }).eq('id', conversationId);
+      // Setar lock ATÔMICO antes de chamar robot-chat para evitar duplicata pelo sync-robot-schedules
+      const lockUntil = new Date(Date.now() + 30000).toISOString();
+      const { count: lockOk } = await supabase.from('conversations').update({
+        robot_lock_until: lockUntil
+      }, { count: 'exact' }).eq('id', conversationId).is('robot_lock_until', null);
+      
+      // Se não conseguiu o lock (robot-chat já está processando), tentar apenas se lock expirou
+      if (!lockOk || lockOk === 0) {
+        const { data: lockCheck } = await supabase.from('conversations').select('robot_lock_until').eq('id', conversationId).single();
+        if (lockCheck?.robot_lock_until && new Date(lockCheck.robot_lock_until) > new Date()) {
+          console.log('[webhook-machine] Lock ativo, robot-chat já está processando. Pulando chamada.');
+        } else {
+          // Lock expirado, setar novo
+          await supabase.from('conversations').update({ robot_lock_until: lockUntil }).eq('id', conversationId);
+        }
+      }
       if (convUpdated.sdr_deal_id) {
         console.log('[webhook-machine] SDR deal detectado, roteando para sdr-robot-chat');
         fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/sdr-robot-chat`, {
