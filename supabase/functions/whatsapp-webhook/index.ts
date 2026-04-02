@@ -1779,51 +1779,64 @@ serve(async (req) => {
 
         // ====== CHAMAR ROBÔ EM BACKGROUND (NÃO AGUARDAR) ======
         if (shouldCallRobot && robotId) {
-          // Check if conversation has sdr_deal_id → route to sdr-robot-chat
-          const { data: convSdr2 } = await supabase
+          // === PRE-LOCK ATÔMICO: Setar lock ANTES de disparar robot-chat para evitar duplicação ===
+          const preLockUntil = new Date(Date.now() + 30000).toISOString();
+          const preLockNow = new Date().toISOString();
+          const { count: preLockClaimed } = await supabase
             .from('conversations')
-            .select('sdr_deal_id')
+            .update({ robot_lock_until: preLockUntil }, { count: 'exact' })
             .eq('id', conversationId)
-            .single();
+            .or(`robot_lock_until.is.null,robot_lock_until.lt.${preLockNow}`);
 
-          if (convSdr2?.sdr_deal_id) {
-            console.log('[WhatsApp] SDR deal detected, routing to sdr-robot-chat');
-            fetch(`${supabaseUrl}/functions/v1/sdr-robot-chat`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${supabaseServiceKey}`
-              },
-              body: JSON.stringify({
-                conversationId: conversationId,
-                dealId: convSdr2.sdr_deal_id,
-                message: finalContent || '',
-                contactPhone: sender,
-                contactJid: senderJid
-              })
-            }).then(res => {
-              if (!res.ok) console.error('[WhatsApp] Erro sdr-robot-chat:', res.status);
-              else console.log('[WhatsApp] SDR-robot-chat processado');
-            }).catch(err => console.error('[WhatsApp] Erro sdr-robot-chat:', err));
+          if (!preLockClaimed || preLockClaimed === 0) {
+            console.log(`[WhatsApp] Pre-lock não conquistado para ${conversationId} — outro gatilho já está processando`);
           } else {
-            // Fire and forget - não bloqueia a resposta
-            fetch(`${supabaseUrl}/functions/v1/robot-chat`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${supabaseServiceKey}`
-              },
-              body: JSON.stringify({
-                robotId: robotId,
-                conversationId: conversationId,
-                message: finalContent || '',
-                contactPhone: sender,
-                contactJid: senderJid
-              })
-            }).then(res => {
-              if (!res.ok) console.error('[WhatsApp] Erro robot-chat:', res.status);
-              else console.log('[WhatsApp] Robot-chat processado');
-            }).catch(err => console.error('[WhatsApp] Erro robot-chat:', err));
+            // Check if conversation has sdr_deal_id → route to sdr-robot-chat
+            const { data: convSdr2 } = await supabase
+              .from('conversations')
+              .select('sdr_deal_id')
+              .eq('id', conversationId)
+              .single();
+
+            if (convSdr2?.sdr_deal_id) {
+              console.log('[WhatsApp] SDR deal detected, routing to sdr-robot-chat');
+              fetch(`${supabaseUrl}/functions/v1/sdr-robot-chat`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${supabaseServiceKey}`
+                },
+                body: JSON.stringify({
+                  conversationId: conversationId,
+                  dealId: convSdr2.sdr_deal_id,
+                  message: finalContent || '',
+                  contactPhone: sender,
+                  contactJid: senderJid
+                })
+              }).then(res => {
+                if (!res.ok) console.error('[WhatsApp] Erro sdr-robot-chat:', res.status);
+                else console.log('[WhatsApp] SDR-robot-chat processado');
+              }).catch(err => console.error('[WhatsApp] Erro sdr-robot-chat:', err));
+            } else {
+              // Fire and forget - não bloqueia a resposta
+              fetch(`${supabaseUrl}/functions/v1/robot-chat`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${supabaseServiceKey}`
+                },
+                body: JSON.stringify({
+                  robotId: robotId,
+                  conversationId: conversationId,
+                  message: finalContent || '',
+                  contactPhone: sender,
+                  contactJid: senderJid
+                })
+              }).then(res => {
+                if (!res.ok) console.error('[WhatsApp] Erro robot-chat:', res.status);
+                else console.log('[WhatsApp] Robot-chat processado');
+              }).catch(err => console.error('[WhatsApp] Erro robot-chat:', err));
+            }
           }
         }
 

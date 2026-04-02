@@ -519,18 +519,22 @@ serve(async (req) => {
       });
     }
 
-    // === CONCURRENCY LOCK: Evitar respostas duplicadas ===
-    if (convData?.robot_lock_until && new Date(convData.robot_lock_until) > new Date()) {
-      console.log(`[SDR-Robot-Chat] Lock ativo até ${convData.robot_lock_until}. Ignorando mensagem duplicada.`);
-      return new Response(JSON.stringify({ skipped: true, reason: 'already_processing' }), {
+    // === ATOMIC LOCK CLAIM: Evitar respostas duplicadas ===
+    const immediateLockUntil = new Date(Date.now() + 30000).toISOString();
+    const nowIso = new Date().toISOString();
+    const { count: lockClaimed } = await supabase
+      .from('conversations')
+      .update({ robot_lock_until: immediateLockUntil }, { count: 'exact' })
+      .eq('id', conversationId)
+      .or(`robot_lock_until.is.null,robot_lock_until.lt.${nowIso}`);
+
+    if (!lockClaimed || lockClaimed === 0) {
+      console.log(`[SDR-Robot-Chat] Lock atômico NÃO conquistado. Outro processo já está respondendo. Ignorando.`);
+      return new Response(JSON.stringify({ skipped: true, reason: 'atomic_lock_not_acquired' }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    // === LOCK IMEDIATO: Setar lock de 3s para evitar race condition ===
-    const immediateLockUntil = new Date(Date.now() + 20000).toISOString();
-    await supabase.from('conversations').update({ robot_lock_until: immediateLockUntil }).eq('id', conversationId);
-    console.log(`[SDR-Robot-Chat] Lock imediato de 20s setado para evitar duplicação.`);
+    console.log(`[SDR-Robot-Chat] Lock atômico conquistado (30s) para evitar duplicação.`);
     
     // Delay de 2s para garantir que chamadas concorrentes vejam o lock
     await new Promise(resolve => setTimeout(resolve, 2000));
@@ -1382,6 +1386,28 @@ serve(async (req) => {
     const parts = shouldSplit
       ? responseText.split('\n').map((p: string) => p.trim()).filter((p: string) => p.length > 0)
       : [responseText];
+
+    // === OUTBOUND DEDUP: Verificar se resposta idêntica já foi enviada nos últimos 30s ===
+    if (responseText) {
+      const dedupeWindow = new Date(Date.now() - 30000).toISOString();
+      const { data: recentOutbound } = await supabase
+        .from('messages')
+        .select('id')
+        .eq('conversation_id', conversationId)
+        .eq('content', responseText)
+        .like('sender_name', '%[ROBOT]%')
+        .gte('created_at', dedupeWindow)
+        .limit(1)
+        .maybeSingle();
+
+      if (recentOutbound) {
+        console.log(`[SDR-Robot-Chat] OUTBOUND DEDUP: Resposta idêntica já enviada em <30s. Abortando envio.`);
+        await supabase.from('conversations').update({ robot_lock_until: null }).eq('id', conversationId);
+        return new Response(JSON.stringify({ skipped: true, reason: 'duplicate_outbound_skipped' }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
 
     // Delay for client message to load
     await new Promise(r => setTimeout(r, 2000));
