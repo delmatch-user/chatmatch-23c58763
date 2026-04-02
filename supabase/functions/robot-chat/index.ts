@@ -975,13 +975,13 @@ async function handleAutomaticMode(body: {
   const immediateLockUntil = new Date(Date.now() + 30000).toISOString();
   const nowIso = new Date().toISOString();
 
-  if (isTransfer) {
-    // Transferência: setar lock diretamente sem competir (a origem já controla a concorrência)
+  if (skipAtomicLock) {
+    // Transferência ou retry do cron: setar lock diretamente sem competir
     await supabase
       .from('conversations')
       .update({ robot_lock_until: immediateLockUntil })
       .eq('id', conversationId);
-    console.log(`[Robot-Chat Auto] Transferência — lock setado diretamente (bypass atômico).`);
+    console.log(`[Robot-Chat Auto] ${isTransfer ? 'Transferência' : 'Retry do cron'} — lock setado diretamente (bypass atômico).`);
   } else {
     // Fluxo normal: lock atômico competitivo
     const { count: lockClaimed } = await supabase
