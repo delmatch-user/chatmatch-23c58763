@@ -35,6 +35,25 @@ Deno.serve(async (req) => {
       });
     }
 
+    // === FILTRO DE METADATA: Ignorar payloads que não são mensagem real ===
+    const trimmedMsg = mensagem.trim();
+    // Se a mensagem é exatamente igual ao nome do contato, é provavelmente um update de metadata
+    if (name && trimmedMsg === name.trim()) {
+      console.log('[webhook-machine] Payload ignorado: mensagem igual ao nome do contato (metadata update)');
+      return new Response(JSON.stringify({ success: true, skipped: true, reason: 'metadata_name_update' }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    // Mensagem muito curta (1-2 chars) provavelmente não é real
+    if (trimmedMsg.length <= 1) {
+      console.log('[webhook-machine] Payload ignorado: mensagem muito curta');
+      return new Response(JSON.stringify({ success: true, skipped: true, reason: 'message_too_short' }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // 1. Buscar conversa existente pelo external_id
     const { data: existingConversation } = await supabase
       .from('conversations')
@@ -328,6 +347,26 @@ Deno.serve(async (req) => {
       console.log('[webhook-machine] Nova conversa criada:', conversationId);
     }
 
+    // === DEDUPE DE ENTRADA: Verificar se mensagem idêntica já foi salva nos últimos 15s ===
+    const dedupeWindow = new Date(Date.now() - 15000).toISOString();
+    const { data: recentDupe } = await supabase
+      .from('messages')
+      .select('id')
+      .eq('conversation_id', conversationId)
+      .eq('content', mensagem)
+      .is('sender_id', null)
+      .gte('created_at', dedupeWindow)
+      .limit(1)
+      .maybeSingle();
+
+    if (recentDupe) {
+      console.log('[webhook-machine] Mensagem duplicada detectada (mesma content em <15s), ignorando');
+      return new Response(JSON.stringify({ success: true, skipped: true, reason: 'duplicate_inbound' }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // 5. Salvar mensagem
     const { error: msgError } = await supabase
       .from('messages')
@@ -468,10 +507,22 @@ Deno.serve(async (req) => {
       // Já foi chamado acima como novo lead SDR, pular
       console.log('[webhook-machine] SDR robot-chat já chamado para novo lead');
     } else if (convUpdated?.assigned_to_robot) {
-      // Setar lock antes de chamar robot-chat para evitar duplicata pelo sync-robot-schedules
-      await supabase.from('conversations').update({
-        robot_lock_until: new Date(Date.now() + 30000).toISOString()
-      }).eq('id', conversationId);
+      // Setar lock ATÔMICO antes de chamar robot-chat para evitar duplicata pelo sync-robot-schedules
+      const lockUntil = new Date(Date.now() + 30000).toISOString();
+      const { count: lockOk } = await supabase.from('conversations').update({
+        robot_lock_until: lockUntil
+      }, { count: 'exact' }).eq('id', conversationId).is('robot_lock_until', null);
+      
+      // Se não conseguiu o lock (robot-chat já está processando), tentar apenas se lock expirou
+      if (!lockOk || lockOk === 0) {
+        const { data: lockCheck } = await supabase.from('conversations').select('robot_lock_until').eq('id', conversationId).single();
+        if (lockCheck?.robot_lock_until && new Date(lockCheck.robot_lock_until) > new Date()) {
+          console.log('[webhook-machine] Lock ativo, robot-chat já está processando. Pulando chamada.');
+        } else {
+          // Lock expirado, setar novo
+          await supabase.from('conversations').update({ robot_lock_until: lockUntil }).eq('id', conversationId);
+        }
+      }
       if (convUpdated.sdr_deal_id) {
         console.log('[webhook-machine] SDR deal detectado, roteando para sdr-robot-chat');
         fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/sdr-robot-chat`, {

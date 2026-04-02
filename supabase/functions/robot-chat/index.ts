@@ -1952,6 +1952,28 @@ async function handleAutomaticMode(body: {
   // Anti-flood: SEMPRE enviar como mensagem única — nunca dividir em múltiplas mensagens
   const messageParts = [aiResponse];
 
+  // === OUTBOUND DEDUP: Verificar se resposta idêntica já foi enviada nos últimos 30s ===
+  if (aiResponse) {
+    const dedupeWindow = new Date(Date.now() - 30000).toISOString();
+    const { data: recentOutbound } = await supabase
+      .from('messages')
+      .select('id')
+      .eq('conversation_id', conversationId)
+      .eq('content', aiResponse)
+      .like('sender_name', '%[ROBOT]%')
+      .gte('created_at', dedupeWindow)
+      .limit(1)
+      .maybeSingle();
+
+    if (recentOutbound) {
+      console.log(`[Robot-Chat Auto] OUTBOUND DEDUP: Resposta idêntica já enviada em <30s. Abortando envio.`);
+      await supabase.from('conversations').update({ robot_lock_until: null }).eq('id', conversationId);
+      return new Response(JSON.stringify({ skipped: true, reason: 'duplicate_outbound_skipped' }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+  }
+
   // Delay de 2s para garantir que a mensagem do cliente carregou na tela dos atendentes
   await new Promise(resolve => setTimeout(resolve, 2000));
 

@@ -170,7 +170,7 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // Atribuir robô à conversa com lock para evitar duplicação
+      // Atribuir robô à conversa com lock para evitar duplicação (atomic claim)
       const { error: updateError, count: claimCount } = await supabase
         .from("conversations")
         .update({
@@ -178,12 +178,12 @@ Deno.serve(async (req) => {
           status: "em_atendimento",
           updated_at: new Date().toISOString(),
           robot_lock_until: new Date(Date.now() + 30000).toISOString(),
-        })
+        }, { count: 'exact' })
         .eq("id", conv.id)
         .eq("status", "em_fila")
         .is("assigned_to_robot", null);
 
-      if (updateError || claimCount === 0) {
+      if (updateError || !claimCount || claimCount === 0) {
         if (updateError) console.error("[sync-robot-schedules] Erro ao atribuir conversa:", conv.id, updateError.message);
         else console.log(`[sync-robot-schedules] Conversa ${conv.id} já foi clamada por outro processo`);
         continue;
@@ -391,28 +391,18 @@ Deno.serve(async (req) => {
         }
 
         try {
-          // === PRE-LOCK: Setar lock ANTES de chamar robot-chat para evitar duplicação por crons paralelos ===
+          // === PRE-LOCK ATÔMICO: Setar lock ANTES de chamar robot-chat para evitar duplicação por crons paralelos ===
           const preLock = new Date(Date.now() + 30000).toISOString();
           const { count: lockClaimed } = await supabase
             .from("conversations")
-            .update({ robot_lock_until: preLock })
+            .update({ robot_lock_until: preLock }, { count: 'exact' })
             .eq("id", conv.id)
             .is("robot_lock_until", null);
 
           // Se não conseguiu "clamar" o lock (outro cron já setou), pular
-          if (lockClaimed === 0) {
-            // Tentar verificar se o lock existente já expirou
-            const { data: lockCheck } = await supabase
-              .from("conversations")
-              .select("robot_lock_until")
-              .eq("id", conv.id)
-              .single();
-            if (lockCheck?.robot_lock_until && new Date(lockCheck.robot_lock_until) > new Date()) {
-              console.log(`[sync-robot-schedules] Conversa ${conv.id}: lock ativo, pulando retry`);
-              continue;
-            }
-            // Lock expirado, tentar novamente
-            await supabase.from("conversations").update({ robot_lock_until: preLock }).eq("id", conv.id);
+          if (!lockClaimed || lockClaimed === 0) {
+            console.log(`[sync-robot-schedules] Conversa ${conv.id}: lock não conquistado, pulando retry`);
+            continue;
           }
 
           const payload: Record<string, unknown> = {
