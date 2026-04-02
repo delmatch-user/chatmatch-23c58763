@@ -426,6 +426,9 @@ Deno.serve(async (req) => {
             payload.dealId = conv.sdr_deal_id;
             payload.isTransfer = !!conv.robot_transferred;
           }
+          
+          // Sinalizar ao robot-chat que o lock já foi adquirido pelo cron
+          payload.isRetry = true;
 
           const chatUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/${functionName}`;
           const resp = await fetch(chatUrl, {
