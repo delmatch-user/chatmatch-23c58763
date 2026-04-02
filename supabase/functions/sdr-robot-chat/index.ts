@@ -353,7 +353,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { conversationId, dealId, message, contactPhone, contactJid, connectionType: inputConnectionType, phoneNumberId: inputPhoneNumberId, isTransfer } = body;
+    const { conversationId, dealId, message, contactPhone, contactJid, connectionType: inputConnectionType, phoneNumberId: inputPhoneNumberId, isTransfer, isRetry } = body;
 
     if (!conversationId || !dealId) {
       return new Response(JSON.stringify({ error: 'conversationId and dealId are required' }), {
