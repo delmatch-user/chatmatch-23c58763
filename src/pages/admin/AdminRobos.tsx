@@ -446,9 +446,9 @@ export default function AdminRobos() {
   if (isConfigOpen && selectedRobot) {
     return (
       <MainLayout>
-        <div className="flex h-[calc(100vh-4rem)]">
+        <div className="flex flex-col lg:flex-row h-[calc(100vh-4rem)]">
           {/* Config Panel */}
-          <div className="flex-1 flex flex-col border-r border-border min-w-0">
+          <div className="flex-1 flex flex-col lg:border-r border-border min-w-0">
             {/* Tabs Header */}
             <div className="border-b border-border">
               <Tabs value={configTab} onValueChange={setConfigTab}>
@@ -556,7 +556,7 @@ export default function AdminRobos() {
                     </div>
 
                     {/* Departments and Tone Row */}
-                    <div className="grid grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                       <div className="space-y-2">
                         <Label>Departamentos</Label>
                         <div className="space-y-2">
@@ -617,7 +617,7 @@ export default function AdminRobos() {
                     <div className="space-y-2">
                       <Label>Canais</Label>
                       <p className="text-xs text-muted-foreground">Selecione em quais canais este robô pode atuar</p>
-                      <div className="flex gap-4 p-3 border rounded-md bg-background">
+                      <div className="flex flex-wrap gap-3 sm:gap-4 p-3 border rounded-md bg-background">
                         {([
                           { value: 'whatsapp' as RobotChannel, label: 'WhatsApp', icon: '💬' },
                           { value: 'instagram' as RobotChannel, label: 'Instagram', icon: '📸' },
@@ -644,7 +644,7 @@ export default function AdminRobos() {
                     </div>
 
                     {/* Audio and Tokens Row */}
-                    <div className="grid grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                       <div className="space-y-2">
                         <Label>Enviar áudio</Label>
                         <Select
@@ -678,7 +678,7 @@ export default function AdminRobos() {
                     </div>
 
                     {/* Messages Row */}
-                    <div className="grid grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                       <div className="space-y-2">
                         <Label htmlFor="finalizationMessage">Mensagem de finalização (opcional)</Label>
                         <Textarea
@@ -767,7 +767,7 @@ export default function AdminRobos() {
                     {knowledgeTab === 'perguntas' && (
                       <div className="space-y-4">
                         {selectedRobot.qaPairs.map((qa, index) => (
-                          <div key={qa.id} className="grid grid-cols-2 gap-4 items-start">
+                          <div key={qa.id} className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
                             <div className="space-y-1">
                               <Label className="text-sm">
                                 Pergunta {index + 1} <span className="text-destructive">*</span>
@@ -1300,7 +1300,7 @@ export default function AdminRobos() {
                           Configure os recursos que o agente poderá utilizar. Quando é adicionado uma grande quantidade de recursos, o agente pode gastar mais tokens e demorar mais para responder.
                         </p>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           {/* Pesquisa na Web */}
                           <div className="bg-muted/30 rounded-lg p-4">
                             <div className="flex items-start justify-between">
@@ -1546,23 +1546,25 @@ export default function AdminRobos() {
 
                     <div className="space-y-3">
                       {schedules.map((schedule, idx) => (
-                        <div key={schedule.day_of_week} className="bg-muted/30 rounded-lg p-4">
-                          <div className="flex items-center gap-4">
-                            <Switch
-                              checked={schedule.is_active}
-                              onCheckedChange={(checked) => {
-                                const updated = [...schedules];
-                                updated[idx] = { ...updated[idx], is_active: checked };
-                                setSchedules(updated);
-                              }}
-                            />
-                            <span className="font-medium text-sm w-24">{getDayName(schedule.day_of_week)}</span>
-                            <div className="flex items-center gap-2">
+                        <div key={schedule.day_of_week} className="bg-muted/30 rounded-lg p-3 sm:p-4">
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                            <div className="flex items-center gap-3">
+                              <Switch
+                                checked={schedule.is_active}
+                                onCheckedChange={(checked) => {
+                                  const updated = [...schedules];
+                                  updated[idx] = { ...updated[idx], is_active: checked };
+                                  setSchedules(updated);
+                                }}
+                              />
+                              <span className="font-medium text-sm w-24">{getDayName(schedule.day_of_week)}</span>
+                            </div>
+                            <div className="flex items-center gap-2 ml-10 sm:ml-0">
                               <Input
                                 type="time"
                                 value={schedule.start_time}
                                 disabled={!schedule.is_active}
-                                className="w-32"
+                                className="w-28 sm:w-32"
                                 onChange={(e) => {
                                   const updated = [...schedules];
                                   updated[idx] = { ...updated[idx], start_time: e.target.value };
@@ -1574,7 +1576,7 @@ export default function AdminRobos() {
                                 type="time"
                                 value={schedule.end_time}
                                 disabled={!schedule.is_active}
-                                className="w-32"
+                                className="w-28 sm:w-32"
                                 onChange={(e) => {
                                   const updated = [...schedules];
                                   updated[idx] = { ...updated[idx], end_time: e.target.value };
@@ -1643,8 +1645,8 @@ export default function AdminRobos() {
             </div>
           </div>
 
-          {/* Test Chat Panel */}
-          <div className="w-96 flex flex-col bg-muted/30">
+          {/* Test Chat Panel - hidden on mobile */}
+          <div className="hidden lg:flex w-96 flex-col bg-muted/30">
             {/* Chat Header */}
             <div className="p-4 border-b border-border flex items-center justify-end">
               <div className="flex items-center gap-2">
@@ -1724,11 +1726,11 @@ export default function AdminRobos() {
 
   return (
     <MainLayout>
-      <div className="p-6 space-y-6">
+      <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Robôs</h1>
+            <h1 className="text-xl sm:text-2xl font-bold text-foreground">Robôs</h1>
             <p className="text-muted-foreground">Gerencie agentes IA e automações</p>
           </div>
           
@@ -1965,7 +1967,7 @@ export default function AdminRobos() {
             </RollbackDialogDescription>
           </RollbackDialogHeader>
           {diffDialogRobotId && delmaChanges[diffDialogRobotId] && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="rounded-lg border border-border/50 p-3 bg-secondary/20">
                 <p className="text-[10px] font-semibold text-muted-foreground mb-2">📄 INSTRUÇÃO ANTERIOR</p>
                 <p className="text-xs text-muted-foreground whitespace-pre-wrap max-h-64 overflow-auto">{delmaChanges[diffDialogRobotId].current_instruction || '(vazio)'}</p>
