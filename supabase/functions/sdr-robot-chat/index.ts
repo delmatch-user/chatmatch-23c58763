@@ -1387,6 +1387,28 @@ serve(async (req) => {
       ? responseText.split('\n').map((p: string) => p.trim()).filter((p: string) => p.length > 0)
       : [responseText];
 
+    // === OUTBOUND DEDUP: Verificar se resposta idêntica já foi enviada nos últimos 30s ===
+    if (responseText) {
+      const dedupeWindow = new Date(Date.now() - 30000).toISOString();
+      const { data: recentOutbound } = await supabase
+        .from('messages')
+        .select('id')
+        .eq('conversation_id', conversationId)
+        .eq('content', responseText)
+        .like('sender_name', '%[ROBOT]%')
+        .gte('created_at', dedupeWindow)
+        .limit(1)
+        .maybeSingle();
+
+      if (recentOutbound) {
+        console.log(`[SDR-Robot-Chat] OUTBOUND DEDUP: Resposta idêntica já enviada em <30s. Abortando envio.`);
+        await supabase.from('conversations').update({ robot_lock_until: null }).eq('id', conversationId);
+        return new Response(JSON.stringify({ skipped: true, reason: 'duplicate_outbound_skipped' }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     // Delay for client message to load
     await new Promise(r => setTimeout(r, 2000));
 
