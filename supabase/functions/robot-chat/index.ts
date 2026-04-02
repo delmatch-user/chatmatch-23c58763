@@ -463,7 +463,13 @@ function buildSystemPrompt(config: RobotConfig, availableDepartments?: { id: str
     prompt += `- **edit_contact**: Use para atualizar informações do contato (nome, email, notas) quando o cliente fornecer esses dados.\n`;
   }
   if ((config.tools as any).canFinalize) {
-    prompt += `- **finalize_conversation**: Use quando você resolver COMPLETAMENTE o problema do cliente e ele confirmar que está tudo certo. Envie uma mensagem de despedida e finalize o atendimento.\n`;
+    prompt += `- **finalize_conversation**: Use quando identificar que o atendimento foi concluído. Sinais de encerramento incluem:
+  • Cliente agradece: "obrigado", "valeu", "agradeço", "thanks"
+  • Cliente confirma resolução: "já resolvi", "resolvido", "deu certo", "consegui", "era isso", "tá bom"
+  • Cliente se despede: "tchau", "até mais", "falou", "abraço"
+  • Você resolveu o problema e o cliente não tem mais dúvidas
+  NÃO finalize se o cliente ainda tem perguntas pendentes ou se a conversa está no meio de uma resolução ativa.
+  Ao finalizar, envie uma mensagem de despedida cordial antes.\n`;
   }
   
   prompt += `- Seja cordial e profissional em todas as interações.\n`;
@@ -675,7 +681,7 @@ function buildOpenAITools(config: RobotConfig, availableDepartments?: { id: stri
       type: "function",
       function: {
         name: "finalize_conversation",
-        description: "Finalizar o atendimento quando o problema do cliente foi completamente resolvido e ele confirmou que está tudo certo",
+        description: "Finalizar o atendimento quando o cliente demonstrar que o assunto foi resolvido. Sinais: agradecimentos (obrigado, valeu), confirmações (resolvido, deu certo, era isso, tá bom), despedidas (tchau, até mais, falou). NÃO use se o cliente ainda tem perguntas pendentes.",
         parameters: {
           type: "object",
           properties: {
