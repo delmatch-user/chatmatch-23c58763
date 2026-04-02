@@ -1,44 +1,44 @@
 
 
-# Implementar finalização inteligente por IA/robô
+# Corrigir Arthur (SDR) travado por lock atômico
 
-## O que já existe
-- A tool `finalize_conversation` já está implementada no `robot-chat` e já salva no `conversation_logs` com `finalized_by_name: "NomeDoRobô (IA)"` e `agent_status_at_finalization: "finalized_by_robot"`.
-- O fluxo completo já funciona: envia despedida, protocolo, salva log, deleta conversa.
+## Diagnóstico confirmado
 
-## O que precisa mudar
+Os logs mostram claramente o problema: **dezenas de chamadas consecutivas ao `sdr-robot-chat` falhando com "Lock atômico NÃO conquistado"**. A conversa da Lilian Melo está travada desde 18:28 — o lock nunca é liberado porque:
 
-O problema é que o **prompt da IA** é muito restritivo. Atualmente diz:
-> "Use quando você resolver COMPLETAMENTE o problema do cliente e ele **confirmar** que está tudo certo"
+1. O `sdr-robot-chat` **não lê `isRetry`** do body (diferente do `robot-chat` que já foi corrigido)
+2. O cron `sync-robot-schedules` envia `isRetry: true`, mas o SDR ignora completamente
+3. O `isTransfer` é lido mas **não é usado para bypass do lock**
+4. Resultado: lock preso, cron retenta infinitamente, todas as tentativas rejeitadas
 
-Isso faz a IA esperar uma confirmação explícita, quando na verdade deveria interpretar sinais de encerramento naturais.
+## Mudança (1 arquivo)
 
-### Mudança 1 — Prompt mais inteligente para finalização (robot-chat)
-No `buildSystemPrompt`, quando `canFinalize` está ativo, atualizar a instrução para:
+### `supabase/functions/sdr-robot-chat/index.ts`
 
+**Passo 1** — Extrair `isRetry` do body (linha ~356):
 ```
-- **finalize_conversation**: Use quando identificar que o atendimento foi 
-  concluído. Sinais de encerramento incluem:
-  • Cliente agradece: "obrigado", "valeu", "agradeço", "thanks"
-  • Cliente confirma resolução: "já resolvi", "resolvido", "deu certo", 
-    "consegui", "era isso", "tá bom"
-  • Cliente se despede: "tchau", "até mais", "falou", "abraço"
-  • Você resolveu o problema e o cliente não tem mais dúvidas
-  NÃO finalize se o cliente ainda tem perguntas pendentes ou se a 
-  conversa está no meio de uma resolução.
+const { conversationId, dealId, message, ..., isTransfer, isRetry } = body;
 ```
 
-### Mudança 2 — Description da tool mais descritiva
-Atualizar o `description` da function `finalize_conversation` para refletir os mesmos critérios, ajudando o modelo a decidir quando chamá-la.
+**Passo 2** — Bypass do lock quando `isRetry` ou `isTransfer` (antes do lock claim, linha ~522):
+```
+if (isRetry || isTransfer) {
+  // Cron ou transferência: pular competição de lock, setar lock diretamente
+  await supabase.from('conversations')
+    .update({ robot_lock_until: immediateLockUntil })
+    .eq('id', conversationId);
+  console.log('[SDR-Robot-Chat] Lock bypass (isRetry/isTransfer)');
+} else {
+  // Lock atômico normal
+  const { count } = await supabase...
+  if (!count) return skipped;
+}
+```
 
-### Mudança 3 — Garantir visibilidade nos Logs IA
-As conversas finalizadas por robô já aparecem nos Logs IA (filtro `finalized_by IS NULL`). Confirmar que `finalized_by: null` + `finalized_by_name: "Robot (IA)"` é o padrão usado — já está correto no código atual.
+**Passo 3** — Resetar o lock da conversa travada da Lilian Melo para que o próximo ciclo do cron a desbloqueie imediatamente.
 
-## Arquivo alterado
-- `supabase/functions/robot-chat/index.ts` (prompt + tool description)
-
-## O que NÃO muda
-- Nenhuma alteração no módulo autônomo da Delma
-- Nenhuma alteração em tabelas ou edge functions pré-existentes além do `robot-chat`
-- O `sdr-robot-chat` não é afetado (robôs comerciais não finalizam atendimento de suporte)
+## Resultado esperado
+- Arthur responde imediatamente após retry do cron ou transferência
+- O anti-duplicação continua funcionando para chamadas normais (webhook)
+- Conversas travadas são recuperadas automaticamente
 
