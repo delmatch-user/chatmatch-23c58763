@@ -970,24 +970,33 @@ async function handleAutomaticMode(body: {
   }
 
   // === ATOMIC LOCK CLAIM: Evitar respostas duplicadas ===
-  // Em vez de ler o lock e depois setar (race window), fazemos um UPDATE atômico
-  // que só funciona se o lock está null ou expirado
   const immediateLockUntil = new Date(Date.now() + 30000).toISOString();
   const nowIso = new Date().toISOString();
-  const { count: lockClaimed } = await supabase
-    .from('conversations')
-    .update({ robot_lock_until: immediateLockUntil }, { count: 'exact' })
-    .eq('id', conversationId)
-    .or(`robot_lock_until.is.null,robot_lock_until.lt.${nowIso}`);
 
-  if (!lockClaimed || lockClaimed === 0) {
-    console.log(`[Robot-Chat Auto] Lock atômico NÃO conquistado. Outro processo já está respondendo. Ignorando.`);
-    return new Response(JSON.stringify({ skipped: true, reason: 'atomic_lock_not_acquired' }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  if (isTransfer) {
+    // Transferência: setar lock diretamente sem competir (a origem já controla a concorrência)
+    await supabase
+      .from('conversations')
+      .update({ robot_lock_until: immediateLockUntil })
+      .eq('id', conversationId);
+    console.log(`[Robot-Chat Auto] Transferência — lock setado diretamente (bypass atômico).`);
+  } else {
+    // Fluxo normal: lock atômico competitivo
+    const { count: lockClaimed } = await supabase
+      .from('conversations')
+      .update({ robot_lock_until: immediateLockUntil }, { count: 'exact' })
+      .eq('id', conversationId)
+      .or(`robot_lock_until.is.null,robot_lock_until.lt.${nowIso}`);
+
+    if (!lockClaimed || lockClaimed === 0) {
+      console.log(`[Robot-Chat Auto] Lock atômico NÃO conquistado. Outro processo já está respondendo. Ignorando.`);
+      return new Response(JSON.stringify({ skipped: true, reason: 'atomic_lock_not_acquired' }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    console.log(`[Robot-Chat Auto] Lock atômico conquistado (30s) para evitar duplicação.`);
   }
-  console.log(`[Robot-Chat Auto] Lock atômico conquistado (30s) para evitar duplicação.`);
   
   // Delay de 2s para garantir que chamadas concorrentes vejam o lock (pular em transferências - lock da origem já protege)
   if (!isTransfer) {
@@ -1687,9 +1696,8 @@ async function handleAutomaticMode(body: {
             status: 'sent',
           });
           
-          // 2. Atualizar conversa para o robô destino com lock de 5s para evitar duplicatas
+          // 2. Atualizar conversa para o robô destino SEM lock (destino vai setar seu próprio lock)
           const handoffSummaryRobot = args.handoff_summary || args.reason || '';
-          const lockUntil = new Date(Date.now() + 5000).toISOString();
           await supabase
             .from('conversations')
             .update({
@@ -1697,7 +1705,7 @@ async function handleAutomaticMode(body: {
               assigned_to: null,
               status: 'em_atendimento',
               robot_transferred: false,
-              robot_lock_until: lockUntil,
+              robot_lock_until: null,
               handoff_summary: handoffSummaryRobot || null,
               updated_at: new Date().toISOString()
             })
@@ -1729,7 +1737,7 @@ async function handleAutomaticMode(body: {
           hasTransferTool = true; // Não limpar lock do destino
           actionTaken = true;
           
-          // Chamar robot-chat para o robô destino
+          // Chamar robot-chat para o robô destino COM a última mensagem do cliente
           fetch(`${supabaseUrl}/functions/v1/robot-chat`, {
             method: 'POST',
             headers: {
@@ -1739,6 +1747,7 @@ async function handleAutomaticMode(body: {
             body: JSON.stringify({
               robotId: targetRobot.id,
               conversationId: conversationId,
+              message: message || '',
               contactPhone,
               contactJid,
               connectionType,
