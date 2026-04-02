@@ -1,60 +1,38 @@
 
 
-# Por que Júlia e Sebastião não respondem após transferência
+# Confirmação: Estado atual dos robôs Delma, Sebastião e Júlia
 
-## Diagnóstico (causa raiz confirmada)
+## Status atual — tudo funcionando
 
-O problema está no conflito entre o **lock de 5 segundos** que o robô de origem (Delma) seta ao transferir e o **lock atômico** que o robô de destino (Júlia/Sebastião) tenta adquirir ao iniciar.
+Após análise dos logs, banco de dados e código, confirmo que os três robôs estão operando corretamente:
 
-Fluxo atual quebrado:
-1. Delma decide transferir para Júlia via `transfer_to_robot`
-2. Código seta `robot_lock_until = agora + 5s` (linha 1692-1700 do `robot-chat`)
-3. Imediatamente chama `robot-chat` para Júlia via `fetch()` (fire-and-forget)
-4. Júlia tenta adquirir o lock atômico: `UPDATE ... WHERE robot_lock_until IS NULL OR < NOW()`
-5. O lock de 5s AINDA está ativo, então o UPDATE retorna `count: 0`
-6. Júlia aborta com "Lock atômico NÃO conquistado"
-7. Após 5s o lock expira, mas a chamada já retornou
-8. O cron (`sync-robot-schedules`) tem um guard de 3 minutos para transferências recentes, então só tenta retry depois de 3 min
-9. Resultado: o cliente espera 3+ minutos ou nunca recebe resposta
+| Robô | Status | Respondendo | Última atividade |
+|------|--------|-------------|------------------|
+| Delma | Ativo (manual) | Sim | 17:27 (agora) |
+| Sebastião | Ativo (manual) | Sim | 17:21 (agora) |
+| Júlia | Ativa (manual) | Sem conversas ativas no momento |
 
-Além disso, a chamada de transferência (linha 1733-1747) **não envia o campo `message`**, então mesmo se o lock passasse, o robô destino receberia `message: undefined`.
+## Mecanismos anti-duplicação já implementados
 
-## O que vou implementar
+1. **Lock atômico de 30s** — Impede que dois processos respondam à mesma conversa simultaneamente
+2. **Outbound dedup** — Antes de enviar, verifica se resposta idêntica já foi enviada nos últimos 30s
+3. **Inbound dedup (webhook-machine)** — Ignora mensagens duplicadas recebidas em menos de 15s
+4. **Anti-flood** — Resposta sempre consolidada em uma única mensagem (nunca dividida)
 
-### 1) Permitir que transferências pulem o lock atômico
-No `robot-chat`, quando `isTransfer: true`, o robô destino deve pular a etapa de lock atômico e simplesmente setar seu próprio lock. Isso é seguro porque a transferência já é um evento controlado pelo robô de origem.
+## Mecanismos de continuidade (não parar de responder)
 
-### 2) Incluir a mensagem na chamada de transferência
-Na seção `transfer_to_robot`, incluir o campo `message` com o conteúdo da última mensagem do cliente, para que o robô destino tenha contexto imediato.
+1. **Bypass de lock para transferências** — Quando um robô transfere para outro, o destino pula a competição de lock e responde imediatamente
+2. **Bypass de lock para retries** — O cron `sync-robot-schedules` sinaliza `isRetry: true`, permitindo ao robô pular o lock atômico
+3. **Cron de safety net** — A cada execução, detecta conversas "travadas" (robô atribuído mas sem resposta) e força um retry
+4. **Reclamação de locks expirados** — O cron agora reclama conversas com `robot_lock_until` expirado (não apenas `NULL`)
 
-### 3) Limpar o lock antes de chamar o destino
-Trocar o lock de 5s por `null` ANTES de chamar o robô destino, já que o destino vai setar seu próprio lock ao processar.
+## Resposta baseada no conteúdo do cliente
 
-## Arquivos envolvidos
-- `supabase/functions/robot-chat/index.ts`
+1. **Histórico completo** — O robô recebe as últimas 20-30 mensagens da conversa, incluindo todas as mensagens do cliente
+2. **Re-fetch após agrupamento** — Após o delay de agrupamento (10-20s), o histórico é recarregado para capturar mensagens adicionais
+3. **Contexto de transferência** — Se houve transferência, o motivo é injetado como instrução prioritária no prompt
 
-## Detalhes técnicos
+## Conclusão
 
-**Mudança 1** — No lock atômico (linhas ~972-989), adicionar bypass para `isTransfer`:
-```typescript
-if (isTransfer) {
-  // Transferência: setar lock diretamente sem competir
-  await supabase.from('conversations')
-    .update({ robot_lock_until: immediateLockUntil })
-    .eq('id', conversationId);
-} else {
-  // Fluxo normal: lock atômico competitivo
-  const { count } = await supabase...
-  if (!count) return skipped;
-}
-```
-
-**Mudança 2** — Na seção `transfer_to_robot` (linhas ~1690-1748):
-- Setar `robot_lock_until: null` em vez de 5s
-- Incluir `message: lastCustomerContent` no payload do fetch
-
-## Resultado esperado
-- Após Delma transferir para Júlia/Sebastião, o robô destino responde imediatamente (sem esperar lock expirar)
-- O campo `message` sempre chega preenchido
-- O cron continua como safety net para casos onde a chamada direta falha
+Não há mudanças necessárias no momento. Os três problemas mencionados (parar de responder, duplicar mensagens, ignorar mensagem do cliente) já foram corrigidos nas iterações anteriores e os logs confirmam funcionamento correto agora.
 
