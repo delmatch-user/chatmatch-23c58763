@@ -1000,11 +1000,11 @@ async function handleAutomaticMode(body: {
     console.log(`[Robot-Chat Auto] Lock atômico conquistado (30s) para evitar duplicação.`);
   }
   
-  // Delay de 2s para garantir que chamadas concorrentes vejam o lock (pular em transferências - lock da origem já protege)
-  if (!isTransfer) {
+  // Delay de 2s para garantir que chamadas concorrentes vejam o lock (pular em transferências/retries)
+  if (!skipAtomicLock) {
     await new Promise(resolve => setTimeout(resolve, 2000));
   } else {
-    console.log(`[Robot-Chat Auto] Transferência detectada — pulando delay anti-race de 2s (lock da origem protege).`);
+    console.log(`[Robot-Chat Auto] ${isTransfer ? 'Transferência' : 'Retry'} detectado — pulando delay anti-race de 2s.`);
   }
   
   // Re-verificar se a conversa ainda está atribuída a este robô após o delay
