@@ -1,38 +1,44 @@
 
 
-# Confirmação: Estado atual dos robôs Delma, Sebastião e Júlia
+# Implementar finalização inteligente por IA/robô
 
-## Status atual — tudo funcionando
+## O que já existe
+- A tool `finalize_conversation` já está implementada no `robot-chat` e já salva no `conversation_logs` com `finalized_by_name: "NomeDoRobô (IA)"` e `agent_status_at_finalization: "finalized_by_robot"`.
+- O fluxo completo já funciona: envia despedida, protocolo, salva log, deleta conversa.
 
-Após análise dos logs, banco de dados e código, confirmo que os três robôs estão operando corretamente:
+## O que precisa mudar
 
-| Robô | Status | Respondendo | Última atividade |
-|------|--------|-------------|------------------|
-| Delma | Ativo (manual) | Sim | 17:27 (agora) |
-| Sebastião | Ativo (manual) | Sim | 17:21 (agora) |
-| Júlia | Ativa (manual) | Sem conversas ativas no momento |
+O problema é que o **prompt da IA** é muito restritivo. Atualmente diz:
+> "Use quando você resolver COMPLETAMENTE o problema do cliente e ele **confirmar** que está tudo certo"
 
-## Mecanismos anti-duplicação já implementados
+Isso faz a IA esperar uma confirmação explícita, quando na verdade deveria interpretar sinais de encerramento naturais.
 
-1. **Lock atômico de 30s** — Impede que dois processos respondam à mesma conversa simultaneamente
-2. **Outbound dedup** — Antes de enviar, verifica se resposta idêntica já foi enviada nos últimos 30s
-3. **Inbound dedup (webhook-machine)** — Ignora mensagens duplicadas recebidas em menos de 15s
-4. **Anti-flood** — Resposta sempre consolidada em uma única mensagem (nunca dividida)
+### Mudança 1 — Prompt mais inteligente para finalização (robot-chat)
+No `buildSystemPrompt`, quando `canFinalize` está ativo, atualizar a instrução para:
 
-## Mecanismos de continuidade (não parar de responder)
+```
+- **finalize_conversation**: Use quando identificar que o atendimento foi 
+  concluído. Sinais de encerramento incluem:
+  • Cliente agradece: "obrigado", "valeu", "agradeço", "thanks"
+  • Cliente confirma resolução: "já resolvi", "resolvido", "deu certo", 
+    "consegui", "era isso", "tá bom"
+  • Cliente se despede: "tchau", "até mais", "falou", "abraço"
+  • Você resolveu o problema e o cliente não tem mais dúvidas
+  NÃO finalize se o cliente ainda tem perguntas pendentes ou se a 
+  conversa está no meio de uma resolução.
+```
 
-1. **Bypass de lock para transferências** — Quando um robô transfere para outro, o destino pula a competição de lock e responde imediatamente
-2. **Bypass de lock para retries** — O cron `sync-robot-schedules` sinaliza `isRetry: true`, permitindo ao robô pular o lock atômico
-3. **Cron de safety net** — A cada execução, detecta conversas "travadas" (robô atribuído mas sem resposta) e força um retry
-4. **Reclamação de locks expirados** — O cron agora reclama conversas com `robot_lock_until` expirado (não apenas `NULL`)
+### Mudança 2 — Description da tool mais descritiva
+Atualizar o `description` da function `finalize_conversation` para refletir os mesmos critérios, ajudando o modelo a decidir quando chamá-la.
 
-## Resposta baseada no conteúdo do cliente
+### Mudança 3 — Garantir visibilidade nos Logs IA
+As conversas finalizadas por robô já aparecem nos Logs IA (filtro `finalized_by IS NULL`). Confirmar que `finalized_by: null` + `finalized_by_name: "Robot (IA)"` é o padrão usado — já está correto no código atual.
 
-1. **Histórico completo** — O robô recebe as últimas 20-30 mensagens da conversa, incluindo todas as mensagens do cliente
-2. **Re-fetch após agrupamento** — Após o delay de agrupamento (10-20s), o histórico é recarregado para capturar mensagens adicionais
-3. **Contexto de transferência** — Se houve transferência, o motivo é injetado como instrução prioritária no prompt
+## Arquivo alterado
+- `supabase/functions/robot-chat/index.ts` (prompt + tool description)
 
-## Conclusão
-
-Não há mudanças necessárias no momento. Os três problemas mencionados (parar de responder, duplicar mensagens, ignorar mensagem do cliente) já foram corrigidos nas iterações anteriores e os logs confirmam funcionamento correto agora.
+## O que NÃO muda
+- Nenhuma alteração no módulo autônomo da Delma
+- Nenhuma alteração em tabelas ou edge functions pré-existentes além do `robot-chat`
+- O `sdr-robot-chat` não é afetado (robôs comerciais não finalizam atendimento de suporte)
 
