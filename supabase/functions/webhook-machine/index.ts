@@ -347,6 +347,26 @@ Deno.serve(async (req) => {
       console.log('[webhook-machine] Nova conversa criada:', conversationId);
     }
 
+    // === DEDUPE DE ENTRADA: Verificar se mensagem idêntica já foi salva nos últimos 15s ===
+    const dedupeWindow = new Date(Date.now() - 15000).toISOString();
+    const { data: recentDupe } = await supabase
+      .from('messages')
+      .select('id')
+      .eq('conversation_id', conversationId)
+      .eq('content', mensagem)
+      .is('sender_id', null)
+      .gte('created_at', dedupeWindow)
+      .limit(1)
+      .maybeSingle();
+
+    if (recentDupe) {
+      console.log('[webhook-machine] Mensagem duplicada detectada (mesma content em <15s), ignorando');
+      return new Response(JSON.stringify({ success: true, skipped: true, reason: 'duplicate_inbound' }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // 5. Salvar mensagem
     const { error: msgError } = await supabase
       .from('messages')
