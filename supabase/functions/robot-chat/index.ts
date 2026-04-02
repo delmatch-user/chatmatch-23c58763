@@ -969,19 +969,25 @@ async function handleAutomaticMode(body: {
     });
   }
 
-  // === CONCURRENCY LOCK: Evitar respostas duplicadas ===
-  if (convData?.robot_lock_until && new Date(convData.robot_lock_until) > new Date()) {
-    console.log(`[Robot-Chat Auto] Lock ativo até ${convData.robot_lock_until}. Ignorando mensagem duplicada.`);
-    return new Response(JSON.stringify({ skipped: true, reason: 'already_processing' }), {
+  // === ATOMIC LOCK CLAIM: Evitar respostas duplicadas ===
+  // Em vez de ler o lock e depois setar (race window), fazemos um UPDATE atômico
+  // que só funciona se o lock está null ou expirado
+  const immediateLockUntil = new Date(Date.now() + 30000).toISOString();
+  const nowIso = new Date().toISOString();
+  const { count: lockClaimed } = await supabase
+    .from('conversations')
+    .update({ robot_lock_until: immediateLockUntil }, { count: 'exact' })
+    .eq('id', conversationId)
+    .or(`robot_lock_until.is.null,robot_lock_until.lt.${nowIso}`);
+
+  if (!lockClaimed || lockClaimed === 0) {
+    console.log(`[Robot-Chat Auto] Lock atômico NÃO conquistado. Outro processo já está respondendo. Ignorando.`);
+    return new Response(JSON.stringify({ skipped: true, reason: 'atomic_lock_not_acquired' }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-
-  // === LOCK IMEDIATO: Setar lock de 3s para evitar race condition ===
-  const immediateLockUntil = new Date(Date.now() + 20000).toISOString();
-  await supabase.from('conversations').update({ robot_lock_until: immediateLockUntil }).eq('id', conversationId);
-  console.log(`[Robot-Chat Auto] Lock imediato de 20s setado para evitar duplicação.`);
+  console.log(`[Robot-Chat Auto] Lock atômico conquistado (30s) para evitar duplicação.`);
   
   // Delay de 2s para garantir que chamadas concorrentes vejam o lock (pular em transferências - lock da origem já protege)
   if (!isTransfer) {
