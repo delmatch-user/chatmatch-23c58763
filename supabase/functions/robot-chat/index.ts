@@ -1747,7 +1747,7 @@ async function handleAutomaticMode(body: {
             body: JSON.stringify({
               robotId: targetRobot.id,
               conversationId: conversationId,
-              message: customerMessage || '',
+              message: message || '',
               contactPhone,
               contactJid,
               connectionType,
