@@ -1028,8 +1028,8 @@ export default function AdminRobos() {
 
                         {/* Assumir conversas da fila automaticamente */}
                         <div className="bg-muted/30 rounded-lg p-4">
-                          <div className="flex items-start justify-between">
-                            <div className="flex items-start gap-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3 min-w-0">
                               <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
                                 <Bot className="w-5 h-5 text-emerald-600" />
                               </div>
@@ -1055,8 +1055,8 @@ export default function AdminRobos() {
 
                         {/* Transferir para outros atendentes */}
                         <div className="bg-muted/30 rounded-lg p-4 space-y-3">
-                          <div className="flex items-start justify-between">
-                            <div className="flex items-start gap-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3 min-w-0">
                               <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
                                 <Users className="w-5 h-5 text-blue-600" />
                               </div>
@@ -1128,8 +1128,8 @@ export default function AdminRobos() {
 
                         {/* Transferir para outros departamentos */}
                         <div className="bg-muted/30 rounded-lg p-4 space-y-3">
-                          <div className="flex items-start justify-between">
-                            <div className="flex items-start gap-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3 min-w-0">
                               <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
                                 <Building2 className="w-5 h-5 text-green-600" />
                               </div>
@@ -1201,8 +1201,8 @@ export default function AdminRobos() {
 
                         {/* Perguntar para outros atendentes */}
                         <div className="bg-muted/30 rounded-lg p-4">
-                          <div className="flex items-start justify-between">
-                            <div className="flex items-start gap-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3 min-w-0">
                               <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
                                 <UserCheck className="w-5 h-5 text-orange-600" />
                               </div>
@@ -1228,8 +1228,8 @@ export default function AdminRobos() {
 
                         {/* Follow-up */}
                         <div className="bg-muted/30 rounded-lg p-4">
-                          <div className="flex items-start justify-between">
-                            <div className="flex items-start gap-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3 min-w-0">
                               <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
                                 <CalendarClock className="w-5 h-5 text-purple-600" />
                               </div>
@@ -1255,8 +1255,8 @@ export default function AdminRobos() {
 
                         {/* Agrupar mensagens recebidas */}
                         <div className="bg-muted/30 rounded-lg p-4 space-y-3">
-                          <div className="flex items-start justify-between">
-                            <div className="flex items-start gap-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3 min-w-0">
                               <div className="w-10 h-10 rounded-lg bg-cyan-100 flex items-center justify-center">
                                 <MessageCircle className="w-5 h-5 text-cyan-600" />
                               </div>
@@ -1303,8 +1303,8 @@ export default function AdminRobos() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           {/* Pesquisa na Web */}
                           <div className="bg-muted/30 rounded-lg p-4">
-                            <div className="flex items-start justify-between">
-                              <div className="flex items-start gap-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-start gap-3 min-w-0">
                                 <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
                                   <Globe className="w-4 h-4 text-blue-600" />
                                 </div>
@@ -1327,8 +1327,8 @@ export default function AdminRobos() {
 
                           {/* Adicionar/remover etiquetas */}
                           <div className="bg-muted/30 rounded-lg p-4">
-                            <div className="flex items-start justify-between">
-                              <div className="flex items-start gap-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-start gap-3 min-w-0">
                                 <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center">
                                   <Tag className="w-4 h-4 text-red-600" />
                                 </div>
@@ -1355,8 +1355,8 @@ export default function AdminRobos() {
 
                           {/* Editar contato */}
                           <div className="bg-muted/30 rounded-lg p-4">
-                            <div className="flex items-start justify-between">
-                              <div className="flex items-start gap-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-start gap-3 min-w-0">
                                 <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center">
                                   <Edit3 className="w-4 h-4 text-orange-600" />
                                 </div>
@@ -1382,8 +1382,8 @@ export default function AdminRobos() {
 
                           {/* Finalizar conversas */}
                           <div className="bg-muted/30 rounded-lg p-4">
-                            <div className="flex items-start justify-between">
-                              <div className="flex items-start gap-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-start gap-3 min-w-0">
                                 <div className="w-8 h-8 rounded-lg bg-destructive/20 flex items-center justify-center">
                                   <CheckCircle2 className="w-4 h-4 text-destructive" />
                                 </div>
@@ -1409,8 +1409,8 @@ export default function AdminRobos() {
 
                           {/* Agendar mensagens */}
                           <div className="bg-muted/30 rounded-lg p-4">
-                            <div className="flex items-start justify-between">
-                              <div className="flex items-start gap-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-start gap-3 min-w-0">
                                 <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center">
                                   <CalendarClock className="w-4 h-4 text-purple-600" />
                                 </div>
@@ -1436,8 +1436,8 @@ export default function AdminRobos() {
 
                           {/* Digitando e gravando */}
                           <div className="bg-muted/30 rounded-lg p-4">
-                            <div className="flex items-start justify-between">
-                              <div className="flex items-start gap-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-start gap-3 min-w-0">
                                 <div className="w-8 h-8 rounded-lg bg-cyan-100 flex items-center justify-center">
                                   <Keyboard className="w-4 h-4 text-cyan-600" />
                                 </div>
@@ -1460,8 +1460,8 @@ export default function AdminRobos() {
 
                           {/* Ler imagens recebidas */}
                           <div className="bg-muted/30 rounded-lg p-4">
-                            <div className="flex items-start justify-between">
-                              <div className="flex items-start gap-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-start gap-3 min-w-0">
                                 <div className="w-8 h-8 rounded-lg bg-pink-100 flex items-center justify-center">
                                   <ImageIcon className="w-4 h-4 text-pink-600" />
                                 </div>
@@ -1484,8 +1484,8 @@ export default function AdminRobos() {
 
                           {/* Separar mensagens a enviar pela quebra de linha */}
                           <div className="bg-muted/30 rounded-lg p-4">
-                            <div className="flex items-start justify-between">
-                              <div className="flex items-start gap-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-start gap-3 min-w-0">
                                 <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
                                   <SplitSquareVertical className="w-4 h-4 text-gray-600" />
                                 </div>
@@ -1508,8 +1508,8 @@ export default function AdminRobos() {
 
                           {/* Enviar o nome do agente */}
                           <div className="bg-muted/30 rounded-lg p-4">
-                            <div className="flex items-start justify-between">
-                              <div className="flex items-start gap-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-start gap-3 min-w-0">
                                 <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
                                   <Bot className="w-4 h-4 text-indigo-600" />
                                 </div>
@@ -1813,7 +1813,7 @@ export default function AdminRobos() {
             {[1, 2, 3].map((i) => (
               <Card key={i}>
                 <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
+                  <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
                       <Skeleton className="w-10 h-10 rounded-lg" />
                       <div className="space-y-2">
@@ -1842,7 +1842,7 @@ export default function AdminRobos() {
             {filteredRobots.map((robot) => (
               <Card key={robot.id} className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => handleOpenConfig(robot)}>
                 <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
+                  <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
                       <Avatar className="w-10 h-10 rounded-lg">
                         <AvatarImage src={robot.avatarUrl || undefined} alt={robot.name} />
