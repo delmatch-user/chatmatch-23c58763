@@ -1265,7 +1265,7 @@ export default function AdminRobos() {
                               <div className="w-10 h-10 rounded-lg bg-cyan-100 flex items-center justify-center shrink-0">
                                 <MessageCircle className="w-5 h-5 text-cyan-600" />
                               </div>
-                              <div>
+                               <div className="flex-1 min-w-0">
                                 <h4 className="font-medium">Agrupar mensagens recebidas</h4>
                                 <p className="text-sm text-muted-foreground">
                                   Quando o usuário enviar várias mensagens seguidas, o agente irá aguardar alguns segundos antes de responder. Isto é útil para evitar que o agente responda rapidamente a cada mensagem, o que pode gerar uma resposta confusa.
