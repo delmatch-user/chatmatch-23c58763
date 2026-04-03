@@ -446,7 +446,7 @@ export default function AdminRobos() {
   if (isConfigOpen && selectedRobot) {
     return (
       <MainLayout>
-        <div className="flex flex-col lg:flex-row h-[calc(100vh-4rem)]">
+        <div className="flex flex-col lg:flex-row h-[calc(100vh-4rem-3.5rem)] md:h-[calc(100vh-4rem)]">
           {/* Config Panel */}
           <div className="flex-1 flex flex-col lg:border-r border-border min-w-0">
             {/* Tabs Header */}
