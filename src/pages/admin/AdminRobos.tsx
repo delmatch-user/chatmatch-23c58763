@@ -1237,7 +1237,7 @@ export default function AdminRobos() {
                               <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center shrink-0">
                                 <CalendarClock className="w-5 h-5 text-purple-600" />
                               </div>
-                              <div>
+                               <div className="flex-1 min-w-0">
                                 <h4 className="font-medium flex items-center gap-1">
                                   Follow-up
                                   <HelpCircle className="w-3 h-3 text-muted-foreground" />
