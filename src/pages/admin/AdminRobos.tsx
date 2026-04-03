@@ -1030,7 +1030,7 @@ export default function AdminRobos() {
                         <div className="bg-muted/30 rounded-lg p-4">
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex items-start gap-3 min-w-0">
-                              <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
+                              <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0">
                                 <Bot className="w-5 h-5 text-emerald-600" />
                               </div>
                               <div>
@@ -1044,6 +1044,7 @@ export default function AdminRobos() {
                               </div>
                             </div>
                             <Switch
+                               className="shrink-0"
                               checked={selectedRobot.autoAssign}
                               onCheckedChange={(checked) => setSelectedRobot({
                                 ...selectedRobot,
@@ -1057,7 +1058,7 @@ export default function AdminRobos() {
                         <div className="bg-muted/30 rounded-lg p-4 space-y-3">
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex items-start gap-3 min-w-0">
-                              <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                              <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
                                 <Users className="w-5 h-5 text-blue-600" />
                               </div>
                               <div>
@@ -1071,6 +1072,7 @@ export default function AdminRobos() {
                               </div>
                             </div>
                             <Switch
+                              className="shrink-0"
                               checked={selectedRobot.tools.transferToAgents}
                               onCheckedChange={(checked) => setSelectedRobot({
                                 ...selectedRobot,
@@ -1130,7 +1132,7 @@ export default function AdminRobos() {
                         <div className="bg-muted/30 rounded-lg p-4 space-y-3">
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex items-start gap-3 min-w-0">
-                              <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
+                              <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center shrink-0">
                                 <Building2 className="w-5 h-5 text-green-600" />
                               </div>
                               <div>
@@ -1144,6 +1146,7 @@ export default function AdminRobos() {
                               </div>
                             </div>
                             <Switch
+                              className="shrink-0"
                               checked={selectedRobot.tools.transferToDepartments}
                               onCheckedChange={(checked) => setSelectedRobot({
                                 ...selectedRobot,
@@ -1203,7 +1206,7 @@ export default function AdminRobos() {
                         <div className="bg-muted/30 rounded-lg p-4">
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex items-start gap-3 min-w-0">
-                              <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
+                              <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
                                 <UserCheck className="w-5 h-5 text-orange-600" />
                               </div>
                               <div>
@@ -1217,6 +1220,7 @@ export default function AdminRobos() {
                               </div>
                             </div>
                             <Switch
+                              className="shrink-0"
                               checked={selectedRobot.tools.askHumanAgents}
                               onCheckedChange={(checked) => setSelectedRobot({
                                 ...selectedRobot,
@@ -1230,7 +1234,7 @@ export default function AdminRobos() {
                         <div className="bg-muted/30 rounded-lg p-4">
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex items-start gap-3 min-w-0">
-                              <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
+                              <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center shrink-0">
                                 <CalendarClock className="w-5 h-5 text-purple-600" />
                               </div>
                               <div>
@@ -1244,6 +1248,7 @@ export default function AdminRobos() {
                               </div>
                             </div>
                             <Switch
+                              className="shrink-0"
                               checked={selectedRobot.tools.followUp}
                               onCheckedChange={(checked) => setSelectedRobot({
                                 ...selectedRobot,
@@ -1257,7 +1262,7 @@ export default function AdminRobos() {
                         <div className="bg-muted/30 rounded-lg p-4 space-y-3">
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex items-start gap-3 min-w-0">
-                              <div className="w-10 h-10 rounded-lg bg-cyan-100 flex items-center justify-center">
+                              <div className="w-10 h-10 rounded-lg bg-cyan-100 flex items-center justify-center shrink-0">
                                 <MessageCircle className="w-5 h-5 text-cyan-600" />
                               </div>
                               <div>
@@ -1268,6 +1273,7 @@ export default function AdminRobos() {
                               </div>
                             </div>
                             <Switch
+                              className="shrink-0"
                               checked={selectedRobot.tools.groupMessages}
                               onCheckedChange={(checked) => setSelectedRobot({
                                 ...selectedRobot,
@@ -1316,6 +1322,7 @@ export default function AdminRobos() {
                                 </div>
                               </div>
                               <Switch
+                                className="shrink-0"
                                 checked={selectedRobot.tools.webSearch}
                                 onCheckedChange={(checked) => setSelectedRobot({
                                   ...selectedRobot,
@@ -1343,6 +1350,7 @@ export default function AdminRobos() {
                                 </div>
                               </div>
                               <Switch
+                                className="shrink-0"
                                 checked={selectedRobot.tools.manageLabels}
                                 onCheckedChange={(checked) => setSelectedRobot({
                                   ...selectedRobot,
@@ -1371,6 +1379,7 @@ export default function AdminRobos() {
                                 </div>
                               </div>
                               <Switch
+                                className="shrink-0"
                                 checked={selectedRobot.tools.editContact}
                                 onCheckedChange={(checked) => setSelectedRobot({
                                   ...selectedRobot,
@@ -1398,6 +1407,7 @@ export default function AdminRobos() {
                                 </div>
                               </div>
                               <Switch
+                                className="shrink-0"
                                 checked={selectedRobot.tools.canFinalize}
                                 onCheckedChange={(checked) => setSelectedRobot({
                                   ...selectedRobot,
@@ -1425,6 +1435,7 @@ export default function AdminRobos() {
                                 </div>
                               </div>
                               <Switch
+                                className="shrink-0"
                                 checked={selectedRobot.tools.scheduleMessages}
                                 onCheckedChange={(checked) => setSelectedRobot({
                                   ...selectedRobot,
@@ -1449,6 +1460,7 @@ export default function AdminRobos() {
                                 </div>
                               </div>
                               <Switch
+                                className="shrink-0"
                                 checked={selectedRobot.tools.typingIndicator}
                                 onCheckedChange={(checked) => setSelectedRobot({
                                   ...selectedRobot,
@@ -1473,6 +1485,7 @@ export default function AdminRobos() {
                                 </div>
                               </div>
                               <Switch
+                                className="shrink-0"
                                 checked={selectedRobot.tools.readImages}
                                 onCheckedChange={(checked) => setSelectedRobot({
                                   ...selectedRobot,
@@ -1497,6 +1510,7 @@ export default function AdminRobos() {
                                 </div>
                               </div>
                               <Switch
+                                className="shrink-0"
                                 checked={selectedRobot.tools.splitByLineBreak}
                                 onCheckedChange={(checked) => setSelectedRobot({
                                   ...selectedRobot,
@@ -1521,6 +1535,7 @@ export default function AdminRobos() {
                                 </div>
                               </div>
                               <Switch
+                                className="shrink-0"
                                 checked={selectedRobot.tools.sendAgentName}
                                 onCheckedChange={(checked) => setSelectedRobot({
                                   ...selectedRobot,
@@ -1550,6 +1565,7 @@ export default function AdminRobos() {
                           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
                             <div className="flex items-center gap-3">
                               <Switch
+                                className="shrink-0"
                                 checked={schedule.is_active}
                                 onCheckedChange={(checked) => {
                                   const updated = [...schedules];
@@ -1628,7 +1644,7 @@ export default function AdminRobos() {
             </ScrollArea>
 
             {/* Footer */}
-            <div className="border-t border-border p-4 flex justify-center gap-4">
+            <div className="border-t border-border p-4 pb-20 md:pb-4 flex flex-col sm:flex-row justify-center gap-3 sm:gap-4">
               <Button variant="ghost" onClick={() => setIsConfigOpen(false)} disabled={isSaving}>
                 Voltar
               </Button>
