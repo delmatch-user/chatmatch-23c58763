@@ -1085,7 +1085,7 @@ export default function AdminRobos() {
                                 ...selectedRobot,
                                 tools: { ...selectedRobot.tools, transferToAgentsMode: value as 'all' | 'select' }
                               })}
-                              className="flex gap-4 ml-13"
+                              className="flex flex-wrap gap-4 ml-0 sm:ml-13"
                             >
                               <div className="flex items-center space-x-2">
                                 <RadioGroupItem value="all" id="agents-all" />
@@ -1099,7 +1099,7 @@ export default function AdminRobos() {
                             )}
 
                           {selectedRobot.tools.transferToAgents && selectedRobot.tools.transferToAgentsMode === 'select' && (
-                            <div className="ml-13 mt-2 space-y-2 max-h-48 overflow-y-auto">
+                            <div className="ml-0 sm:ml-13 mt-2 space-y-2 max-h-48 overflow-y-auto">
                               {robots.filter(r => r.id !== selectedRobot.id).map((robot) => (
                                 <label key={robot.id} className="flex items-center gap-2 cursor-pointer">
                                   <Checkbox
@@ -1158,7 +1158,7 @@ export default function AdminRobos() {
                                 ...selectedRobot,
                                 tools: { ...selectedRobot.tools, transferToDepartmentsMode: value as 'all' | 'select' }
                               })}
-                              className="flex gap-4 ml-13"
+                              className="flex flex-wrap gap-4 ml-0 sm:ml-13"
                             >
                               <div className="flex items-center space-x-2">
                                 <RadioGroupItem value="all" id="dept-all" />
@@ -1172,7 +1172,7 @@ export default function AdminRobos() {
                           )}
 
                           {selectedRobot.tools.transferToDepartments && selectedRobot.tools.transferToDepartmentsMode === 'select' && (
-                            <div className="ml-13 mt-2 space-y-2 max-h-48 overflow-y-auto">
+                            <div className="ml-0 sm:ml-13 mt-2 space-y-2 max-h-48 overflow-y-auto">
                               {departments.map((dept) => (
                                 <label key={dept.id} className="flex items-center gap-2 cursor-pointer">
                                   <Checkbox
@@ -1276,7 +1276,7 @@ export default function AdminRobos() {
                             />
                           </div>
                           {selectedRobot.tools.groupMessages && (
-                            <div className="ml-13 space-y-2">
+                            <div className="ml-0 sm:ml-13 space-y-2">
                               <Label className="text-sm">Tempo em segundos</Label>
                               <Input
                                 type="number"
